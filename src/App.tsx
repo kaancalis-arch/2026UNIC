@@ -5,12 +5,15 @@ import Dashboard from './pages/Dashboard';
 import StudentList from './pages/StudentList';
 import StudentDetail from './pages/StudentDetail';
 import Settings from './pages/Settings';
+import VisaResults from './pages/VisaResults';
+import VisaChecklist from './pages/VisaChecklist';
 import { Student, SystemUser, UserRole } from './types';
 import { MOCK_USERS } from './services/mockData';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Auth Simulation
   const [currentUser, setCurrentUser] = useState<SystemUser>(MOCK_USERS[0]); // Default to Admin
@@ -59,6 +62,10 @@ const App: React.FC = () => {
       case 'my-profile':
         // For student view simulation
         return <div className="p-10 text-center text-slate-500">My Student Profile View (Under Construction)</div>;
+      case 'visa-results':
+        return <VisaResults />;
+      case 'visa-checklist':
+        return <VisaChecklist />;
       default:
         return <Dashboard />;
     }
@@ -71,9 +78,11 @@ const App: React.FC = () => {
         setPage={setCurrentPage} 
         currentUser={currentUser}
         onSwitchUser={rotateUser}
+        isCollapsed={isSidebarCollapsed}
+        onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       
-      <main className="flex-1 ml-64 p-8">
+      <main className={`flex-1 p-8 transition-all duration-300 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
         <div className="max-w-6xl mx-auto h-full">
            {renderContent()}
         </div>

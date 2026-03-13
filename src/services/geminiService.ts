@@ -4,7 +4,20 @@ import { Student, AnalysisResult, RoadmapStep } from "../types";
 // Initialize Gemini Client
 // NOTE: In a real production app, these calls might happen via a backend proxy (Supabase Edge Functions)
 // to protect the API Key, but for this frontend-focused architecture, we call direct.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize Gemini Client lazily to prevent crash if API key is missing
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+      console.warn("GEMINI_API_KEY is missing. AI features will use fallback data.");
+      return null;
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+};
 
 const MODEL_NAME = "gemini-2.5-flash";
 
@@ -12,6 +25,21 @@ const MODEL_NAME = "gemini-2.5-flash";
  * Analyzes a student profile to provide program recommendations and risk assessment.
  */
 export const analyzeStudentProfile = async (student: Student): Promise<AnalysisResult> => {
+  const ai = getAI();
+  if (!ai) {
+    return {
+      recommendedPrograms: ["Computer Science", "Data Analytics", "Software Engineering"],
+      visaRiskScore: 25,
+      visaRiskReasoning: "Solid academic background and sufficient budget reduce risk. (Fallback Data)",
+      scholarshipProbability: 60,
+      suggestedUniversities: [
+        { name: "Technical University of Munich", country: "Germany", matchScore: 95, tuition: 0 },
+        { name: "University of Amsterdam", country: "Netherlands", matchScore: 88, tuition: 12000 },
+      ],
+      overallAssessment: "The student shows strong potential for European technical universities. Focus on IELTS preparation. (Fallback Data)"
+    };
+  }
+
   const prompt = `
     You are UNIC, an expert university counselor AI. 
     Analyze the following student profile and provide a structured assessment.
@@ -101,6 +129,9 @@ export const analyzeStudentProfile = async (student: Student): Promise<AnalysisR
  * Generates a personalized roadmap for the student.
  */
 export const generateStudentRoadmap = async (student: Student): Promise<RoadmapStep[]> => {
+  const ai = getAI();
+  if (!ai) return [];
+
   const prompt = `
     Create a step-by-step application roadmap for this student:
     Target: ${student.targetDegree} in ${student.targetCountries.join(', ')}.
@@ -155,6 +186,9 @@ export const generateStudentRoadmap = async (student: Student): Promise<RoadmapS
  * Chat bot functionality for the Counselor to ask questions about the database/rules.
  */
 export const askUNIC = async (question: string, context: string): Promise<string> => {
+    const ai = getAI();
+    if (!ai) return "AI is currently unavailable. Please check configuration.";
+
     const prompt = `
       You are UNIC, the logic engine of this platform.
       Context: ${context}
