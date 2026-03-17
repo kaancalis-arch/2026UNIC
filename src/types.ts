@@ -138,7 +138,7 @@ export interface Student {
   // System/Pipeline Fields
   pipelineStage: PipelineStage;
   gpa?: number;
-  targetDegree?: 'Bachelor' | 'Master' | 'PhD';
+  targetDegree?: 'Summer Course' | 'Language Course' | 'High School' | 'Undergraduate' | 'Master';
   targetCountries: string[];
   budget: number;
   englishLevel?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';

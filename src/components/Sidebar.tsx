@@ -52,7 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     ];
 
     if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.CONSULTANT || currentUser.role === UserRole.REPRESENTATIVE) {
-        baseItems.push({ id: 'students', label: 'Students (CRM)', icon: Users });
+        baseItems.push({ id: 'students', label: 'CRM', icon: Users });
     }
 
     if (currentUser.role === UserRole.STUDENT) {

@@ -252,6 +252,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
         schoolName: studentAcademicInfo.schoolName,
         currentGrade: studentAcademicInfo.currentGrade,
         educationStatus: studentAcademicInfo.educationStatus as any,
+        targetDegree: selectedStudentForAnalysis?.targetDegree,
         analysis: analysisForm 
     };
 
@@ -782,6 +783,29 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
    const renderPreferencesTab = () => (
       <div className="space-y-6 animate-fade-in">
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Hedef Program Seviyesi</h4>
+               <div>
+                   <label className="block text-sm text-slate-600 mb-1">Interested Program</label>
+                   <select 
+                       value={selectedStudentForAnalysis?.targetDegree || ''}
+                       onChange={(e) => {
+                           if (selectedStudentForAnalysis) {
+                               setSelectedStudentForAnalysis({ ...selectedStudentForAnalysis, targetDegree: e.target.value as any });
+                           }
+                       }}
+                       className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                   >
+                       <option value="">Seçiniz</option>
+                       <option value="Summer Course">Summer Course</option>
+                       <option value="Language Course">Language Course</option>
+                       <option value="High School">High School</option>
+                       <option value="Undergraduate">Undergraduate</option>
+                       <option value="Master">Master</option>
+                   </select>
+               </div>
+           </div>
+
+           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -1005,9 +1029,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
           <thead>
             <tr className="text-slate-500 border-b border-slate-200 bg-slate-50/50">
               <th className="py-4 pl-6 font-semibold text-xs uppercase tracking-wider">Student Name</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Stage</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider">STATUS</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Interested Program</th>
               <th className="py-4 font-semibold text-xs uppercase tracking-wider">Interested</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Education</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Current Education</th>
               <th className="py-4 pr-6 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
@@ -1047,6 +1072,19 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                     'bg-slate-50 text-slate-600 border-slate-100'
                   }`}>
                     {student.pipelineStage}
+                  </span>
+                </td>
+                {/* Interested Program Column */}
+                <td className="py-4">
+                  <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${
+                    student.targetDegree === 'Summer Course' ? 'bg-orange-50 text-orange-700 border-orange-100' :
+                    student.targetDegree === 'Language Course' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                    student.targetDegree === 'High School' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                    student.targetDegree === 'Undergraduate' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                    student.targetDegree === 'Master' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                    'bg-slate-50 text-slate-600 border-slate-100'
+                  }`}>
+                    {student.targetDegree || '-'}
                   </span>
                 </td>
                 {/* Interested Column - Countries & Programs */}

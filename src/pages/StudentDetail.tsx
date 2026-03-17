@@ -116,7 +116,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [editAcademicInfo, setEditAcademicInfo] = useState({
     schoolName: '',
     currentGrade: '',
-    educationStatus: ''
+    educationStatus: '',
+    targetDegree: ''
   });
 
   const [activeAnalyseStatus, setActiveAnalyseStatus] = useState<AnalyseStatus>(student.analyseStatus || 'Mid');
@@ -360,11 +361,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           preferences: student.analysis?.preferences || {},
           budget: student.analysis?.budget || {}
       });
-      setEditAcademicInfo({
-          schoolName: student.schoolName || '',
-          currentGrade: student.currentGrade || '',
-          educationStatus: student.educationStatus || ''
-      });
+          setEditAcademicInfo({
+              schoolName: student.schoolName || '',
+              currentGrade: student.currentGrade || '',
+              educationStatus: student.educationStatus || '',
+              targetDegree: student.targetDegree || ''
+          });
       setIsEditModalOpen(true);
   };
 
@@ -402,12 +404,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           schoolName: editAcademicInfo.schoolName,
           currentGrade: editAcademicInfo.currentGrade,
           educationStatus: editAcademicInfo.educationStatus as any,
+          targetDegree: editAcademicInfo.targetDegree as any,
           analysis: editForm
       };
 
       try {
           await studentService.update(student.id, updatedData);
-          setStudent(prev => ({ ...prev, ...updatedData }));
+          setStudent(prev => ({ ...prev, ...updatedData, targetDegree: editAcademicInfo.targetDegree as any }));
           setIsEditModalOpen(false);
       } catch (error) {
           console.error("Failed to save analysis", error);
@@ -460,10 +463,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <option value="High School">Lise</option>
                     <option value="University">Üniversite</option>
                     <option value="Master">Yüksek Lisans</option>
+                    <option value="Graduate">Mezun</option>
                 </select>
-                <input placeholder="Sınıf" value={editAcademicInfo.currentGrade} onChange={e => setEditAcademicInfo({...editAcademicInfo, currentGrade: e.target.value})} className="border p-2 rounded text-sm"/>
+                <select value={editAcademicInfo.targetDegree} onChange={e => setEditAcademicInfo({...editAcademicInfo, targetDegree: e.target.value})} className="border p-2 rounded text-sm">
+                    <option value="">Interested Program (Hedef)</option>
+                    <option value="Summer Course">Summer Course</option>
+                    <option value="Language Course">Language Course</option>
+                    <option value="High School">High School</option>
+                    <option value="Undergraduate">Undergraduate</option>
+                    <option value="Master">Master</option>
+                </select>
             </div>
-             <input placeholder="Bölüm" value={editForm.academic.educationField || ''} onChange={e => updateEditField('academic', 'educationField', e.target.value)} className="w-full border p-2 rounded text-sm"/>
+            <div className="grid grid-cols-2 gap-4">
+                <input placeholder="Sınıf" value={editAcademicInfo.currentGrade} onChange={e => setEditAcademicInfo({...editAcademicInfo, currentGrade: e.target.value})} className="border p-2 rounded text-sm"/>
+                <input placeholder="Bölüm" value={editForm.academic.educationField || ''} onChange={e => updateEditField('academic', 'educationField', e.target.value)} className="w-full border p-2 rounded text-sm"/>
+            </div>
              <input placeholder="GPA (Not Ortalaması)" value={editForm.academic.gpa || ''} onChange={e => updateEditField('academic', 'gpa', e.target.value)} className="w-full border p-2 rounded text-sm"/>
              
              <div className="space-y-2">
@@ -636,38 +650,42 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
             </div>
             <div className="hidden print:block text-sm font-bold uppercase tracking-wider text-slate-500 border border-slate-300 px-2 py-0.5 rounded">
-                Stage: {currentStage}
+                STATUS: {currentStage}
             </div>
           </div>
           
-          <div className="mt-3 space-y-2 text-lg text-slate-600">
-             <div className="flex items-center gap-6">
-                 <div className="flex items-center gap-1.5">
-                     <Phone className="w-4 h-4 text-slate-400" />
-                     <span className="font-bold">{student.phone}</span>
-                 </div>
-                 <div className="flex items-center gap-1.5">
-                     <Mail className="w-4 h-4 text-slate-400" />
-                     {student.email}
-                 </div>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-slate-600">
+             <div className="flex items-center gap-1.5 whitespace-nowrap">
+                 <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                 <span className="font-bold">{student.phone}</span>
+             </div>
+             <div className="flex items-center gap-1.5 whitespace-nowrap">
+                 <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                 <span className="font-medium">{student.email}</span>
              </div>
              {student.parentInfo?.fullName && (
-                 <div className="flex items-center gap-3 text-slate-600 pt-2 border-t border-slate-100/50">
-                    <div className="flex items-center gap-1.5">
-                        <User className="w-4 h-4 text-slate-400" />
-                        <span className="font-medium">{student.parentInfo.fullName}</span>
+                 <>
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <User className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="font-medium">{student.parentInfo.fullName} ({student.parentInfo.relationship})</span>
                     </div>
-                    <span className="bg-slate-100 px-2 py-0.5 rounded text-sm print:bg-slate-50 print:border print:border-slate-200">{student.parentInfo.relationship}</span>
-                    <span className="flex items-center gap-1.5"><Phone className="w-4 h-4 text-slate-400"/> <span className="font-bold">{student.parentInfo.phone}</span></span>
-                    <span className="flex items-center gap-1.5"><Mail className="w-4 h-4 text-slate-400"/> {student.parentInfo.email}</span>
-                 </div>
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="font-bold">{student.parentInfo.phone}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="font-medium">{student.parentInfo.email}</span>
+                    </div>
+                 </>
              )}
+          </div>
           
           {/* Action Area for Stages */}
           <div className="mt-4 flex gap-3 print:hidden">
               {currentStage === PipelineStage.ANALYSE && (
                   <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-xl border border-indigo-100">
-                      <span className="text-xs font-bold text-indigo-700 ml-2">Analyse Status:</span>
+                      <span className="text-xs font-bold text-indigo-700 ml-2">STATUS:</span>
                       {(['Mid', 'Hot', 'Super Hot'] as AnalyseStatus[]).map(status => (
                           <button 
                             key={status}
@@ -693,23 +711,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
               )}
           </div>
        </div>
-        </div>
         <div className="flex gap-2 print:hidden">
-             <button 
-                onClick={() => window.print()}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors shadow-sm text-sm font-medium"
-            >
-                <Printer className="w-4 h-4" />
-                Yazdır
-            </button>
-             <button 
-                onClick={handleDownloadPDF}
-                disabled={isGeneratingPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm text-sm font-medium"
-            >
-                {isGeneratingPDF ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileDown className="w-4 h-4" />}
-                PDF
-            </button>
              <button 
                 onClick={openEditModal}
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors shadow-sm text-sm font-medium"
@@ -769,7 +771,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <div className="grid grid-cols-2 gap-6">
                         <DisplayField label="Okul Adı" value={student.schoolName} />
                         <DisplayField label="Sınıf / Seviye" value={student.currentGrade} />
-                        <DisplayField label="Eğitim Durumu" value={student.educationStatus} />
+                        <DisplayField label="Current Education" value={student.educationStatus} />
+                        <DisplayField label="Interested Program" value={student.targetDegree} />
                         <DisplayField label="Alan / Bölüm" value={student.analysis?.academic?.educationField} />
                         <DisplayField label="Not Ortalaması (GPA)" value={student.analysis?.academic?.gpa} />
                         <DisplayField label="Akademik Notlar" value={student.analysis?.academic?.academicNotes} fullWidth />

@@ -1,20 +1,45 @@
-
 import React from 'react';
-import { MOCK_STUDENTS } from '../services/mockData';
-import { PipelineStage } from '../types';
+import { Student, PipelineStage } from '../types';
+import { studentService } from '../services/studentService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Users, AlertTriangle, CheckCircle, DollarSign } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
+  const [students, setStudents] = React.useState<Student[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await studentService.getAll();
+        setStudents(data);
+      } catch (err) {
+        console.error("Dashboard failed to load students", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-slate-400 gap-4">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-medium animate-pulse">Dashboard yükleniyor...</p>
+      </div>
+    );
+  }
+
   // Prepare chart data
   const stageCounts = Object.values(PipelineStage).map(stage => ({
     name: stage,
-    count: MOCK_STUDENTS.filter(s => s.pipelineStage === stage).length
+    count: students.filter(s => s.pipelineStage === stage).length
   })).filter(d => d.count > 0);
 
   const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
-  const totalBudget = MOCK_STUDENTS.reduce((sum, s) => sum + s.budget, 0);
+  const totalBudget = students.reduce((sum, s) => sum + (s.budget || 0), 0);
 
   const StatCard = ({ title, value, icon: Icon, color }: any) => (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
@@ -39,19 +64,19 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard 
           title="Total Students" 
-          value={MOCK_STUDENTS.length} 
+          value={students.length} 
           icon={Users} 
           color="bg-indigo-500" 
         />
         <StatCard 
           title="In Process" 
-          value={MOCK_STUDENTS.filter(s => s.pipelineStage === PipelineStage.PROCESS).length} 
+          value={students.filter(s => s.pipelineStage === PipelineStage.PROCESS).length} 
           icon={AlertTriangle} 
           color="bg-amber-500" 
         />
         <StatCard 
           title="Enrollment" 
-          value={MOCK_STUDENTS.filter(s => s.pipelineStage === PipelineStage.ENROLLMENT).length} 
+          value={students.filter(s => s.pipelineStage === PipelineStage.ENROLLMENT).length} 
           icon={CheckCircle} 
           color="bg-emerald-500" 
         />
