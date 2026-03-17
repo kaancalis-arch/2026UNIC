@@ -779,12 +779,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     </div>
   )};
 
-  // Tabs for Preferences, Social, Budget etc... simplified for brevity but fully implemented in logic
-  const renderPreferencesTab = () => (
+   const renderPreferencesTab = () => (
       <div className="space-y-6 animate-fade-in">
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
-               <div className="space-y-3">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
                         <select 
@@ -812,8 +811,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
-               <div className="grid grid-cols-1 gap-3">
-                    {[1, 2, 3].map(i => (
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[1, 2, 3, 4, 5].map(i => (
                         <div key={i}>
                             <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
                             <select 
@@ -829,51 +828,70 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                </div>
            </div>
       </div>
-  );
+   );
 
   const renderSocialTab = () => (
       <div className="space-y-6 animate-fade-in">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-               <h4 className="text-sm font-semibold text-slate-700 mb-3">Sosyal Faaliyetler</h4>
-               <div className="space-y-4">
-                   <div>
-                       <label className="block text-sm text-slate-600 mb-1">Spor</label>
-                       <input 
-                            type="text"
-                            value={analysisForm.social.sports || ''}
-                            onChange={(e) => updateAnalysisField('social', 'sports', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            placeholder="Lisanslı sporcu mu? Hangi branş?"
-                        />
+               <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                   <Users className="w-4 h-4 text-indigo-500" />
+                   Sosyal & Dışı Faaliyetler
+               </h4>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="space-y-4">
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Activity className="w-3.5 h-3.5 text-slate-400" />
+                               Spor Faaliyetleri
+                           </label>
+                           <input 
+                                type="text"
+                                value={analysisForm.social.sports || ''}
+                                onChange={(e) => updateAnalysisField('social', 'sports', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Lisanslı sporcu mu? Branş?"
+                            />
+                       </div>
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+                               Sanat / Müzik
+                           </label>
+                           <input 
+                                type="text"
+                                value={analysisForm.social.arts || ''}
+                                onChange={(e) => updateAnalysisField('social', 'arts', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Enstrüman, Resim vb."
+                            />
+                       </div>
                    </div>
-                   <div>
-                       <label className="block text-sm text-slate-600 mb-1">Sanat / Müzik</label>
-                       <input 
-                            type="text"
-                            value={analysisForm.social.arts || ''}
-                            onChange={(e) => updateAnalysisField('social', 'arts', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            placeholder="Enstrüman, Resim vb."
-                        />
-                   </div>
-                   <div>
-                       <label className="block text-sm text-slate-600 mb-1">Sosyal Sorumluluk</label>
-                       <input 
-                            type="text"
-                            value={analysisForm.social.socialWork || ''}
-                            onChange={(e) => updateAnalysisField('social', 'socialWork', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            placeholder="Gönüllülük projeleri"
-                        />
-                   </div>
-                    <div>
-                       <label className="block text-sm text-slate-600 mb-1">Projeler / Sertifikalar</label>
-                       <textarea 
-                            value={analysisForm.social.projects || ''}
-                            onChange={(e) => updateAnalysisField('social', 'projects', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm resize-y"
-                            placeholder="TÜBİTAK, Erasmus vb."
-                        />
+                   <div className="space-y-4">
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Globe className="w-3.5 h-3.5 text-slate-400" />
+                               Sosyal Sorumluluk
+                           </label>
+                           <input 
+                                type="text"
+                                value={analysisForm.social.socialWork || ''}
+                                onChange={(e) => updateAnalysisField('social', 'socialWork', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Gönüllülük projeleri"
+                            />
+                       </div>
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                               Projeler / Sertifikalar
+                           </label>
+                           <textarea 
+                                value={analysisForm.social.projects || ''}
+                                onChange={(e) => updateAnalysisField('social', 'projects', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm resize-none h-[88px]"
+                                placeholder="TÜBİTAK, Erasmus vb."
+                            />
+                       </div>
                    </div>
                </div>
           </div>
@@ -883,33 +901,73 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
   const renderBudgetTab = () => (
     <div className="space-y-6 animate-fade-in">
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-             <h4 className="text-sm font-semibold text-slate-700 mb-3">Yıllık Eğitim Bütçesi (Yaşam Hariç)</h4>
-             <div className="space-y-3">
+             <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                 <Coins className="w-4 h-4 text-emerald-500" />
+                 Yıllık Eğitim Bütçesi (Yaşam Hariç)
+             </h4>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {tuitionRanges.length > 0 ? tuitionRanges.map((option) => (
-                    <label key={option} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200">
+                    <label key={option} className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
+                        analysisForm.budget.range === option 
+                        ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' 
+                        : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                    }`}>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            analysisForm.budget.range === option ? 'border-emerald-600' : 'border-slate-300'
+                        }`}>
+                            {analysisForm.budget.range === option && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-full" />}
+                        </div>
                         <input
                             type="radio"
                             name="budget_range"
                             value={option}
                             checked={analysisForm.budget.range === option}
                             onChange={(e) => updateAnalysisField('budget', 'range', e.target.value)}
-                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                            className="hidden"
                         />
-                        <span className="text-sm text-slate-700">{option}</span>
+                        <span className={`text-sm font-medium ${analysisForm.budget.range === option ? 'text-emerald-900' : 'text-slate-700'}`}>
+                            {option}
+                        </span>
                     </label>
                 )) : (
-                    <div className="text-slate-400 italic text-sm p-4">Yükleniyor...</div>
+                    <div className="col-span-2 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 italic text-sm">
+                        Bütçe aralıkları yükleniyor...
+                    </div>
                 )}
+             </div>
+             <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                 <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
+                 <div>
+                     <p className="text-sm font-semibold text-amber-900">Bütçe Hakkında Not</p>
+                     <p className="text-xs text-amber-700 mt-1">
+                         Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsamaktadır. 
+                         Konaklama, yemek ve diğer yaşam giderleri bu tutarlara dahil değildir.
+                     </p>
+                 </div>
              </div>
         </div>
     </div>
   );
 
-  // Filter logic (can be extended)
-  const filteredStudents = students;
+  // Filter logic
+  const [searchQuery, setSearchQuery] = useState('');
+  const filteredStudents = students.filter(student => {
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      student.firstName.toLowerCase().includes(searchLower) ||
+      student.lastName.toLowerCase().includes(searchLower) ||
+      student.email.toLowerCase().includes(searchLower) ||
+      student.phone.includes(searchQuery)
+    );
+  });
 
   if (isLoading) {
-      return <div className="flex items-center justify-center h-64 text-slate-400">Loading students...</div>;
+      return (
+        <div className="flex flex-col items-center justify-center h-96 text-slate-400 gap-4">
+          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="font-medium animate-pulse">Öğrenci listesi yükleniyor...</p>
+        </div>
+      );
   }
 
   return (
@@ -920,7 +978,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
           <input 
             type="text" 
-            placeholder="Search by name, email or phone..." 
+            placeholder="İsim, e-posta veya telefon ile ara..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
         </div>
@@ -1069,92 +1129,117 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
               </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="p-6 space-y-8">
               {/* Personal Info Section */}
-              <div>
-                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4">Personal Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-6 flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Kişisel Bilgiler
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
-                    <input
-                      required
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                    />
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Adı</label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        required
+                        name="firstName"
+                        value={formData.firstName}
+                        onChange={handleInputChange}
+                        placeholder="Örn: Ahmet"
+                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Soyadı</label>
                     <input
                       required
                       name="lastName"
                       value={formData.lastName}
                       onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      placeholder="Örn: Yılmaz"
+                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                    />
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">E-posta</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        placeholder="ahmet@example.com"
+                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-                    <input
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                    />
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Telefon</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleInputChange}
+                        placeholder="+90 5xx xxx xx xx"
+                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Date of Birth</label>
-                    <input
-                      type="date"
-                      name="dob"
-                      value={formData.dob}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                    />
-                    {calculatedAge && <p className="text-xs text-slate-500 mt-1">Age: {calculatedAge}</p>}
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Doğum Tarihi</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="date"
+                        name="dob"
+                        value={formData.dob}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    {calculatedAge && <p className="text-xs text-indigo-600 font-medium mt-1.5 ml-1">Yaş: {calculatedAge}</p>}
                   </div>
                 </div>
               </div>
 
               {/* Education Section */}
-              <div>
-                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4">Education Details</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-6 flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4" />
+                  Eğitim Bilgileri
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-1">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Education Status</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Eğitim Durumu</label>
                         <select
                             name="educationStatus"
                             value={formData.educationStatus || ''}
                             onChange={handleInputChange}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                            className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
                         >
-                            <option value="">Select Status</option>
-                            <option value="High School">High School</option>
-                            <option value="University">University</option>
-                            <option value="Master">Master</option>
-                            <option value="Graduate">Graduate</option>
+                            <option value="">Seçiniz</option>
+                            <option value="High School">Lise</option>
+                            <option value="University">Üniversite</option>
+                            <option value="Master">Yüksek Lisans</option>
+                            <option value="Graduate">Mezun</option>
                         </select>
                     </div>
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">School Name</label>
-                        <input
-                            name="schoolName"
-                            value={formData.schoolName}
-                            onChange={handleInputChange}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                            placeholder="e.g. Robert College"
-                        />
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Okul Adı</label>
+                        <div className="relative">
+                          <School className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input
+                              name="schoolName"
+                              value={formData.schoolName}
+                              onChange={handleInputChange}
+                              className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                              placeholder="Örn: Robert Koleji"
+                          />
+                        </div>
                     </div>
                 </div>
               </div>
