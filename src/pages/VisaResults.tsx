@@ -1,32 +1,54 @@
-
 import React, { useState, useMemo } from 'react';
 import { Award, CheckCircle, Clock, XCircle, Search, Filter, TrendingUp, Users, Globe } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { Student, PipelineStage } from '../types';
+import { studentService } from '../services/studentService';
 
 const VisaResults: React.FC = () => {
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [countryFilter, setCountryFilter] = useState('All');
 
-  const mockVisaResults = [
-    { id: 1, student: 'Ahmet Yılmaz', country: 'USA', type: 'F-1 Student', status: 'Approved', date: '2024-03-10' },
-    { id: 2, student: 'Ayşe Demir', country: 'UK', type: 'Student Visa', status: 'Pending', date: '2024-03-12' },
-    { id: 3, student: 'Mehmet Kaya', country: 'Canada', type: 'Study Permit', status: 'Approved', date: '2024-03-05' },
-    { id: 4, student: 'Fatma Şahin', country: 'Germany', type: 'National Visa', status: 'Rejected', date: '2024-02-28' },
-    { id: 5, student: 'Caner Öz', country: 'USA', type: 'F-1 Student', status: 'Approved', date: '2024-03-01' },
-    { id: 6, student: 'Selin Ak', country: 'UK', type: 'Student Visa', status: 'Approved', date: '2024-03-08' },
-    { id: 7, student: 'Burak Yılmaz', country: 'Canada', type: 'Study Permit', status: 'Pending', date: '2024-03-11' },
-    { id: 8, student: 'Elif Can', country: 'USA', type: 'F-1 Student', status: 'Rejected', date: '2024-02-20' },
-  ];
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await studentService.getAll();
+        // Filter students that have advanced to enrollment or graduation, or have explicit visa status
+        setStudents(data.filter(s => 
+          s.pipelineStage === PipelineStage.ENROLLMENT || 
+          s.pipelineStage === PipelineStage.STUDENT || 
+          s.visaStatus
+        ));
+      } catch (err) {
+        console.error("Failed to load visa results", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  const visaResults = useMemo(() => {
+    return students.map(s => ({
+      id: s.id,
+      student: `${s.firstName} ${s.lastName}`,
+      country: s.analysis?.preferences?.country1 || (s.targetCountries && s.targetCountries[0]) || 'Other',
+      type: s.targetDegree || 'Student Visa',
+      status: s.visaStatus || (s.pipelineStage === PipelineStage.STUDENT ? 'Approved' : 'Pending'),
+      date: 'Active'
+    }));
+  }, [students]);
 
   const filteredResults = useMemo(() => {
-    return mockVisaResults.filter(item => {
+    return visaResults.filter(item => {
       const matchesSearch = item.student.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'All' || item.status === statusFilter;
       const matchesCountry = countryFilter === 'All' || item.country === countryFilter;
       return matchesSearch && matchesStatus && matchesCountry;
     });
-  }, [searchQuery, statusFilter, countryFilter]);
+  }, [visaResults, searchQuery, statusFilter, countryFilter]);
 
   const stats = useMemo(() => {
     const total = filteredResults.length;
@@ -74,11 +96,15 @@ const VisaResults: React.FC = () => {
       case 'Rejected':
         return <span className="px-2 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold flex items-center gap-1"><XCircle className="w-3 h-3" /> Rejected</span>;
       default:
-        return null;
+        return <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold flex items-center gap-1">{status}</span>;
     }
   };
 
-  const countries = Array.from(new Set(mockVisaResults.map(r => r.country)));
+  const countries = Array.from(new Set(visaResults.map(r => r.country)));
+
+  if (loading) {
+    return <div className="h-96 flex items-center justify-center text-slate-400">Yükleniyor...</div>;
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -111,7 +137,7 @@ const VisaResults: React.FC = () => {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="All">All Status</option>
+            <option value="All">Tüm Durumlar</option>
             <option value="Approved">Approved</option>
             <option value="Pending">Pending</option>
             <option value="Rejected">Rejected</option>
@@ -142,7 +168,7 @@ const VisaResults: React.FC = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-6">Status Distribution</h3>
+          <h3 className="font-bold text-slate-800 mb-6">Sonuç Dağılımı (Distribution)</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -167,7 +193,7 @@ const VisaResults: React.FC = () => {
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-6">Results by Country</h3>
+          <h3 className="font-bold text-slate-800 mb-6">Ülkelere Göre Sonuçlar</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={countryData}>
@@ -204,11 +230,11 @@ const VisaResults: React.FC = () => {
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Country</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Visa Type</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Decision Date</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Öğrenci</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ülke</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vize Tipi</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vize Sonucu</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vize Başvuru Tarihi (date)</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>

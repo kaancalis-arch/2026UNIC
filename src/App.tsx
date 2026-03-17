@@ -7,6 +7,7 @@ import StudentDetail from './pages/StudentDetail';
 import Settings from './pages/Settings';
 import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
+import Roadmaps from './pages/Roadmaps';
 import { Student, SystemUser, UserRole } from './types';
 import { MOCK_USERS } from './services/mockData';
 
@@ -56,7 +57,7 @@ const App: React.FC = () => {
       case 'universities':
         return <div className="p-10 text-center text-slate-500">University Search Module (Coming Soon)</div>;
       case 'roadmap':
-        return <div className="p-10 text-center text-slate-500">Global Roadmap Overview (Coming Soon)</div>;
+        return <Roadmaps />;
       case 'files':
         return <div className="p-10 text-center text-slate-500">Global File Manager (Coming Soon)</div>;
       case 'my-profile':

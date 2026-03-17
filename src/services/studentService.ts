@@ -38,7 +38,13 @@ function mapDbToStudent(row: any): Student {
         analysis: row.analysis,
         counselorNotes: row.counselor_notes,
         counselorId: row.counselor_id,
-        representativeId: row.representative_id
+        representativeId: row.representative_id,
+        analyseStatus: row.analyse_status,
+        applications: row.applications || [],
+        visaStatus: row.visa_status,
+        visaApplicationDate: row.visa_application_date,
+        visaType: row.visa_type,
+        visaCountry: row.visa_country
     };
 }
 
@@ -73,7 +79,13 @@ function mapStudentToDb(student: Partial<Student>): any {
         analysis: student.analysis,
         counselor_notes: student.counselorNotes,
         counselor_id: student.counselorId,
-        representative_id: student.representativeId
+        representative_id: student.representativeId,
+        analyse_status: student.analyseStatus,
+        applications: student.applications,
+        visa_status: student.visaStatus,
+        visa_application_date: student.visaApplicationDate,
+        visa_type: student.visaType,
+        visa_country: student.visaCountry
     };
 
     // Remove undefined keys to avoid overwriting with nulls if using patch

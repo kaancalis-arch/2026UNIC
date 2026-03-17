@@ -153,6 +153,10 @@ export interface Student {
   // Stage Specific Data
   analyseStatus?: AnalyseStatus;
   applications?: UniversityApplication[];
+  visaStatus?: 'Pending' | 'Approved' | 'Rejected';
+  visaApplicationDate?: string;
+  visaType?: string;
+  visaCountry?: string;
 }
 
 export interface AnalysisResult {

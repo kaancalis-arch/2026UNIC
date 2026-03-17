@@ -738,7 +738,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Application', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'enrollment', label: 'Enrollment', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
-          { id: 'visa', label: 'Vize Seçıon', icon: CreditCard, visible: currentStage === PipelineStage.ENROLLMENT },
+          { id: 'visa', label: 'Visa', icon: CreditCard, visible: currentStage === PipelineStage.ENROLLMENT || currentStage === PipelineStage.STUDENT },
           { id: 'accommodation', label: 'Accommodation', icon: BookOpen, visible: currentStage === PipelineStage.ENROLLMENT },
         ].filter(t => t.visible).map((tab) => (
             <button
@@ -1058,30 +1058,112 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
         {activeTab === 'visa' && (
             <div className="space-y-6 animate-fade-in">
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <CreditCard className="w-5 h-5 text-indigo-600" />
-                        Vize Sonuç Takibi
-                    </h3>
-                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center justify-between">
-                         <div>
-                             <p className="text-sm font-bold text-indigo-900">Vize Sonucu</p>
-                             <p className="text-xs text-indigo-700">Vize onaylandığında öğrenci statüsünü güncelleyin.</p>
-                         </div>
-                         <button 
-                            onClick={async () => {
-                                try {
-                                    await studentService.update(student.id, { pipelineStage: PipelineStage.STUDENT });
-                                    setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.STUDENT }));
-                                    setCurrentStage(PipelineStage.STUDENT);
-                                } catch (e) {
-                                    console.error("Failed to approve visa", e);
-                                }
-                            }}
-                            className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"
-                         >
-                             Vize Onaylandı (Approved)
-                         </button>
+                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl shadow-slate-100/50">
+                    <div className="flex items-center gap-3 mb-8 pb-4 border-b border-slate-50">
+                        <div className="p-3 bg-indigo-50 rounded-2xl">
+                             <CreditCard className="w-6 h-6 text-indigo-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Vize Sonuç Takibi</h3>
+                            <p className="text-slate-500 text-sm font-medium">Öğrencinin vize başvuru sürecini buradan yönetebilirsiniz.</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* 1. Date Selection */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Calendar className="w-4 h-4" />
+                                Vize Başvuru Tarihi (date)
+                            </label>
+                            <input 
+                                type="date" 
+                                value={student.visaApplicationDate || ''} 
+                                onChange={async (e) => {
+                                    const date = e.target.value;
+                                    setStudent(prev => ({ ...prev, visaApplicationDate: date }));
+                                    try {
+                                        await studentService.update(student.id, { visaApplicationDate: date });
+                                    } catch (err) { console.error(err); }
+                                }}
+                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                            />
+                        </div>
+
+                        {/* 2. Country Selection */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Globe className="w-4 h-4" />
+                                Ülke
+                            </label>
+                            <select 
+                                value={student.visaCountry || ''} 
+                                onChange={async (e) => {
+                                    const country = e.target.value;
+                                    setStudent(prev => ({ ...prev, visaCountry: country }));
+                                    try {
+                                        await studentService.update(student.id, { visaCountry: country });
+                                    } catch (err) { console.error(err); }
+                                }}
+                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                            >
+                                <option value="">Seçiniz...</option>
+                                {COUNTRY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+
+                        {/* 3. Visa Type */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <FileText className="w-4 h-4" />
+                                Vize Tipi
+                            </label>
+                            <input 
+                                type="text" 
+                                placeholder="Örn: F-1 Student Visa"
+                                value={student.visaType || ''} 
+                                onChange={async (e) => {
+                                    const type = e.target.value;
+                                    setStudent(prev => ({ ...prev, visaType: type }));
+                                    try {
+                                        await studentService.update(student.id, { visaType: type });
+                                    } catch (err) { console.error(err); }
+                                }}
+                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                            />
+                        </div>
+
+                        {/* 4. Visa Status Selection */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Activity className="w-4 h-4" />
+                                Vize Sonucu (Status)
+                            </label>
+                            <select 
+                                value={student.visaStatus || 'Pending'} 
+                                onChange={async (e) => {
+                                    const status = e.target.value as 'Pending' | 'Approved' | 'Rejected';
+                                    const updates: Partial<Student> = { visaStatus: status };
+                                    if (status === 'Approved') {
+                                        updates.pipelineStage = PipelineStage.STUDENT;
+                                        setCurrentStage(PipelineStage.STUDENT);
+                                    }
+                                    setStudent(prev => ({ ...prev, ...updates }));
+                                    try {
+                                        await studentService.update(student.id, updates);
+                                    } catch (err) { console.error(err); }
+                                }}
+                                className={`w-full px-5 py-3.5 border rounded-2xl text-sm font-bold focus:ring-4 outline-none transition-all appearance-none cursor-pointer ${
+                                    student.visaStatus === 'Approved' ? 'bg-emerald-50 border-emerald-200 text-emerald-700 focus:ring-emerald-500/10' : 
+                                    student.visaStatus === 'Rejected' ? 'bg-rose-50 border-rose-200 text-rose-700 focus:ring-rose-500/10' : 
+                                    'bg-amber-50 border-amber-200 text-amber-700 focus:ring-amber-500/10'
+                                }`}
+                            >
+                                <option value="Pending">Pending</option>
+                                <option value="Rejected">Rejected</option>
+                                <option value="Approved">Approved</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1129,8 +1211,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 print:bg-white print:border-b print:border-slate-300">
                                     <tr>
-                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">University</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Country</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Üniversite</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Ülke</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">

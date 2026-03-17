@@ -31,13 +31,54 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  // Prepare chart data
-  const stageCounts = Object.values(PipelineStage).map(stage => ({
-    name: stage,
+  // 1. Students by STATUS (PipelineStage)
+  const statusCounts = Object.values(PipelineStage).map(stage => ({
+    name: stage.toUpperCase(),
     count: students.filter(s => s.pipelineStage === stage).length
   })).filter(d => d.count > 0);
 
-  const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+  // 2. Interested Countries (Aggregated from targetCountries & preferences)
+  const countryMap: Record<string, number> = {};
+  students.forEach(s => {
+    const countries = new Set([
+      ...(s.targetCountries || []),
+      s.analysis?.preferences?.country1,
+      s.analysis?.preferences?.country2,
+      s.analysis?.preferences?.country3
+    ].filter(Boolean));
+    
+    countries.forEach(c => {
+      countryMap[c!] = (countryMap[c!] || 0) + 1;
+    });
+  });
+  
+  const countryData = Object.entries(countryMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // 3. Visa Status (derived or explicitly set)
+  // If visaStatus is null/empty, we derive from stage: ENROLLMENT=In Progress, STUDENT=Approved
+  const visaStatusCounts = {
+    'Approved': 0,
+    'In Progress': 0,
+    'Not Started': 0,
+    'Rejected': 0
+  };
+
+  students.forEach(s => {
+    const status = s.visaStatus || (
+      s.pipelineStage === PipelineStage.STUDENT ? 'Approved' :
+      s.pipelineStage === PipelineStage.ENROLLMENT ? 'In Progress' : 'Not Started'
+    );
+    visaStatusCounts[status as keyof typeof visaStatusCounts]++;
+  });
+
+  const visaData = Object.entries(visaStatusCounts)
+    .map(([name, value]) => ({ name, value }))
+    .filter(d => d.value > 0);
+
+  const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
   const totalBudget = students.reduce((sum, s) => sum + (s.budget || 0), 0);
 
@@ -56,8 +97,8 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Counselor Dashboard</h2>
-        <p className="text-slate-500">Welcome back. Here's what's happening today.</p>
+        <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-wide">UNIC Dashboard</h2>
+        <p className="text-slate-500 font-medium mt-1">Platform genelindeki durumlara dair güncel veriler.</p>
       </div>
 
       {/* Stats Row */}
@@ -90,17 +131,21 @@ const Dashboard: React.FC = () => {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Chart 1: Students by STATUS */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Students by Pipeline Stage</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-base font-bold text-slate-800 uppercase tracking-wider">Students by STATUS</h3>
+            <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded">Overall Pipeline</span>
+          </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stageCounts}>
+              <BarChart data={statusCounts}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" hide />
-                <YAxis stroke="#94a3b8" fontSize={12} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10, fontWeight: 600}} />
+                <YAxis stroke="#94a3b8" axisLine={false} tickLine={false} fontSize={12} />
                 <Tooltip 
                   cursor={{fill: '#f8fafc'}}
-                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                  contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
                 />
                 <Bar dataKey="count" fill="#4F46E5" radius={[6, 6, 0, 0]} barSize={40} />
               </BarChart>
@@ -108,32 +153,73 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Chart 2: Interested Countries */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">Target Degrees</h3>
-          <div className="h-64 flex items-center justify-center">
+          <div className="flex items-center justify-between mb-6">
+             <h3 className="text-base font-bold text-slate-800 uppercase tracking-wider">Interested Countries</h3>
+             <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-1 rounded">Top 5 Regions</span>
+          </div>
+          <div className="h-64">
              <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: 'Master', value: 60 },
-                    { name: 'Bachelor', value: 30 },
-                    { name: 'PhD', value: 10 },
-                  ]}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {stageCounts.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
+              <BarChart 
+                layout="vertical"
+                data={countryData}
+                margin={{ left: 40 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                <XAxis type="number" axisLine={false} tickLine={false} hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{fill: '#475569', fontSize: 11, fontWeight: 700}}
+                />
+                <Tooltip 
+                  contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                />
+                <Bar dataKey="count" fill="#F59E0B" radius={[0, 6, 6, 0]} barSize={24} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* Chart 3: Visa Status */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
+           <div className="flex items-center justify-between mb-8">
+              <h3 className="text-base font-bold text-slate-800 uppercase tracking-wider">Visa Status Distribution</h3>
+              <div className="flex gap-4">
+                 {visaData.map((d, i) => (
+                    <div key={d.name} className="flex items-center gap-1.5">
+                       <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                       <span className="text-[10px] font-bold text-slate-500 uppercase">{d.name}</span>
+                    </div>
+                 ))}
+              </div>
+           </div>
+           <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={visaData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={8}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {visaData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+           </div>
         </div>
       </div>
     </div>
