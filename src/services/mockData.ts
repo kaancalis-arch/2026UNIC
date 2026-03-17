@@ -97,7 +97,7 @@ export const MOCK_STUDENTS: Student[] = [
     lastName: "Ojo",
     email: "m.ojo@example.com",
     phone: "+234 800 000",
-    pipelineStage: PipelineStage.OFFER,
+    pipelineStage: PipelineStage.ENROLLMENT,
     gpa: 3.5,
     targetDegree: "Master",
     targetCountries: ["UK"],

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument } from '../types';
+import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication } from '../types';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
@@ -37,7 +37,8 @@ import {
   AlertTriangle,
   Printer,
   FileDown,
-  Loader2
+  Loader2,
+  Plus
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -118,6 +119,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     educationStatus: ''
   });
 
+  const [activeAnalyseStatus, setActiveAnalyseStatus] = useState<AnalyseStatus>(student.analyseStatus || 'Mid');
+  const [showAnalyseStatus, setShowAnalyseStatus] = useState(false);
+  
+  // School Application State
+  const [newApp, setNewApp] = useState<Partial<UniversityApplication>>({
+    universityName: '',
+    programName: '',
+    status: 'Başvuru Aşamasında',
+    notes: ''
+  });
+  const [showAppForm, setShowAppForm] = useState(false);
+
   useEffect(() => {
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
@@ -135,6 +148,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const handleStageChange = async (newStage: PipelineStage) => {
+      // Logic for automatic stage transitions based on actions is handled in specific buttons
+      // But we keep this for manual override if needed (though user asked for not manually selected)
       setCurrentStage(newStage);
       try {
         await studentService.update(student.id, { pipelineStage: newStage });
@@ -142,6 +157,59 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       } catch (e) {
         console.error("Failed to update stage", e);
       }
+  };
+
+  const handleSetAnalyseStatus = async (status: AnalyseStatus) => {
+    setActiveAnalyseStatus(status);
+    try {
+        await studentService.update(student.id, { analyseStatus: status });
+        setStudent(prev => ({ ...prev, analyseStatus: status }));
+    } catch (e) {
+        console.error("Failed to update analyse status", e);
+    }
+  };
+
+  const handleAddApplication = async () => {
+    if (!newApp.universityName || !newApp.programName) return;
+    const application: UniversityApplication = {
+        id: Math.random().toString(36).substr(2, 9),
+        universityName: newApp.universityName!,
+        programName: newApp.programName!,
+        status: newApp.status as ApplicationStatus,
+        notes: newApp.notes
+    };
+    const updatedApps = [...(student.applications || []), application];
+    try {
+        await studentService.update(student.id, { applications: updatedApps });
+        setStudent(prev => ({ ...prev, applications: updatedApps }));
+        setNewApp({ universityName: '', programName: '', status: 'Başvuru Aşamasında', notes: '' });
+        setShowAppForm(false);
+    } catch (e) {
+        console.error("Failed to add application", e);
+    }
+  };
+
+  const updateAppStatus = async (appId: string, status: ApplicationStatus) => {
+    const updatedApps = student.applications?.map(app => 
+        app.id === appId ? { ...app, status } : app
+    );
+    try {
+        await studentService.update(student.id, { applications: updatedApps });
+        setStudent(prev => ({ ...prev, applications: updatedApps }));
+    } catch (e) {
+        console.error("Failed to update app status", e);
+    }
+  };
+
+  const handleEnrollment = async (appId: string) => {
+    try {
+        await studentService.update(student.id, { pipelineStage: PipelineStage.ENROLLMENT });
+        setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.ENROLLMENT }));
+        setCurrentStage(PipelineStage.ENROLLMENT);
+        setActiveTab('enrollment');
+    } catch (e) {
+        console.error("Failed to start enrollment", e);
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -438,12 +506,31 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     try {
       const result = await analyzeStudentProfile(student);
       setAnalysis(result);
+      
+      // Automatic Transition to Analyse Stage
+      if (currentStage === PipelineStage.FOLLOW) {
+          await studentService.update(student.id, { pipelineStage: PipelineStage.ANALYSE });
+          setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.ANALYSE }));
+          setCurrentStage(PipelineStage.ANALYSE);
+      }
+      
       setActiveTab('analysis');
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRegisterRecord = async () => {
+      try {
+          await studentService.update(student.id, { pipelineStage: PipelineStage.PROCESS });
+          setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.PROCESS }));
+          setCurrentStage(PipelineStage.PROCESS);
+          setActiveTab('contracts');
+      } catch (e) {
+          console.error("Failed to register record", e);
+      }
   };
 
   const handleGenerateRoadmap = async () => {
@@ -536,10 +623,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     value={currentStage}
                     onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
                     className={`appearance-none cursor-pointer pl-3 pr-8 py-1 rounded-full text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-offset-1 transition-all ${
-                        currentStage === PipelineStage.STUDY ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
-                        currentStage === PipelineStage.OFFER ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
+                        currentStage === PipelineStage.STUDENT ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
+                        currentStage === PipelineStage.ENROLLMENT ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
                         currentStage === PipelineStage.NOT_INTERESTED ? 'bg-slate-200 text-slate-700 focus:ring-slate-500' :
-                        currentStage === PipelineStage.NEW_LEAD ? 'bg-blue-100 text-blue-700 focus:ring-blue-500' :
                         'bg-indigo-100 text-indigo-700 focus:ring-indigo-500'
                     }`}
                 >
@@ -576,7 +662,37 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <span className="flex items-center gap-1.5"><Mail className="w-4 h-4 text-slate-400"/> {student.parentInfo.email}</span>
                  </div>
              )}
+          
+          {/* Action Area for Stages */}
+          <div className="mt-4 flex gap-3 print:hidden">
+              {currentStage === PipelineStage.ANALYSE && (
+                  <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-xl border border-indigo-100">
+                      <span className="text-xs font-bold text-indigo-700 ml-2">Analyse Status:</span>
+                      {(['Mid', 'Hot', 'Super Hot'] as AnalyseStatus[]).map(status => (
+                          <button 
+                            key={status}
+                            onClick={() => handleSetAnalyseStatus(status)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                activeAnalyseStatus === status 
+                                ? 'bg-indigo-600 text-white shadow-md' 
+                                : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-100'
+                            }`}
+                          >
+                              {status}
+                          </button>
+                      ))}
+                      <div className="w-px h-6 bg-indigo-200 mx-2" />
+                      <button 
+                         onClick={handleRegisterRecord}
+                         className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-bold"
+                      >
+                          <Save className="w-3.5 h-3.5" />
+                          Kayıt Oluştur
+                      </button>
+                  </div>
+              )}
           </div>
+       </div>
         </div>
         <div className="flex gap-2 print:hidden">
              <button 
@@ -615,11 +731,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-slate-200 print:hidden">
         {[
-          { id: 'profile', label: 'Profil', icon: User },
-          { id: 'documents', label: 'Dokümanlar', icon: FileText },
-          { id: 'analysis', label: 'AI Analiz', icon: Sparkles },
-          { id: 'roadmap', label: 'Yol Haritası', icon: MapIcon },
-        ].map((tab) => (
+          { id: 'profile', label: 'Profil', icon: User, visible: true },
+          { id: 'analysis', label: 'AI Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
+          { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
+          { id: 'application', label: 'Application', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
+          { id: 'enrollment', label: 'Enrollment', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
+          { id: 'visa', label: 'Vize Seçıon', icon: CreditCard, visible: currentStage === PipelineStage.ENROLLMENT },
+          { id: 'accommodation', label: 'Accommodation', icon: BookOpen, visible: currentStage === PipelineStage.ENROLLMENT },
+        ].filter(t => t.visible).map((tab) => (
             <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
@@ -741,7 +860,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             </div>
 
             <div className="space-y-6 print:mt-6">
-                {(currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.OFFER) && (
+                {(currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT) && (
                     <div className={`p-6 rounded-2xl border shadow-sm transition-all ${getProgressBg(documentStatus.percentage)} print:border-slate-300 print:bg-white`}>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
@@ -847,8 +966,147 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             </div>
         )}
 
+        {activeTab === 'application' && (
+            <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-slate-800">Okul Başvuruları</h3>
+                    <button 
+                        onClick={() => setShowAppForm(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 text-sm font-medium"
+                    >
+                        <Plus className="w-4 h-4" /> Başvuru Ekle
+                    </button>
+                </div>
+
+                {showAppForm && (
+                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                         <div className="grid grid-cols-2 gap-4">
+                             <input placeholder="Okul Adı" value={newApp.universityName} onChange={e => setNewApp({...newApp, universityName: e.target.value})} className="border p-2 rounded text-sm"/>
+                             <input placeholder="Bölüm Adı" value={newApp.programName} onChange={e => setNewApp({...newApp, programName: e.target.value})} className="border p-2 rounded text-sm"/>
+                         </div>
+                         <div className="flex gap-4">
+                             <select value={newApp.status} onChange={e => setNewApp({...newApp, status: e.target.value as any})} className="border p-2 rounded text-sm flex-1">
+                                 <option value="Başvuru Aşamasında">Başvuru Aşamasında</option>
+                                 <option value="Sonuç Bekleniyor">Sonuç Bekleniyor</option>
+                                 <option value="Şartlı Kabul">Şartlı Kabul</option>
+                                 <option value="Kabul">Kabul</option>
+                                 <option value="Red">Red</option>
+                             </select>
+                             <button onClick={handleAddApplication} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold">Ekle</button>
+                         </div>
+                     </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4">
+                    {student.applications?.map(app => (
+                        <div key={app.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                            <div className="flex gap-4 items-center">
+                                <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600">
+                                    <GraduationCap className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-slate-800">{app.universityName}</h4>
+                                    <p className="text-sm text-slate-500">{app.programName}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <select 
+                                    value={app.status} 
+                                    onChange={(e) => updateAppStatus(app.id, e.target.value as any)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                        app.status === 'Kabul' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        app.status === 'Red' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                        'bg-slate-50 text-slate-600 border-slate-200'
+                                    }`}
+                                >
+                                    <option value="Başvuru Aşamasında">Başvuru Aşamasında</option>
+                                    <option value="Sonuç Bekleniyor">Sonuç Bekleniyor</option>
+                                    <option value="Şartlı Kabul">Şartlı Kabul</option>
+                                    <option value="Kabul">Kabul</option>
+                                    <option value="Red">Red</option>
+                                </select>
+                                {app.status === 'Kabul' && (
+                                    <button 
+                                        onClick={() => handleEnrollment(app.id)}
+                                        className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shadow-md"
+                                    >
+                                        İşlem Sürecine Geç
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    {(!student.applications || student.applications.length === 0) && (
+                        <div className="p-10 border-2 border-dashed border-slate-200 rounded-2xl text-center text-slate-400">
+                            Henüz başvuru girişi yapılmadı.
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
+        {activeTab === 'enrollment' && (
+            <div className="p-10 text-center bg-emerald-50 border border-emerald-100 rounded-2xl">
+                <CheckCircle className="w-12 h-12 text-emerald-600 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-emerald-900">Kayıt & İşlem Süreci</h3>
+                <p className="text-emerald-700 mt-2">Öğrenci okuldan kabul aldığı için kayıt ve vize işlemleri başlatılmıştır.</p>
+            </div>
+        )}
+
+        {activeTab === 'visa' && (
+            <div className="space-y-6 animate-fade-in">
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-indigo-600" />
+                        Vize Sonuç Takibi
+                    </h3>
+                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center justify-between">
+                         <div>
+                             <p className="text-sm font-bold text-indigo-900">Vize Sonucu</p>
+                             <p className="text-xs text-indigo-700">Vize onaylandığında öğrenci statüsünü güncelleyin.</p>
+                         </div>
+                         <button 
+                            onClick={async () => {
+                                try {
+                                    await studentService.update(student.id, { pipelineStage: PipelineStage.STUDENT });
+                                    setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.STUDENT }));
+                                    setCurrentStage(PipelineStage.STUDENT);
+                                } catch (e) {
+                                    console.error("Failed to approve visa", e);
+                                }
+                            }}
+                            className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"
+                         >
+                             Vize Onaylandı (Approved)
+                         </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {activeTab === 'contracts' && (
+             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl">
+                 <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                 <h3 className="text-xl font-bold text-slate-800">Sözleşme Bölümü</h3>
+                 <p className="text-slate-500 mt-2">Bu bölümdeki sözleşmeler ve finansal belgeler yakında eklenecek.</p>
+             </div>
+        )}
+
+        {activeTab === 'accommodation' && (
+             <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl">
+                 <BookOpen className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                 <h3 className="text-xl font-bold text-slate-800">Accommodation</h3>
+                 <p className="text-slate-500 mt-2">Konaklama bilgileri ve başvuru detayları yakında eklenecek.</p>
+             </div>
+        )}
+
         {activeTab === 'analysis' && (
            <div className="space-y-6 animate-fade-in">
+               {!analysis && (
+                   <div className="p-10 text-center text-slate-400">
+                        Henüz AI Analizi yapılmadı. Lütfen üstteki "Run UNIC Analysis" butonuna tıklayın.
+                   </div>
+               )}
                {analysis && (
                    <>
                     <div className="grid grid-cols-3 gap-6 print:grid-cols-1 print:gap-4">

@@ -1,11 +1,23 @@
 
 export enum PipelineStage {
-  NEW_LEAD = 'New Lead',
+  FOLLOW = 'Follow',
   ANALYSE = 'Analyse',
   PROCESS = 'Process',
-  OFFER = 'Offer',
-  STUDY = 'Study',
+  ENROLLMENT = 'Enrollment',
+  STUDENT = 'Student',
   NOT_INTERESTED = 'Not Interested'
+}
+
+export type AnalyseStatus = 'Mid' | 'Hot' | 'Super Hot';
+
+export type ApplicationStatus = 'Başvuru Aşamasında' | 'Sonuç Bekleniyor' | 'Şartlı Kabul' | 'Kabul' | 'Red';
+
+export interface UniversityApplication {
+  id: string;
+  universityName: string;
+  programName: string;
+  status: ApplicationStatus;
+  notes?: string;
 }
 
 export enum UserRole {
@@ -137,6 +149,10 @@ export interface Student {
   // Hierarchy
   counselorId?: string; // The ID of the Consultant managing this student
   representativeId?: string; // The ID of the Representative (if applicable)
+
+  // Stage Specific Data
+  analyseStatus?: AnalyseStatus;
+  applications?: UniversityApplication[];
 }
 
 export interface AnalysisResult {

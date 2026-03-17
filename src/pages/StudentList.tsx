@@ -174,7 +174,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     try {
         const newStudentPayload: Partial<Student> = {
             ...formData,
-            pipelineStage: PipelineStage.NEW_LEAD,
+            pipelineStage: PipelineStage.FOLLOW,
             targetCountries: [],
             interests: [],
             budget: 0,
@@ -1039,10 +1039,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                 </td>
                 <td className="py-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                    student.pipelineStage === PipelineStage.NEW_LEAD ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                    student.pipelineStage === PipelineStage.FOLLOW ? 'bg-blue-50 text-blue-600 border-blue-100' :
                     student.pipelineStage === PipelineStage.ANALYSE ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
                     student.pipelineStage === PipelineStage.PROCESS ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                    student.pipelineStage === PipelineStage.OFFER ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                    student.pipelineStage === PipelineStage.ENROLLMENT ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                    student.pipelineStage === PipelineStage.STUDENT ? 'bg-violet-50 text-violet-600 border-violet-100' :
                     'bg-slate-50 text-slate-600 border-slate-100'
                   }`}>
                     {student.pipelineStage}

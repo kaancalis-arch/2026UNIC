@@ -50,8 +50,8 @@ const Dashboard: React.FC = () => {
           color="bg-amber-500" 
         />
         <StatCard 
-          title="Offers Received" 
-          value={MOCK_STUDENTS.filter(s => s.pipelineStage === PipelineStage.OFFER).length} 
+          title="Enrollment" 
+          value={MOCK_STUDENTS.filter(s => s.pipelineStage === PipelineStage.ENROLLMENT).length} 
           icon={CheckCircle} 
           color="bg-emerald-500" 
         />
