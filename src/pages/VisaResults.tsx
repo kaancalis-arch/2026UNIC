@@ -3,6 +3,8 @@ import { Award, CheckCircle, Clock, XCircle, Search, Filter, TrendingUp, Users, 
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Student, PipelineStage } from '../types';
 import { studentService } from '../services/studentService';
+import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
+
 
 const VisaResults: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
@@ -245,8 +247,22 @@ const VisaResults: React.FC = () => {
                   <span className="font-medium text-slate-800">{result.student}</span>
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-slate-600">{result.country}</span>
+                  <div className="flex items-center gap-2">
+                    {getCountryCode(result.country) ? (
+                      <img 
+                        src={`https://flagcdn.com/w40/${getCountryCode(result.country).toLowerCase()}.png`}
+                        alt={result.country}
+                        className="w-4 h-4 rounded-full object-cover border border-slate-100 shadow-sm"
+                      />
+                    ) : (
+                      <span className="w-4 h-4 flex items-center justify-center bg-slate-100 rounded-full text-[10px] border border-slate-200">
+                        {getFlagEmoji(result.country)}
+                      </span>
+                    )}
+                    <span className="text-sm font-semibold text-slate-600">{result.country}</span>
+                  </div>
                 </td>
+
                 <td className="px-6 py-4">
                   <span className="text-sm text-slate-600">{result.type}</span>
                 </td>

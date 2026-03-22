@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Map, Search, Globe, GraduationCap, BookOpen, Clock, CheckCircle2, ChevronRight, Info, AlertCircle, FileText, ClipboardList } from 'lucide-react';
+import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
+
 
 interface RoadmapGuide {
   id: string;
@@ -100,7 +102,7 @@ const Roadmaps: React.FC = () => {
                             className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all appearance-none cursor-pointer"
                         >
                             <option value="">Seçiniz...</option>
-                            {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            {COUNTRIES.map(c => <option key={c} value={c}>{getFlagEmoji(c)} {c}</option>)}
                         </select>
                     </div>
 
@@ -153,12 +155,21 @@ const Roadmaps: React.FC = () => {
                     <div className="lg:col-span-2 space-y-8">
                         {/* Overview Section */}
                         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm border-l-8 border-l-indigo-600">
-                             <div className="flex items-center gap-3 mb-6">
-                                <div className="p-2.5 bg-indigo-50 rounded-xl">
-                                    <Info className="w-6 h-6 text-indigo-600" />
-                                </div>
-                                <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wider">{activeGuide.country} {activeGuide.department} Rehberi</h3>
-                             </div>
+                                 <div className="flex items-center gap-3">
+                                   {getCountryCode(activeGuide.country) ? (
+                                     <img 
+                                       src={`https://flagcdn.com/w40/${getCountryCode(activeGuide.country).toLowerCase()}.png`}
+                                       alt={activeGuide.country}
+                                       className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xl ring-2 ring-indigo-100"
+                                     />
+                                   ) : (
+                                     <span className="w-10 h-10 flex items-center justify-center bg-white rounded-full text-xl shadow-sm border border-slate-100">
+                                       {getFlagEmoji(activeGuide.country)}
+                                     </span>
+                                   )}
+                                   <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wider">{activeGuide.country} {activeGuide.department} Rehberi</h3>
+                                 </div>
+
                              <p className="text-slate-600 leading-relaxed text-lg italic">
                                 "{activeGuide.overview}"
                              </p>

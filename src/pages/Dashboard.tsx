@@ -3,6 +3,7 @@ import { Student, PipelineStage } from '../types';
 import { studentService } from '../services/studentService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Users, AlertTriangle, CheckCircle, DollarSign } from 'lucide-react';
+import { getFlagEmoji } from '../utils/countryUtils';
 
 const Dashboard: React.FC = () => {
   const [students, setStudents] = React.useState<Student[]>([]);
@@ -53,7 +54,10 @@ const Dashboard: React.FC = () => {
   });
   
   const countryData = Object.entries(countryMap)
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, count]) => ({ 
+      name: `${getFlagEmoji(name)} ${name}`, 
+      count 
+    }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 

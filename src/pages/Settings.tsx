@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, InterestedProgramData } from '../types';
 import { MOCK_USERS, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
+import { mainDegreeService } from '../services/mainDegreeService';
+import { interestedProgramService } from '../services/interestedProgramService';
 import { systemService } from '../services/systemService';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
@@ -41,7 +43,7 @@ const DefinitionCard = ({ id, title, icon: Icon, count, onClick }: any) => (
             </div>
             <div>
                 <h4 className="font-bold text-slate-800">{title}</h4>
-                <p className="text-sm text-slate-500">{count} records defined</p>
+                <p className="text-sm text-slate-500">{count} kayıt tanımlı</p>
             </div>
         </div>
         <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-slate-100">
@@ -75,6 +77,31 @@ const Settings: React.FC = () => {
         departmentsUrl: '',
         tuitionRange: ''
     });
+
+    // Main Degree State
+    const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
+    const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
+    const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
+    const [mainDegreeForm, setMainDegreeForm] = useState<MainDegreeData>({
+        id: '',
+        name: '',
+        description: '',
+        careerOpportunities: '',
+        aiImpact: '',
+        topCompanies: '',
+        sectorStatusTR: '',
+        imageUrl: ''
+    });
+
+    // Interested Program State (New)
+    const [interestedPrograms, setInterestedPrograms] = useState<InterestedProgramData[]>([]);
+    const [isLoadingInterestedPrograms, setIsLoadingInterestedPrograms] = useState(false);
+    const [isInterestedProgramModalOpen, setIsInterestedProgramModalOpen] = useState(false);
+    const [interestedProgramForm, setInterestedProgramForm] = useState<InterestedProgramData>({
+        id: '',
+        name: '',
+        description: ''
+    });
     
     // Tuition Ranges State
     const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
@@ -100,9 +127,12 @@ const Settings: React.FC = () => {
             loadCountries();
         } else if (selectedDefinitionType === 'universities') {
             loadUniversities();
-            // We also need countries loaded to populate the dropdown in the Add University modal
             loadCountries(); 
             loadTuitionRanges();
+        } else if (selectedDefinitionType === 'degrees') {
+            loadMainDegrees();
+        } else if (selectedDefinitionType === 'interested_programs') {
+            loadInterestedPrograms();
         }
     }, [selectedDefinitionType]);
 
@@ -139,6 +169,30 @@ const Settings: React.FC = () => {
             setTuitionRanges(ranges);
         } catch (error) {
             console.error('Failed to load tuition ranges', error);
+        }
+    };
+
+    const loadMainDegrees = async () => {
+        setIsLoadingMainDegrees(true);
+        try {
+            const data = await mainDegreeService.getAll();
+            setMainDegrees(data);
+        } catch (error) {
+            console.error('Failed to load main degrees', error);
+        } finally {
+            setIsLoadingMainDegrees(false);
+        }
+    };
+
+    const loadInterestedPrograms = async () => {
+        setIsLoadingInterestedPrograms(true);
+        try {
+            const data = await interestedProgramService.getAll();
+            setInterestedPrograms(data);
+        } catch (error) {
+            console.error('Failed to load interested programs', error);
+        } finally {
+            setIsLoadingInterestedPrograms(false);
         }
     };
 
@@ -238,6 +292,98 @@ const Settings: React.FC = () => {
         } catch (error) {
             console.error("Failed to delete", error);
         }
+    };
+
+    // --- MAIN DEGREE LOGIC ---
+    const handleAddMainDegree = () => {
+        setMainDegreeForm({
+            id: `deg-${Date.now()}`,
+            name: '',
+            description: '',
+            careerOpportunities: '',
+            aiImpact: '',
+            topCompanies: '',
+            sectorStatusTR: '',
+            imageUrl: ''
+        });
+        setIsMainDegreeModalOpen(true);
+    };
+
+    const handleEditMainDegree = (deg: MainDegreeData) => {
+        setMainDegreeForm(deg);
+        setIsMainDegreeModalOpen(true);
+    };
+
+    const handleSaveMainDegree = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const savedDeg = await mainDegreeService.upsert(mainDegreeForm);
+            setMainDegrees(prev => {
+                const idx = prev.findIndex(d => d.id === savedDeg.id);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = savedDeg;
+                    return updated;
+                }
+                return [savedDeg, ...prev];
+            });
+            setIsMainDegreeModalOpen(false);
+        } catch (error) {
+            console.error("Failed to save main degree", error);
+            alert("Failed to save main degree");
+        }
+    };
+
+    const handleDeleteMainDegree = async (id: string) => {
+        if(!window.confirm("Are you sure you want to delete this degree?")) return;
+        try {
+            await mainDegreeService.delete(id);
+            setMainDegrees(prev => prev.filter(d => d.id !== id));
+        } catch (error) {
+            console.error("Failed to delete main degree", error);
+        }
+    };
+
+    // --- INTERESTED PROGRAM LOGIC ---
+    const handleAddInterestedProgram = () => {
+        setInterestedProgramForm({
+            id: `intp-${Date.now()}`,
+            name: '',
+            description: ''
+        });
+        setIsInterestedProgramModalOpen(true);
+    };
+
+    const handleEditInterestedProgram = (prog: InterestedProgramData) => {
+        setInterestedProgramForm(prog);
+        setIsInterestedProgramModalOpen(true);
+    };
+
+    const handleSaveInterestedProgram = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const savedProg = await interestedProgramService.upsert(interestedProgramForm);
+            setInterestedPrograms(prev => {
+                const idx = prev.findIndex(p => p.id === savedProg.id);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = savedProg;
+                    return updated;
+                }
+                return [savedProg, ...prev];
+            });
+            setIsInterestedProgramModalOpen(false);
+        } catch (error) {
+            console.error("Failed to save interested program", error);
+        }
+    };
+
+    const handleDeleteInterestedProgram = async (id: string) => {
+        if(!window.confirm("Are you sure?")) return;
+        try {
+            await interestedProgramService.delete(id);
+            setInterestedPrograms(prev => prev.filter(p => p.id !== id));
+        } catch (error) { console.error(error); }
     };
 
     // --- COUNTRY MANAGEMENT LOGIC ---
@@ -540,6 +686,151 @@ const Settings: React.FC = () => {
         </div>
     );
 
+    const renderMainDegreeManager = () => (
+        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+             <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-slate-600" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Main Degrees</h3>
+                        <p className="text-sm text-slate-500">Define academic main degrees with career and AI impact details.</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleAddMainDegree}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                    <Plus className="w-4 h-4" />
+                    New Main Degree
+                </button>
+            </div>
+
+            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                <th className="px-6 py-4 font-semibold">Degree Name</th>
+                                <th className="px-6 py-4 font-semibold">Description</th>
+                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {isLoadingMainDegrees ? (
+                                <tr>
+                                    <td colSpan={3} className="p-10 text-center text-slate-500">Loading degrees...</td>
+                                </tr>
+                            ) : mainDegrees.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="p-10 text-center text-slate-500">No degrees defined yet.</td>
+                                </tr>
+                            ) : (
+                                mainDegrees.map(deg => (
+                                    <tr key={deg.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
+                                                    {deg.imageUrl ? (
+                                                        <img src={deg.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <BookOpen className="w-6 h-6 text-slate-300" />
+                                                    )}
+                                                </div>
+                                                <span className="font-bold text-slate-800">{deg.name}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <p className="text-sm text-slate-500 line-clamp-2 max-w-md">{deg.description}</p>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button 
+                                                    onClick={() => handleEditMainDegree(deg)}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDeleteMainDegree(deg.id)}
+                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderInterestedProgramManager = () => (
+        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+             <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-slate-600" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Interested Programs</h3>
+                        <p className="text-sm text-slate-500">Manage list of programs prospective students can choose.</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleAddInterestedProgram}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                    <Plus className="w-4 h-4" />
+                    New Program
+                </button>
+            </div>
+
+            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                <th className="px-6 py-4 font-semibold">Program Name</th>
+                                <th className="px-6 py-4 font-semibold">Description</th>
+                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {isLoadingInterestedPrograms ? (
+                                <tr>
+                                    <td colSpan={3} className="p-10 text-center text-slate-500">Loading programs...</td>
+                                </tr>
+                            ) : interestedPrograms.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="p-10 text-center text-slate-500">No programs defined yet.</td>
+                                </tr>
+                            ) : (
+                                interestedPrograms.map(prog => (
+                                    <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-bold text-slate-800">{prog.name}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{prog.description}</td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => handleEditInterestedProgram(prog)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteInterestedProgram(prog.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
     const renderCountryManager = () => {
         const selectedCountry = countries.find(c => c.id === selectedCountryId) || (countries.length > 0 ? countries[0] : countryForm);
         const dataToShow = isEditingCountry ? countryForm : selectedCountry;
@@ -627,7 +918,7 @@ const Settings: React.FC = () => {
                                                 value={countryForm.name} 
                                                 onChange={(e) => updateCountryField('name', e.target.value)}
                                                 className="bg-transparent border-b border-white/50 text-3xl font-bold text-white placeholder-white/50 focus:outline-none focus:border-white w-full max-w-md"
-                                                placeholder="Country Name"
+                                                placeholder="Ülke Adı"
                                             />
                                         </div>
                                     ) : (
@@ -653,7 +944,7 @@ const Settings: React.FC = () => {
                                             onClick={() => setIsEditingCountry(false)}
                                             className="px-4 py-2 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-lg text-white text-sm font-medium transition-colors"
                                         >
-                                            Cancel
+                                            İptal
                                         </button>
                                         <button 
                                             onClick={handleSaveCountry}
@@ -661,7 +952,7 @@ const Settings: React.FC = () => {
                                             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white text-sm font-bold shadow-lg transition-colors flex items-center gap-2 disabled:opacity-70"
                                         >
                                             {isSavingCountry ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4" />} 
-                                            Save
+                                            Değişiklikleri Kaydet
                                         </button>
                                     </div>
                                 )}
@@ -937,7 +1228,7 @@ const Settings: React.FC = () => {
                                 {/* CITIES */}
                                     <div>
                                     <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <Building className="w-5 h-5 text-slate-500" /> Major Cities
+                                        <Building className="w-5 h-5 text-slate-500" /> Önemli Şehirler
                                     </h4>
                                     {isEditingCountry ? (
                                         <textarea 
@@ -960,7 +1251,7 @@ const Settings: React.FC = () => {
                                     {/* Education System Desc */}
                                     <div>
                                     <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <BookOpen className="w-5 h-5 text-slate-500" /> General Education System Note
+                                        <BookOpen className="w-5 h-5 text-slate-500" /> Genel Eğitim Sistemi Notu
                                     </h4>
                                     {isEditingCountry ? (
                                         <textarea 
@@ -992,15 +1283,15 @@ const Settings: React.FC = () => {
             {!selectedDefinitionType && (
                 <>
                     <div>
-                        <h2 className="text-2xl font-bold text-slate-800">System Settings</h2>
-                        <p className="text-slate-500">Manage users, roles, and global configurations.</p>
+                        <h2 className="text-2xl font-bold text-slate-800">Sistem Ayarları</h2>
+                        <p className="text-slate-500">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
                     </div>
 
                     <div className="flex gap-6 border-b border-slate-200">
                         {[
-                            { id: 'users', label: 'User Management', icon: Users },
-                            { id: 'definitions', label: 'System Definitions', icon: Building },
-                            { id: 'career', label: 'Career Module', icon: Briefcase },
+                            { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
+                            { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
+                            { id: 'career', label: 'Kariyer & Yaşam', icon: Briefcase },
                         ].map((tab) => (
                             <button
                                 key={tab.id}
@@ -1028,31 +1319,38 @@ const Settings: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
                             <DefinitionCard 
                                 id="countries"
-                                title="Countries" 
+                                title="Ülkeler" 
                                 icon={Globe} 
                                 count={countries.length || 0} 
                                 onClick={(id: string) => setSelectedDefinitionType(id)} 
                             />
                             <DefinitionCard 
                                 id="universities"
-                                title="Universities" 
+                                title="Üniversiteler" 
                                 icon={GraduationCap} 
                                 count={universities.length || 0} 
                                 onClick={(id: string) => setSelectedDefinitionType(id)}
                             />
                             <DefinitionCard 
-                                id="programs"
-                                title="Programs / Majors" 
-                                icon={Building} 
-                                count={350} 
-                                onClick={(id: string) => alert('Program module coming soon')}
+                                id="degrees"
+                                title="Bölüm Tanımları" 
+                                icon={Globe} 
+                                count={mainDegrees.length || 0} 
+                                onClick={(id: string) => setSelectedDefinitionType(id)}
+                            />
+                            <DefinitionCard 
+                                id="interested_programs"
+                                title="Program Tanımları" 
+                                icon={Briefcase} 
+                                count={interestedPrograms.length || 0} 
+                                onClick={(id: string) => setSelectedDefinitionType(id)}
                             />
                             <DefinitionCard 
                                 id="docs"
-                                title="Document Types" 
+                                title="Evrak Türleri" 
                                 icon={Shield} 
                                 count={18} 
-                                onClick={(id: string) => alert('Document module coming soon')}
+                                onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
                             />
                         </div>
                     )}
@@ -1060,32 +1358,34 @@ const Settings: React.FC = () => {
                     {/* Sub Views */}
                     {selectedDefinitionType === 'countries' && renderCountryManager()}
                     {selectedDefinitionType === 'universities' && renderUniversityManager()}
+                    {selectedDefinitionType === 'degrees' && renderMainDegreeManager()}
+                    {selectedDefinitionType === 'interested_programs' && renderInterestedProgramManager()}
                 </>
             )}
 
             {activeTab === 'career' && !selectedDefinitionType && (
                  <div className="bg-white p-10 rounded-2xl border border-dashed border-slate-300 text-center animate-fade-in">
                     <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-slate-700">Career Module Settings</h3>
-                    <p className="text-slate-500 mb-6">Configure BigFive and Holland test parameters here.</p>
+                    <h3 className="text-lg font-bold text-slate-700">Kariyer Modülü Ayarları</h3>
+                    <p className="text-slate-500 mb-6">BigFive ve Holland test parametrelerini buradan düzenleyebilirsiniz.</p>
                     <button className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors font-medium">
-                        Configure Parameters
+                        Parametreleri Düzenle
                     </button>
                  </div>
             )}
 
             {/* Add User Modal */}
             {isUserModalOpen && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-slate-800">Add New User</h3>
+                            <h3 className="font-bold text-lg text-slate-800">Yeni Kullanıcı Ekle</h3>
                             <button onClick={() => setIsUserModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleAddUser} className="p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Ad</label>
                                     <input 
                                         required
                                         value={newUser.firstName} 
@@ -1094,7 +1394,7 @@ const Settings: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Soyad</label>
                                     <input 
                                         required
                                         value={newUser.lastName} 
@@ -1104,7 +1404,7 @@ const Settings: React.FC = () => {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
                                 <input 
                                     required
                                     type="email"
@@ -1114,7 +1414,7 @@ const Settings: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
                                 <select 
                                     value={newUser.role} 
                                     onChange={e => {
@@ -1171,8 +1471,8 @@ const Settings: React.FC = () => {
 
             {/* University Add/Edit Modal */}
             {isUniversityModalOpen && (
-                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                             <h3 className="font-bold text-lg text-slate-800">
                                 {universityForm.id.startsWith('uni-') && !universities.find(u => u.id === universityForm.id) ? 'Add New University' : 'Edit University'}
@@ -1200,7 +1500,7 @@ const Settings: React.FC = () => {
                                         onChange={e => setUniversityForm({...universityForm, country: e.target.value})}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                     >
-                                        <option value="">Select Country</option>
+                                        <option value="">Ülke Seçiniz</option>
                                         {countries.map(c => (
                                             <option key={c.id} value={c.name}>{c.name}</option>
                                         ))}
@@ -1248,15 +1548,14 @@ const Settings: React.FC = () => {
                                     />
                                 </div>
                             </div>
-                            
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Tuition Range</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Ücret Aralığı</label>
                                 <select 
                                     value={universityForm.tuitionRange} 
                                     onChange={e => setUniversityForm({...universityForm, tuitionRange: e.target.value})}
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                 >
-                                    <option value="">Select Range</option>
+                                    <option value="">Aralık Seçiniz</option>
                                     {tuitionRanges.map(range => (
                                         <option key={range} value={range}>{range}</option>
                                     ))}
@@ -1264,13 +1563,160 @@ const Settings: React.FC = () => {
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3">
-                                <button type="button" onClick={() => setIsUniversityModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">Cancel</button>
-                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Save University</button>
+                                <button type="button" onClick={() => setIsUniversityModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">İptal</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Üniversiteyi Kaydet</button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
+            {/* Main Degree Add/Edit Modal */}
+            {isMainDegreeModalOpen && (
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {mainDegrees.find(d => d.id === mainDegreeForm.id) ? 'Bölüm Tanımını Düzenle' : 'Yeni Bölüm Tanımı Ekle'}
+                            </h3>
+                            <button onClick={() => setIsMainDegreeModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <form onSubmit={handleSaveMainDegree} className="p-6 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Adı (Main Degree/Major Name)</label>
+                                    <input 
+                                        required
+                                        value={mainDegreeForm.name} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, name: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="e.g. Bilgisayar Mühendisliği"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Tanımı</label>
+                                    <textarea 
+                                        required
+                                        rows={3}
+                                        value={mainDegreeForm.description} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, description: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="Bölüm hakkında genel bilgi..."
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Kariyer Fırsatları</label>
+                                    <textarea 
+                                        rows={4}
+                                        value={mainDegreeForm.careerOpportunities} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, careerOpportunities: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="Mezunlar hangi pozisyonlarda çalışabilir?"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Yapay Zekanın Etkisi</label>
+                                    <textarea 
+                                        rows={4}
+                                        value={mainDegreeForm.aiImpact} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, aiImpact: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="AI bu mesleği nasıl dönüştürüyor?"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Dünyada Öne Çıkan Firmalar</label>
+                                    <textarea 
+                                        rows={3}
+                                        value={mainDegreeForm.topCompanies} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, topCompanies: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="Google, Tesla, Goldman Sachs, etc."
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Türkiye'de Sektörün Durumu</label>
+                                    <textarea 
+                                        rows={3}
+                                        value={mainDegreeForm.sectorStatusTR} 
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, sectorStatusTR: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="Türkiye'deki iş imkanları ve sektör büyüklüğü..."
+                                    />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Resim URL</label>
+                                    <div className="flex gap-4">
+                                        <input 
+                                            value={mainDegreeForm.imageUrl} 
+                                            onChange={e => setMainDegreeForm({...mainDegreeForm, imageUrl: e.target.value})}
+                                            className="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                            placeholder="https://images.unsplash.com/..."
+                                        />
+                                        {mainDegreeForm.imageUrl && (
+                                            <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                                                <img src={mainDegreeForm.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsMainDegreeModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Interested Program Modal (New) */}
+            {isInterestedProgramModalOpen && (
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mb-10 animate-fade-in">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {interestedPrograms.find(p => p.id === interestedProgramForm.id) ? 'Edit Interested Program' : 'New Interested Program'}
+                            </h3>
+                            <button onClick={() => setIsInterestedProgramModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <form onSubmit={handleSaveInterestedProgram} className="p-6 space-y-6">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Program Adı (Subject)</label>
+                                <input 
+                                    required
+                                    value={interestedProgramForm.name} 
+                                    onChange={e => setInterestedProgramForm({...interestedProgramForm, name: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                    placeholder="e.g. Computer Science"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Açıklama</label>
+                                <textarea 
+                                    rows={3}
+                                    value={interestedProgramForm.description} 
+                                    onChange={e => setInterestedProgramForm({...interestedProgramForm, description: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                    placeholder="Bölüm hakkında kısa bilgi..."
+                                />
+                            </div>
+                            <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsInterestedProgramModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 };

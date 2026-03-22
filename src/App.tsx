@@ -83,7 +83,7 @@ const App: React.FC = () => {
         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       
-      <main className={`flex-1 p-8 transition-all duration-300 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
+      <main className={`flex-1 p-8 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'} transition-[margin] duration-300`}>
         <div className="max-w-6xl mx-auto h-full">
            {renderContent()}
         </div>

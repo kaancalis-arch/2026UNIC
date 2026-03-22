@@ -4,6 +4,10 @@ import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, Analy
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
+import { interestedProgramService } from '../services/interestedProgramService';
+import { mainDegreeService } from '../services/mainDegreeService';
+import { countryService } from '../services/countryService';
+import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { 
@@ -38,7 +42,11 @@ import {
   Printer,
   FileDown,
   Loader2,
-  Plus
+  Plus,
+  Users,
+  Coins,
+  Flag,
+  FileCheck
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -46,43 +54,41 @@ interface StudentDetailProps {
   onBack: () => void;
 }
 
-const PROGRAM_OPTIONS = [
-  "Mühendislik", "Tıp", "Hukuk", "İşletme & Ekonomi", 
-  "Psikoloji", "Mimarlık", "Sanat & Tasarım", 
-  "Bilgisayar Bilimleri", "Sosyal Bilimler", "Diğer"
-];
+// Options will be loaded from services
 
-const COUNTRY_OPTIONS = [
-  "Amerika Birleşik Devletleri", "Birleşik Krallık", "Kanada", 
-  "Almanya", "Hollanda", "İtalya", "Fransa", "Avustralya", "İrlanda", "Diğer"
-];
-
-const getFlagEmoji = (countryName: string) => {
-  const flags: Record<string, string> = {
-    "Amerika Birleşik Devletleri": "🇺🇸",
-    "USA": "🇺🇸",
-    "United States": "🇺🇸",
-    "Birleşik Krallık": "🇬🇧",
-    "UK": "🇬🇧",
-    "United Kingdom": "🇬🇧",
-    "Kanada": "🇨🇦",
-    "Canada": "🇨🇦",
-    "Almanya": "🇩🇪",
-    "Germany": "🇩🇪",
-    "Hollanda": "🇳🇱",
-    "Netherlands": "🇳🇱",
-    "İtalya": "🇮🇹",
-    "Italy": "🇮🇹",
-    "Fransa": "🇫🇷",
-    "France": "🇫🇷",
-    "Avustralya": "🇦🇺",
-    "Australia": "🇦🇺",
-    "İrlanda": "🇮🇪",
-    "Ireland": "🇮🇪"
-  };
-  return flags[countryName] || "🏳️";
+const formatPhone = (phone: string | undefined) => {
+    if (!phone) return '-';
+    // Sadece sayıları al
+    const cleaned = ('' + phone).replace(/\D/g, '');
+    if (cleaned.length === 11) {
+        // Örn: 0500 123 45 67
+        return `${cleaned.slice(0, 4)} ${cleaned.slice(4, 7)} ${cleaned.slice(7, 9)} ${cleaned.slice(9, 11)}`;
+    } else if (cleaned.length === 10) {
+        // 500 ile başlıyorsa ve baştaki 0 eksikse
+        return `0${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6, 8)} ${cleaned.slice(8, 10)}`;
+    }
+    return phone;
 };
 
+const formatExamDate = (dateString?: string): string => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+    const d = date.getDate();
+    const m = months[date.getMonth()];
+    const y = date.getFullYear().toString().slice(-2);
+    return `${d} ${m} ${y}`;
+};
+
+const isExamExpired = (dateString?: string): boolean => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return false;
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    return date < twoYearsAgo;
+};
 const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack }) => {
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
@@ -113,11 +119,24 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     preferences: {},
     budget: {}
   });
+
+  // GPA Validation State
+  const [gpaScale, setGpaScale] = useState<'100' | '4.0'>('100');
+  const [gpaError, setGpaError] = useState<string>('');
   const [editAcademicInfo, setEditAcademicInfo] = useState({
-    schoolName: '',
-    currentGrade: '',
-    educationStatus: '',
-    targetDegree: ''
+    schoolName: student.schoolName || '',
+    currentGrade: student.currentGrade || '',
+    educationStatus: student.educationStatus || ''
+  });
+  const [editContactInfo, setEditContactInfo] = useState({
+      phone: student.phone || '',
+      email: student.email || '',
+      parentName: student.parentInfo?.fullName || '',
+      parentPhone: student.parentInfo?.phone || '',
+      parentEmail: student.parentInfo?.email || '',
+      parent2Name: student.parent2Info?.fullName || '',
+      parent2Phone: student.parent2Info?.phone || '',
+      parent2Email: student.parent2Info?.email || ''
   });
 
   const [activeAnalyseStatus, setActiveAnalyseStatus] = useState<AnalyseStatus>(student.analyseStatus || 'Mid');
@@ -131,13 +150,34 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     notes: ''
   });
   const [showAppForm, setShowAppForm] = useState(false);
+  
+  // Dynamic Options
+  const [allPrograms, setAllPrograms] = useState<string[]>([]);
+  const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
+  const [allCountries, setAllCountries] = useState<string[]>([]);
 
   useEffect(() => {
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
     setStudentDocuments(initialStudent.documents || []);
     loadTuitionRanges();
+    loadOptions();
   }, [initialStudent]);
+
+  const loadOptions = async () => {
+    try {
+        const [programs, mainDegs, countries] = await Promise.all([
+            interestedProgramService.getAll(),
+            mainDegreeService.getAll(),
+            countryService.getAll()
+        ]);
+        setAllPrograms(programs.map(p => p.name));
+        setAllMainDegrees(mainDegs.map(d => d.name));
+        setAllCountries(countries.map(c => c.name));
+    } catch (error) {
+        console.error("Failed to load options", error);
+    }
+  };
 
   const loadTuitionRanges = async () => {
      try {
@@ -352,21 +392,43 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
   // --- Document Logic End ---
 
-  // --- Analysis Edit Logic ---
   const openEditModal = () => {
+      // Determine initial GPA scale
+      const currentGpa = student.analysis?.academic?.gpa;
+      if (currentGpa) {
+          const num = parseFloat(currentGpa);
+          if (!isNaN(num) && num <= 4.0 && num > 0) {
+              setGpaScale('4.0');
+          } else {
+              setGpaScale('100');
+          }
+      } else {
+          setGpaScale('100');
+      }
+      setGpaError('');
+
       setEditForm({
           language: student.analysis?.language || {},
           academic: student.analysis?.academic || { exams: {} },
           social: student.analysis?.social || {},
           preferences: student.analysis?.preferences || {},
-          budget: student.analysis?.budget || {}
+          budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
       });
-          setEditAcademicInfo({
-              schoolName: student.schoolName || '',
-              currentGrade: student.currentGrade || '',
-              educationStatus: student.educationStatus || '',
-              targetDegree: student.targetDegree || ''
-          });
+      setEditAcademicInfo({
+          schoolName: student.schoolName || '',
+          currentGrade: student.currentGrade || '',
+          educationStatus: student.educationStatus || ''
+      });
+      setEditContactInfo({
+          phone: student.phone || '',
+          email: student.email || '',
+          parentName: student.parentInfo?.fullName || '',
+          parentPhone: student.parentInfo?.phone || '',
+          parentEmail: student.parentInfo?.email || '',
+          parent2Name: student.parent2Info?.fullName || '',
+          parent2Phone: student.parent2Info?.phone || '',
+          parent2Email: student.parent2Info?.email || ''
+      });
       setIsEditModalOpen(true);
   };
 
@@ -399,18 +461,54 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     });
   };
 
+  const handleGpaChange = (value: string) => {
+    setGpaError('');
+    updateEditField('academic', 'gpa', value);
+
+    if (!value) return;
+
+    const num = parseFloat(value);
+    if (gpaScale === '100') {
+        if (num < 0 || num > 100) {
+            setGpaError('0 - 100 arasında geçerli bir değer giriniz.');
+        }
+    } else {
+        if (num < 0 || num > 4.0) {
+            setGpaError('0 - 4.00 arasında geçerli bir değer giriniz.');
+        }
+    }
+  };
+
   const handleSaveAnalysis = async () => {
+      if (gpaError) {
+          alert("Lütfen hatalı alanları düzeltiniz.");
+          return;
+      }
+
       const updatedData: Partial<Student> = {
           schoolName: editAcademicInfo.schoolName,
           currentGrade: editAcademicInfo.currentGrade,
           educationStatus: editAcademicInfo.educationStatus as any,
-          targetDegree: editAcademicInfo.targetDegree as any,
+          phone: editContactInfo.phone,
+          email: editContactInfo.email,
+          parentInfo: {
+              ...student.parentInfo,
+              fullName: editContactInfo.parentName,
+              phone: editContactInfo.parentPhone,
+              email: editContactInfo.parentEmail,
+          },
+          parent2Info: {
+              ...student.parent2Info,
+              fullName: editContactInfo.parent2Name,
+              phone: editContactInfo.parent2Phone,
+              email: editContactInfo.parent2Email,
+          },
           analysis: editForm
       };
 
       try {
           await studentService.update(student.id, updatedData);
-          setStudent(prev => ({ ...prev, ...updatedData, targetDegree: editAcademicInfo.targetDegree as any }));
+          setStudent(prev => ({ ...prev, ...updatedData }));
           setIsEditModalOpen(false);
       } catch (error) {
           console.error("Failed to save analysis", error);
@@ -420,99 +518,875 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
   // --- Render Functions for Edit Modal ---
   const renderEditLanguage = () => (
-      <div className="space-y-4">
-          <div>
-                <label className="block text-sm text-slate-600 mb-1">Tahmini İngilizce Seviyesi</label>
-                <select 
-                    value={editForm.language.estimatedLevel || ''}
-                    onChange={(e) => updateEditField('language', 'estimatedLevel', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
-                >
-                    <option value="">Seçiniz</option>
-                    <option value="A1">A1</option>
-                    <option value="A2">A2</option>
-                    <option value="B1">B1</option>
-                    <option value="B2">B2</option>
-                    <option value="C1">C1</option>
-                    <option value="C2">C2</option>
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm text-slate-600 mb-1">Sınava Girdi mi?</label>
-                <div className="flex gap-4">
-                    <button onClick={() => updateEditField('language', 'hasTakenExam', true)} className={`px-3 py-1 rounded text-sm border ${editForm.language.hasTakenExam ? 'bg-indigo-600 text-white' : 'bg-white'}`}>Evet</button>
-                    <button onClick={() => updateEditField('language', 'hasTakenExam', false)} className={`px-3 py-1 rounded text-sm border ${!editForm.language.hasTakenExam ? 'bg-indigo-600 text-white' : 'bg-white'}`}>Hayır</button>
+    <div className="space-y-6 animate-fade-in">
+        {/* Exam Taken? */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Sınav Durumu</h4>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm text-slate-600 mb-2">Dil seviyeni belirleyecek bir sınava girdin mi?</label>
+                    <div className="flex gap-4">
+                        <button 
+                            onClick={() => updateEditField('language', 'hasTakenExam', true)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.hasTakenExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
+                        >
+                            Evet, Girdim
+                        </button>
+                        <button 
+                            onClick={() => updateEditField('language', 'hasTakenExam', false)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.hasTakenExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
+                        >
+                            Hayır, Girmedim
+                        </button>
+                    </div>
                 </div>
-            </div>
-            {editForm.language.hasTakenExam && (
-                <div className="grid grid-cols-2 gap-4">
-                    <input placeholder="Skor (örn: IELTS 6.5)" value={editForm.language.examScore || ''} onChange={e => updateEditField('language', 'examScore', e.target.value)} className="border p-2 rounded text-sm"/>
-                    <input type="date" value={editForm.language.pastExamDate || ''} onChange={e => updateEditField('language', 'pastExamDate', e.target.value)} className="border p-2 rounded text-sm"/>
-                </div>
-            )}
-             <textarea placeholder="Notlar..." value={editForm.language.languageNotes || ''} onChange={e => updateEditField('language', 'languageNotes', e.target.value)} className="w-full border p-2 rounded text-sm h-24"/>
-      </div>
-  );
 
-  const renderEditAcademic = () => (
-      <div className="space-y-4">
-            <input placeholder="Okul Adı" value={editAcademicInfo.schoolName} onChange={e => setEditAcademicInfo({...editAcademicInfo, schoolName: e.target.value})} className="w-full border p-2 rounded text-sm"/>
-            <div className="grid grid-cols-2 gap-4">
-                <select value={editAcademicInfo.educationStatus} onChange={e => setEditAcademicInfo({...editAcademicInfo, educationStatus: e.target.value})} className="border p-2 rounded text-sm">
-                    <option value="">Eğitim Durumu</option>
-                    <option value="High School">Lise</option>
-                    <option value="University">Üniversite</option>
-                    <option value="Master">Yüksek Lisans</option>
-                    <option value="Graduate">Mezun</option>
-                </select>
-                <select value={editAcademicInfo.targetDegree} onChange={e => setEditAcademicInfo({...editAcademicInfo, targetDegree: e.target.value})} className="border p-2 rounded text-sm">
-                    <option value="">Interested Program (Hedef)</option>
-                    <option value="Summer Course">Summer Course</option>
-                    <option value="Language Course">Language Course</option>
-                    <option value="High School">High School</option>
-                    <option value="Undergraduate">Undergraduate</option>
-                    <option value="Master">Master</option>
-                </select>
+                {editForm.language.hasTakenExam && (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">1. Sınav Skoru / Detayı</label>
+                                <input 
+                                    type="text"
+                                    value={editForm.language.examScore || ''}
+                                    onChange={(e) => updateEditField('language', 'examScore', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                    placeholder="Örn: IELTS 6.5"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={editForm.language.pastExamDate || ''}
+                                    onChange={(e) => updateEditField('language', 'pastExamDate', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">2. Sınav Skoru (İsteğe Bağlı)</label>
+                                <input 
+                                    type="text"
+                                    value={editForm.language.examScore2 || ''}
+                                    onChange={(e) => updateEditField('language', 'examScore2', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={editForm.language.pastExamDate2 || ''}
+                                    onChange={(e) => updateEditField('language', 'pastExamDate2', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">3. Sınav Skoru (İsteğe Bağlı)</label>
+                                <input 
+                                    type="text"
+                                    value={editForm.language.examScore3 || ''}
+                                    onChange={(e) => updateEditField('language', 'examScore3', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={editForm.language.pastExamDate3 || ''}
+                                    onChange={(e) => updateEditField('language', 'pastExamDate3', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {editForm.language.hasTakenExam === false && (
+                     <div>
+                        <label className="block text-sm text-slate-600 mb-1">Tahmini İngilizce Seviyen Nedir?</label>
+                        <select 
+                            value={editForm.language.estimatedLevel || ''}
+                            onChange={(e) => updateEditField('language', 'estimatedLevel', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        >
+                            <option value="">Seçiniz</option>
+                            <option value="A1">A1 - Başlangıç</option>
+                            <option value="A2">A2 - Temel</option>
+                            <option value="B1">B1 - Orta</option>
+                            <option value="B2">B2 - İyi</option>
+                            <option value="C1">C1 - İleri</option>
+                            <option value="C2">C2 - Yetkin</option>
+                            <option value="Unknown">Seviyemi Bilmiyorum</option>
+                        </select>
+                    </div>
+                )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-                <input placeholder="Sınıf" value={editAcademicInfo.currentGrade} onChange={e => setEditAcademicInfo({...editAcademicInfo, currentGrade: e.target.value})} className="border p-2 rounded text-sm"/>
-                <input placeholder="Bölüm" value={editForm.academic.educationField || ''} onChange={e => updateEditField('academic', 'educationField', e.target.value)} className="w-full border p-2 rounded text-sm"/>
-            </div>
-             <input placeholder="GPA (Not Ortalaması)" value={editForm.academic.gpa || ''} onChange={e => updateEditField('academic', 'gpa', e.target.value)} className="w-full border p-2 rounded text-sm"/>
-             
-             <div className="space-y-2">
-                 <label className="text-sm font-bold">Sınavlar</label>
-                 <div className="flex flex-wrap gap-2">
-                     {['SAT', 'AP', 'IB', 'TR-YOS'].map(ex => {
-                         const isSel = editForm.academic.exams?.[ex]?.selected;
-                         return (
-                            <button key={ex} onClick={() => updateNestedExam(ex, 'selected', !isSel)} className={`px-3 py-1 rounded text-xs border ${isSel ? 'bg-indigo-100 border-indigo-500' : 'bg-white'}`}>{ex}</button>
-                         )
-                     })}
+        </div>
+
+        {/* Preparation */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+             <h4 className="text-sm font-semibold text-slate-700 mb-3">Sınav Hazırlığı</h4>
+             <div className="space-y-4">
+                 <div>
+                    <label className="block text-sm text-slate-600 mb-2">
+                        {editForm.language.hasTakenExam ? "Tekrar Sınava girecek misin?" : "Hazırlandığın bir dil sınavı var mı?"}
+                    </label>
+                    <div className="flex gap-4">
+                         <button 
+                            onClick={() => updateEditField('language', 'isPreparingForExam', true)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.isPreparingForExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
+                        >
+                            Evet
+                        </button>
+                        <button 
+                            onClick={() => updateEditField('language', 'isPreparingForExam', false)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.isPreparingForExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
+                        >
+                            Hayır
+                        </button>
+                    </div>
                  </div>
+
+                 {editForm.language.isPreparingForExam && (
+                     <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-sm text-slate-600 mb-1">Hedeflenen Sınav</label>
+                            <input 
+                                type="text"
+                                value={editForm.language.targetExam || ''}
+                                onChange={(e) => updateEditField('language', 'targetExam', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Örn: IELTS UKVI"
+                            />
+                         </div>
+                         <div>
+                            <label className="block text-sm text-slate-600 mb-1">Planlanan Tarih</label>
+                            <input 
+                                type="date"
+                                value={editForm.language.examDate || ''}
+                                onChange={(e) => updateEditField('language', 'examDate', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            />
+                         </div>
+                     </div>
+                 )}
              </div>
+        </div>
+
+        {/* Tutoring & Support */}
+        {!(editForm.language.hasTakenExam === true && editForm.language.isPreparingForExam === false) && (
+            <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
+                <div className="relative z-10 flex items-start gap-4">
+                    <div className="p-3 bg-white rounded-xl shadow-sm text-violet-600 mt-1">
+                        <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-base font-semibold text-violet-900 mb-3 leading-tight">
+                            Deneme Sınavına Katılmak ve Özel Ders hakkında bilgi almak ister misin?
+                        </label>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => updateEditField('language', 'wantsTutoring', true)}
+                                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                    editForm.language.wantsTutoring === true 
+                                    ? 'bg-violet-600 text-white shadow-md shadow-violet-200 scale-105' 
+                                    : 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-100'
+                                }`}
+                            >
+                                Evet, İstiyorum
+                            </button>
+                            <button 
+                                onClick={() => updateEditField('language', 'wantsTutoring', false)}
+                                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                    editForm.language.wantsTutoring === false 
+                                    ? 'bg-slate-600 text-white' 
+                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                                Hayır
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Language Notes */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+             <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-slate-400" />
+                Dil Yeterliliği Notları
+             </label>
+             <textarea 
+                value={editForm.language.languageNotes || ''}
+                onChange={(e) => updateEditField('language', 'languageNotes', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[100px] resize-y"
+                placeholder="Bu öğrencinin dil durumu ile ilgili ek notlar..."
+             />
+        </div>
+    </div>
+  );
+
+  const renderEditAcademic = () => {
+    const getGradeOptions = () => {
+        switch(editAcademicInfo.educationStatus) {
+          case 'Primary':
+              return ['1. Sınıf', '2. Sınıf', '3. Sınıf', '4. Sınıf', '5. Sınıf', '6. Sınıf', '7. Sınıf', '8. Sınıf'];
+          case 'High School':
+              return ['Hazırlık', '9. Sınıf', '10. Sınıf', '11. Sınıf', '12. Sınıf', 'Mezun'];
+          case 'University':
+              return ['Hazırlık', '1. Sınıf', '2. Sınıf', '3. Sınıf', '4. Sınıf', 'Uzatmalı', 'Mezun'];
+          case 'Master':
+               return ['Ders Dönemi', 'Tez Dönemi', 'Mezun'];
+          case 'Graduate':
+               return ['Mezun'];
+          default:
+               return [];
+        }
+      };
+
+      // Helper to toggle exam selection
+      const toggleExam = (key: string) => {
+        const currentExams = editForm.academic.exams || {};
+        const isSelected = currentExams[key]?.selected;
+        updateNestedExam(key, 'selected', !isSelected);
+      };
+
+    return (
+    <div className="space-y-6 animate-fade-in">
+         {/* School Info */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Okul Bilgileri</h4>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                    <input 
+                        type="text"
+                        value={editAcademicInfo.schoolName}
+                        onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        placeholder="Örn: Robert Koleji"
+                    />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Mevcut Eğitimi</label>
+                         <select 
+                            value={editAcademicInfo.educationStatus}
+                            onChange={(e) => setEditAcademicInfo(prev => ({ 
+                                ...prev, 
+                                educationStatus: e.target.value, 
+                                currentGrade: '' 
+                            }))}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        >
+                            <option value="">Seçiniz</option>
+                            <option value="Primary">İlköğretim</option>
+                            <option value="High School">Lise</option>
+                            <option value="University">Üniversite</option>
+                            <option value="Master">Yüksek Lisans</option>
+                            <option value="Graduate">Mezun</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Sınıfı</label>
+                         <select 
+                            value={editAcademicInfo.currentGrade}
+                            onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, currentGrade: e.target.value }))}
+                            disabled={!editAcademicInfo.educationStatus}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                        >
+                            <option value="">Seçiniz</option>
+                            {getGradeOptions().map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Dynamic Field/Department Input */}
+                {editAcademicInfo.educationStatus === 'High School' && (
+                     <div>
+                        <label className="block text-sm text-slate-600 mb-1">Bölümü (Alan)</label>
+                        <select 
+                            value={editForm.academic.educationField || ''}
+                            onChange={(e) => updateEditField('academic', 'educationField', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        >
+                            <option value="">Seçiniz</option>
+                            <option value="Sayısal">Sayısal</option>
+                            <option value="Eşit Ağırlıklı">Eşit Ağırlıklı</option>
+                            <option value="Dil">Dil</option>
+                            <option value="IB">IB</option>
+                        </select>
+                    </div>
+                )}
+
+                {(editAcademicInfo.educationStatus === 'University' || editAcademicInfo.educationStatus === 'Master' || editAcademicInfo.educationStatus === 'Graduate') && (
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Bölümü / Programı</label>
+                         <input 
+                            type="text"
+                            value={editForm.academic.educationField || ''}
+                            onChange={(e) => updateEditField('academic', 'educationField', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            placeholder="Örn: Bilgisayar Mühendisliği"
+                        />
+                    </div>
+                )}
+            </div>
+        </div>
+
+        {/* Academic Success */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Akademik Başarı</h4>
+            
+            <div className="flex gap-6 mb-4">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${gpaScale === '100' ? 'border-indigo-600' : 'border-slate-300 group-hover:border-indigo-400'}`}>
+                        {gpaScale === '100' && <div className="w-2 h-2 bg-indigo-600 rounded-full" />}
+                    </div>
+                    <input 
+                        type="radio" 
+                        name="gpaScale" 
+                        value="100" 
+                        checked={gpaScale === '100'} 
+                        onChange={() => { setGpaScale('100'); setGpaError(''); }}
+                        className="hidden"
+                    />
+                    <span className={`text-sm ${gpaScale === '100' ? 'text-indigo-700 font-medium' : 'text-slate-600'}`}>100'lük Sistem</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                     <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${gpaScale === '4.0' ? 'border-indigo-600' : 'border-slate-300 group-hover:border-indigo-400'}`}>
+                        {gpaScale === '4.0' && <div className="w-2 h-2 bg-indigo-600 rounded-full" />}
+                    </div>
+                    <input 
+                        type="radio" 
+                        name="gpaScale" 
+                        value="4.0" 
+                        checked={gpaScale === '4.0'} 
+                        onChange={() => { setGpaScale('4.0'); setGpaError(''); }}
+                        className="hidden"
+                    />
+                    <span className={`text-sm ${gpaScale === '4.0' ? 'text-indigo-700 font-medium' : 'text-slate-600'}`}>4.0'lık Sistem</span>
+                </label>
+            </div>
+
+            <div>
+                <label className="block text-sm text-slate-600 mb-1">Mevcut Not Ortalaması</label>
+                <div className="relative">
+                    <input 
+                        type="number"
+                        step={gpaScale === '4.0' ? "0.01" : "1"}
+                        value={editForm.academic.gpa || ''}
+                        onChange={(e) => handleGpaChange(e.target.value)}
+                        className={`w-full px-3 py-2 rounded-lg border ${gpaError ? 'border-red-300 focus:ring-red-200' : 'border-slate-300 focus:ring-indigo-500/20'} focus:outline-none focus:ring-2 text-sm`}
+                        placeholder={gpaScale === '100' ? "Örn: 85" : "Örn: 3.50"}
+                    />
+                    <span className="absolute right-3 top-2 text-xs text-slate-400 bg-white px-1">
+                        {gpaScale === '100' ? '100 üzerinden' : '4.00 üzerinden'}
+                    </span>
+                </div>
+                {gpaError && (
+                    <div className="flex items-center gap-1 mt-1.5 text-red-500">
+                        <AlertCircle className="w-3 h-3" />
+                        <span className="text-xs font-medium">{gpaError}</span>
+                    </div>
+                )}
+            </div>
+        </div>
+
+        {/* Exam Selections */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+             <h4 className="text-sm font-semibold text-slate-700 mb-1">Girdiğin veya gireceğin sınavları ekle</h4>
+             <p className="text-xs text-slate-400 mb-3">Örn: SAT, AP</p>
+             <div className="grid grid-cols-2 gap-3 mb-4">
+                {['SAT', 'AP', 'IB', 'A-Level', 'TR-YOS'].map(exam => {
+                    const exams = editForm.academic.exams as Record<string, ExamDetails> | undefined;
+                    const isSelected = exams?.[exam]?.selected;
+                    return (
+                        <button
+                            key={exam}
+                            onClick={() => toggleExam(exam)}
+                            className={`py-2 px-3 rounded-lg text-sm font-medium border transition-all ${
+                                isSelected 
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' 
+                                : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                            }`}
+                        >
+                            {isSelected && <CheckCircle className="inline w-3 h-3 mr-1" />}
+                            {exam}
+                        </button>
+                    )
+                })}
+             </div>
+
+             {/* Exam Details Inputs */}
+             <div className="space-y-4">
+                {Object.entries(editForm.academic.exams as Record<string, ExamDetails>).map(([key, details]) => {
+                    if (!details.selected) return null;
+                    return (
+                        <div key={key} className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-fade-in">
+                            <div className="flex justify-between items-center mb-2">
+                                <h5 className="font-bold text-sm text-slate-700">{key} Detayları</h5>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Durum</label>
+                                    <select 
+                                        value={details.status || ''}
+                                        onChange={(e) => updateNestedExam(key, 'status', e.target.value)}
+                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                    >
+                                        <option value="">Seçiniz</option>
+                                        <option value="Taken">Girdim</option>
+                                        <option value="Preparing">Hazırlanıyorum</option>
+                                    </select>
+                                </div>
+                                {details.status === 'Taken' && (
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">Skor</label>
+                                        <input 
+                                            type="text" 
+                                            value={details.score || ''}
+                                            onChange={(e) => updateNestedExam(key, 'score', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                        />
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">{key === 'AP' ? 'Lise Sınıfı' : 'Tarih'}</label>
+                                    {key === 'AP' ? (
+                                        <select
+                                            value={details.date || ''}
+                                            onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                        >
+                                            <option value="">Seçiniz</option>
+                                            <option value="9. Sınıf">9. Sınıf</option>
+                                            <option value="10. Sınıf">10. Sınıf</option>
+                                            <option value="11. Sınıf">11. Sınıf</option>
+                                            <option value="12. Sınıf">12. Sınıf</option>
+                                            <option value="Mezun">Mezun</option>
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            type="date" 
+                                            value={details.date || ''}
+                                            onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                        />
+                                    )}
+                                </div>
+                                {key === 'AP' && (
+                                    <div className="col-span-2">
+                                        <label className="block text-xs text-slate-500 mb-1">Ders</label>
+                                        <select 
+                                            value={details.subject || ''}
+                                            onChange={(e) => updateNestedExam(key, 'subject', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                        >
+                                            <option value="">AP Dersi Seçiniz</option>
+                                            <option value="AP Precalculus">AP Precalculus</option>
+                                            <option value="AP Calculus AB">AP Calculus AB</option>
+                                            <option value="AP Calculus BC">AP Calculus BC</option>
+                                            <option value="AP Statistics">AP Statistics</option>
+                                            <option value="AP Biology">AP Biology</option>
+                                            <option value="AP Chemistry">AP Chemistry</option>
+                                            <option value="AP Environmental Science">AP Environmental Science</option>
+                                            <option value="AP Physics 1">AP Physics 1</option>
+                                            <option value="AP Physics 2">AP Physics 2</option>
+                                            <option value="AP Physics C: Mechanics">AP Physics C: Mechanics</option>
+                                            <option value="AP Physics C: Electricity & Magnetism">AP Physics C: Electricity & Magnetism</option>
+                                            <option value="AP Computer Science A">AP Computer Science A</option>
+                                            <option value="AP Computer Science Principles">AP Computer Science Principles</option>
+                                            <option value="AP Macroeconomics">AP Macroeconomics</option>
+                                            <option value="AP Microeconomics">AP Microeconomics</option>
+                                            <option value="AP Psychology">AP Psychology</option>
+                                            <option value="AP English Language">AP English Language</option>
+                                            <option value="AP English Literature">AP English Literature</option>
+                                            <option value="AP World History: Modern">AP World History: Modern</option>
+                                            <option value="AP European History">AP European History</option>
+                                            <option value="AP US History">AP US History</option>
+                                            <option value="AP Human Geography">AP Human Geography</option>
+                                            <option value="AP Comparative Government">AP Comparative Government</option>
+                                            <option value="AP US Government">AP US Government</option>
+                                            <option value="AP Art History">AP Art History</option>
+                                            <option value="AP Music Theory">AP Music Theory</option>
+                                            <option value="AP 2-D Art and Design">AP 2-D Art and Design</option>
+                                            <option value="AP 3-D Art and Design">AP 3-D Art and Design</option>
+                                            <option value="AP Drawing">AP Drawing</option>
+                                            <option value="AP Research">AP Research</option>
+                                            <option value="AP Seminar">AP Seminar</option>
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )
+                })}
+             </div>
+        </div>
+
+        {/* Academic Notes */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+             <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-slate-400" />
+                Akademik Notlar
+             </label>
+             <textarea 
+                value={editForm.academic.academicNotes || ''}
+                onChange={(e) => updateEditField('academic', 'academicNotes', e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px] resize-y"
+                placeholder="Akademik durumu ile ilgili ek notlar..."
+             />
+        </div>
+    </div>
+  )};
+
+   const renderEditPreferences = () => (
+      <div className="space-y-6 animate-fade-in">
+
+           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
+                        <select 
+                            value={editForm.preferences.program1 || ''}
+                            onChange={(e) => updateEditField('preferences', 'program1', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        >
+                            <option value="">Seçiniz</option>
+                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">2. Tercih</label>
+                         <select 
+                            value={editForm.preferences.program2 || ''}
+                            onChange={(e) => updateEditField('preferences', 'program2', e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                        >
+                            <option value="">Seçiniz</option>
+                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                    </div>
+               </div>
+           </div>
+
+           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {[1, 2, 3].map(i => (
+                        <div key={i}>
+                            <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
+                            <select 
+                                value={(editForm.preferences as any)[`country${i}`] || ''}
+                                onChange={(e) => updateEditField('preferences', `country${i}`, e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            >
+                                <option value="">Seçiniz</option>
+                                {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                        </div>
+                    ))}
+               </div>
+           </div>
+
+           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Tercih Notları</h4>
+               <textarea 
+                  value={editForm.preferences.notes || ''} 
+                  onChange={(e) => updateEditField('preferences', 'notes', e.target.value)} 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]" 
+                  placeholder="Tercihlere dair ek notlar..."
+               />
+           </div>
+      </div>
+   );
+
+  const renderEditCitizenship = () => (
+      <div className="space-y-6 animate-fade-in">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Flag className="w-4 h-4 text-indigo-500" />
+                Vatandaşlık ve Pasaport Bilgileri
+            </h4>
+            <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={editForm.citizenship?.isTurkishCitizen !== false}
+                        onChange={(e) => updateEditField('citizenship', 'isTurkishCitizen', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Türk Vatandaşı</span>
+                </label>
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={!!editForm.citizenship?.hasGreenPassport}
+                        onChange={(e) => updateEditField('citizenship', 'hasGreenPassport', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Yeşil Pasaportu Var</span>
+                </label>
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={!!editForm.citizenship?.hasBlackPassport}
+                        onChange={(e) => updateEditField('citizenship', 'hasBlackPassport', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Siyah Pasaportu Var</span>
+                </label>
+                
+                <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                            type="checkbox"
+                            checked={!!editForm.citizenship?.hasResidencePermit}
+                            onChange={(e) => {
+                                updateEditField('citizenship', 'hasResidencePermit', e.target.checked);
+                                if(!e.target.checked) updateEditField('citizenship', 'residencePermitNote', '');
+                            }}
+                            className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">Oturum İzni Var</span>
+                    </label>
+                    {editForm.citizenship?.hasResidencePermit && (
+                        <div className="ml-8">
+                            <input 
+                                value={editForm.citizenship?.residencePermitNote || ''}
+                                onChange={(e) => updateEditField('citizenship', 'residencePermitNote', e.target.value)}
+                                placeholder="Hangi ülkeye ait, bitiş tarihi vb. detaylar..."
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                            type="checkbox"
+                            checked={!!editForm.citizenship?.hasForeignCitizenship}
+                            onChange={(e) => {
+                                updateEditField('citizenship', 'hasForeignCitizenship', e.target.checked);
+                                if(!e.target.checked) updateEditField('citizenship', 'foreignCitizenshipNote', '');
+                            }}
+                            className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">Farklı bir Vatandaşlığı Var</span>
+                    </label>
+                    {editForm.citizenship?.hasForeignCitizenship && (
+                        <div className="ml-8">
+                            <input 
+                                value={editForm.citizenship?.foreignCitizenshipNote || ''}
+                                onChange={(e) => updateEditField('citizenship', 'foreignCitizenshipNote', e.target.value)}
+                                placeholder="Hangi ülke vatandaşı (Örn: Almanya)"
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
       </div>
   );
 
-  const renderEditPreferences = () => (
-      <div className="space-y-4">
-          <select value={editForm.preferences.program1 || ''} onChange={e => updateEditField('preferences', 'program1', e.target.value)} className="w-full border p-2 rounded text-sm">
-              <option value="">1. Bölüm Tercihi</option>
-              {PROGRAM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <select value={editForm.preferences.program2 || ''} onChange={e => updateEditField('preferences', 'program2', e.target.value)} className="w-full border p-2 rounded text-sm">
-              <option value="">2. Bölüm Tercihi</option>
-              {PROGRAM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <div className="grid grid-cols-1 gap-2">
-             {[1,2,3].map(i => (
-                 <select key={i} value={(editForm.preferences as any)[`country${i}`] || ''} onChange={e => updateEditField('preferences', `country${i}`, e.target.value)} className="w-full border p-2 rounded text-sm">
-                     <option value="">{i}. Ülke Tercihi</option>
-                     {COUNTRY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                 </select>
-             ))}
+  const renderEditContact = () => (
+      <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-indigo-500" />
+                  Öğrenci İletişim
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                      <input value={editContactInfo.phone} onChange={e => setEditContactInfo({...editContactInfo, phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                      <input value={editContactInfo.email} onChange={e => setEditContactInfo({...editContactInfo, email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
+              </div>
+          </div>
+          
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4">1. Veli</h4>
+              <div className="space-y-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                      <input value={editContactInfo.parentName} onChange={e => setEditContactInfo({...editContactInfo, parentName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                          <input value={editContactInfo.parentPhone} onChange={e => setEditContactInfo({...editContactInfo, parentPhone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                          <input value={editContactInfo.parentEmail} onChange={e => setEditContactInfo({...editContactInfo, parentEmail: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4">2. Veli</h4>
+              <div className="space-y-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                      <input value={editContactInfo.parent2Name} onChange={e => setEditContactInfo({...editContactInfo, parent2Name: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                          <input value={editContactInfo.parent2Phone} onChange={e => setEditContactInfo({...editContactInfo, parent2Phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                          <input value={editContactInfo.parent2Email} onChange={e => setEditContactInfo({...editContactInfo, parent2Email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                  </div>
+              </div>
           </div>
       </div>
+  );
+
+  const renderEditSocial = () => (
+      <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                   <Users className="w-4 h-4 text-indigo-500" />
+                   Sosyal & Dışı Faaliyetler
+               </h4>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="space-y-4">
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Activity className="w-3.5 h-3.5 text-slate-400" />
+                               Spor Faaliyetleri
+                           </label>
+                           <input 
+                                type="text"
+                                value={editForm.social.sports || ''}
+                                onChange={(e) => updateEditField('social', 'sports', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Lisanslı sporcu mu? Branş?"
+                            />
+                       </div>
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+                               Sanat / Müzik
+                           </label>
+                           <input 
+                                type="text"
+                                value={editForm.social.arts || ''}
+                                onChange={(e) => updateEditField('social', 'arts', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Enstrüman, Resim vb."
+                            />
+                       </div>
+                   </div>
+                   <div className="space-y-4">
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <Globe className="w-3.5 h-3.5 text-slate-400" />
+                               Sosyal Sorumluluk
+                           </label>
+                           <input 
+                                type="text"
+                                value={editForm.social.socialWork || ''}
+                                onChange={(e) => updateEditField('social', 'socialWork', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                placeholder="Gönüllülük projeleri"
+                            />
+                       </div>
+                       <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                               <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                               Projeler / Sertifikalar
+                           </label>
+                           <textarea 
+                                value={editForm.social.projects || ''}
+                                onChange={(e) => updateEditField('social', 'projects', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm resize-none h-[88px]"
+                                placeholder="TÜBİTAK, Erasmus vb."
+                            />
+                       </div>
+                   </div>
+               </div>
+          </div>
+      </div>
+  );
+
+  const renderEditBudget = () => (
+    <div className="space-y-6 animate-fade-in">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+             <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                 <Coins className="w-4 h-4 text-emerald-500" />
+                 Yıllık Eğitim Bütçesi (Yaşam Hariç)
+             </h4>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                    "Bütçe Konusunda Kararsızım",
+                    "5.000'e kadar",
+                    "10.000'e kadar",
+                    "15.000'e kadar",
+                    "20.000'e kadar",
+                    "20.000 üzeri uygundur.."
+                ].map((option) => {
+                    const isSelected = editForm.budget?.range === option || editForm.budget?.ranges?.includes(option);
+                    return (
+                        <label key={option} className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
+                            isSelected 
+                            ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' 
+                            : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="budget_range_edit"
+                                checked={isSelected}
+                                onChange={() => {
+                                    updateEditField('budget', 'range', option);
+                                    updateEditField('budget', 'ranges', [option]);
+                                }}
+                                className="w-5 h-5 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                            />
+                            <span className={`text-sm font-medium ${isSelected ? 'text-emerald-900' : 'text-slate-700'}`}>
+                                {option}
+                            </span>
+                        </label>
+                    );
+                })}
+             </div>
+             <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                 <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
+                 <div>
+                     <p className="text-sm font-semibold text-amber-900">Bütçe Hakkında Not</p>
+                     <p className="text-xs text-amber-700 mt-1">
+                         Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsammaktadır. 
+                         Konaklama, yemek ve diğer yaşam giderleri bu tutarlara dahil değildir.
+                     </p>
+                 </div>
+             </div>
+        </div>
+    </div>
   );
 
   const handleAnalyze = async () => {
@@ -624,109 +1498,129 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         }
       `}</style>
       
-      {/* Header */}
-      <div className="flex items-center gap-4 border-b border-slate-200 pb-4 print:border-none">
-        <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors print:hidden">
-          <ArrowLeft className="w-5 h-5 text-slate-600" />
-        </button>
-        <div className="flex-1">
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold text-slate-800">{student.firstName} {student.lastName}</h2>
-            <div className="relative print:hidden">
-                <select
-                    value={currentStage}
-                    onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
-                    className={`appearance-none cursor-pointer pl-3 pr-8 py-1 rounded-full text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-offset-1 transition-all ${
-                        currentStage === PipelineStage.STUDENT ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
-                        currentStage === PipelineStage.ENROLLMENT ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
-                        currentStage === PipelineStage.NOT_INTERESTED ? 'bg-slate-200 text-slate-700 focus:ring-slate-500' :
-                        'bg-indigo-100 text-indigo-700 focus:ring-indigo-500'
-                    }`}
-                >
-                    {Object.values(PipelineStage).map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                    ))}
-                </select>
-                <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
+      {/* Compact Header */}
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 border-b border-slate-200 pb-4 print:border-none">
+        <div className="flex items-center gap-4 flex-1">
+          <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors print:hidden shrink-0">
+            <ArrowLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center flex-wrap gap-4">
+              <h2 className="text-2xl font-bold text-slate-800 truncate">{student.firstName} {student.lastName}</h2>
+              <div className="flex items-center gap-3 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-1.5">
+                      <Phone className="w-4 h-4 text-slate-400" />
+                      {formatPhone(student.phone) || '-'}
+                  </div>
+                  <div className="w-px h-4 bg-slate-200"></div>
+                  <div className="flex items-center gap-1.5 break-all">
+                      <Mail className="w-4 h-4 text-slate-400" />
+                      {student.email || '-'}
+                  </div>
+              </div>
             </div>
-            <div className="hidden print:block text-sm font-bold uppercase tracking-wider text-slate-500 border border-slate-300 px-2 py-0.5 rounded">
-                STATUS: {currentStage}
+            
+            <div className="mt-3 flex flex-col gap-2">
+                
+                {/* Veli Bilgileri */}
+                {student.parentInfo?.fullName && (
+                    <div className="flex items-center gap-2 text-[13px] text-slate-600 font-medium whitespace-nowrap overflow-x-auto print:whitespace-normal">
+                        <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <span className="font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md text-[10px]">1. Veli</span>
+                        <span className="text-slate-800">{student.parentInfo.fullName} <span className="text-slate-400 text-xs font-normal">({student.parentInfo.relationship || 'Belirtilmemiş'})</span></span>
+                        <span className="text-slate-300 mx-1">|</span>
+                        <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {formatPhone(student.parentInfo.phone)}</span>
+                        {student.parentInfo.email && (
+                             <>
+                                <span className="text-slate-300 mx-1">|</span>
+                                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {student.parentInfo.email}</span>
+                             </>
+                        )}
+                    </div>
+                )}
+                
+                {student.parent2Info?.fullName && (
+                    <div className="flex items-center gap-2 text-[13px] text-slate-600 font-medium whitespace-nowrap overflow-x-auto print:whitespace-normal">
+                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md text-[10px]">2. Veli</span>
+                        <span className="text-slate-800">{student.parent2Info.fullName} <span className="text-slate-400 text-xs font-normal">({student.parent2Info.relationship || 'Belirtilmemiş'})</span></span>
+                        <span className="text-slate-300 mx-1">|</span>
+                        <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {formatPhone(student.parent2Info.phone)}</span>
+                        {student.parent2Info.email && (
+                             <>
+                                <span className="text-slate-300 mx-1">|</span>
+                                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {student.parent2Info.email}</span>
+                             </>
+                        )}
+                    </div>
+                )}
             </div>
           </div>
-          
-          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-slate-600">
-             <div className="flex items-center gap-1.5 whitespace-nowrap">
-                 <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                 <span className="font-bold">{student.phone}</span>
-             </div>
-             <div className="flex items-center gap-1.5 whitespace-nowrap">
-                 <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                 <span className="font-medium">{student.email}</span>
-             </div>
-             {student.parentInfo?.fullName && (
-                 <>
-                    <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <User className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="font-medium">{student.parentInfo.fullName} ({student.parentInfo.relationship})</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="font-bold">{student.parentInfo.phone}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="font-medium">{student.parentInfo.email}</span>
-                    </div>
-                 </>
-             )}
-          </div>
+        </div>
           
           {/* Action Area for Stages */}
-          <div className="mt-4 flex gap-3 print:hidden">
-              {currentStage === PipelineStage.ANALYSE && (
-                  <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-xl border border-indigo-100">
-                      <span className="text-xs font-bold text-indigo-700 ml-2">STATUS:</span>
-                      {(['Mid', 'Hot', 'Super Hot'] as AnalyseStatus[]).map(status => (
-                          <button 
+        <div className="flex flex-col items-end gap-3 print:hidden shrink-0 mt-2 xl:mt-0">
+             <div className="flex flex-wrap items-center justify-end gap-2">
+                 <div className="relative print:hidden shrink-0 mr-1">
+                    <select
+                        value={currentStage}
+                        onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
+                        className={`appearance-none cursor-pointer pl-3 pr-8 py-2 rounded-lg text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-offset-1 transition-all shadow-sm border border-transparent hover:brightness-95 ${
+                            currentStage === PipelineStage.STUDENT ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
+                            currentStage === PipelineStage.ENROLLMENT ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
+                            currentStage === PipelineStage.NOT_INTERESTED ? 'bg-slate-200 text-slate-700 focus:ring-slate-500' :
+                            'bg-indigo-100 text-indigo-700 focus:ring-indigo-500'
+                        }`}
+                    >
+                        {Object.values(PipelineStage).map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                        ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
+                 </div>
+
+                 <button 
+                    onClick={openEditModal}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors shadow-sm text-xs font-bold"
+                >
+                    <Edit2 className="w-4 h-4" />
+                    Analizi Güncelle
+                </button>
+                 <button 
+                    onClick={handleAnalyze}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm text-xs font-bold"
+                >
+                {loading ? <span className="animate-spin text-sm">⟳</span> : <BrainCircuit className="w-4 h-4" />}
+                UNIC Analizi Yap
+              </button>
+             </div>
+
+             {currentStage === PipelineStage.ANALYSE && (
+                <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
+                    {(['Mid', 'Hot', 'Super Hot'] as AnalyseStatus[]).map(status => (
+                        <button 
                             key={status}
                             onClick={() => handleSetAnalyseStatus(status)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                            className={`flex-1 lg:flex-none px-5 py-2 rounded-lg text-sm font-bold transition-all ${
                                 activeAnalyseStatus === status 
-                                ? 'bg-indigo-600 text-white shadow-md' 
-                                : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-100'
+                                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200 ring-1 ring-slate-100' 
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                             }`}
-                          >
-                              {status}
-                          </button>
-                      ))}
-                      <div className="w-px h-6 bg-indigo-200 mx-2" />
-                      <button 
-                         onClick={handleRegisterRecord}
-                         className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-bold"
-                      >
-                          <Save className="w-3.5 h-3.5" />
-                          Kayıt Oluştur
-                      </button>
-                  </div>
-              )}
-          </div>
-       </div>
-        <div className="flex gap-2 print:hidden">
-             <button 
-                onClick={openEditModal}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors shadow-sm text-sm font-medium"
-            >
-                <Edit2 className="w-4 h-4" />
-                Analizi Güncelle
-            </button>
-             <button 
-                onClick={handleAnalyze}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-500/20 text-sm font-medium"
-            >
-            {loading ? <span className="animate-spin">⟳</span> : <BrainCircuit className="w-4 h-4" />}
-            Run UNIC Analysis
-          </button>
+                        >
+                            {status}
+                        </button>
+                    ))}
+                    <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                    <button 
+                        onClick={handleRegisterRecord}
+                        className="flex-1 lg:flex-none px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 hover:shadow-md transition-all shadow-sm text-sm font-bold flex items-center justify-center gap-2"
+                    >
+                        <CheckCircle className="w-4 h-4" />
+                        Process
+                    </button>
+                </div>
+             )}
         </div>
       </div>
 
@@ -736,10 +1630,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           { id: 'profile', label: 'Profil', icon: User, visible: true },
           { id: 'analysis', label: 'AI Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
-          { id: 'application', label: 'Application', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
-          { id: 'enrollment', label: 'Enrollment', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
-          { id: 'visa', label: 'Visa', icon: CreditCard, visible: currentStage === PipelineStage.ENROLLMENT || currentStage === PipelineStage.STUDENT },
-          { id: 'accommodation', label: 'Accommodation', icon: BookOpen, visible: currentStage === PipelineStage.ENROLLMENT },
+          { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
+          { id: 'enrollment', label: 'Kabul & İşlem', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
+          { id: 'visa', label: 'Vize', icon: CreditCard, visible: currentStage === PipelineStage.ENROLLMENT || currentStage === PipelineStage.STUDENT },
+          { id: 'accommodation', label: 'Konaklama', icon: BookOpen, visible: currentStage === PipelineStage.ENROLLMENT },
         ].filter(t => t.visible).map((tab) => (
             <button
                 key={tab.id}
@@ -768,13 +1662,31 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         <GraduationCap className="w-5 h-5 text-indigo-600 print:text-black" />
                         <h3 className="font-bold text-slate-800">Akademik Bilgiler</h3>
                     </div>
-                    <div className="grid grid-cols-2 gap-6">
-                        <DisplayField label="Okul Adı" value={student.schoolName} />
-                        <DisplayField label="Sınıf / Seviye" value={student.currentGrade} />
-                        <DisplayField label="Current Education" value={student.educationStatus} />
-                        <DisplayField label="Interested Program" value={student.targetDegree} />
-                        <DisplayField label="Alan / Bölüm" value={student.analysis?.academic?.educationField} />
-                        <DisplayField label="Not Ortalaması (GPA)" value={student.analysis?.academic?.gpa} />
+                    <div className="flex flex-col gap-5">
+                        <div className="flex flex-col gap-1.5">
+                            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Eğitim Durumu</label>
+                            <div className="text-[14px] font-medium text-slate-800 flex items-center gap-1 flex-wrap">
+                                {(() => {
+                                    const statusMap: Record<string, string> = {
+                                        'Primary': 'İlköğretim',
+                                        'High School': 'Lise',
+                                        'University': 'Üniversite',
+                                        'Master': 'Yüksek Lisans',
+                                        'Graduate': 'Mezun'
+                                    };
+                                    return statusMap[student.educationStatus || ''] || student.educationStatus || '-';
+                                })()}
+                                <span> - </span>
+                                {student.schoolName || '-'}
+                                <span> - </span>
+                                {student.currentGrade || '-'}
+                                <span> - </span>
+                                {student.analysis?.academic?.educationField || '-'}
+                            </div>
+                            <div className="text-[13px] text-slate-600 flex items-center gap-1 flex-wrap">
+                                <span>Yaklaşık Not Ortalaması: <strong className="text-slate-800">{student.analysis?.academic?.gpa || '-'}</strong></span>
+                            </div>
+                        </div>
                         <DisplayField label="Akademik Notlar" value={student.analysis?.academic?.academicNotes} fullWidth />
                     </div>
                 </div>
@@ -783,7 +1695,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                         <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800 text-lg">Eğitim Tercihleri</h3>
+                        <h3 className="font-bold text-slate-800">Eğitim Tercihleri</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
@@ -816,28 +1728,46 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                               <div className="grid grid-cols-1 gap-2.5">
                                 {student.analysis?.preferences?.country1 && (
                                     <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <span className="text-2xl">{getFlagEmoji(student.analysis.preferences.country1)}</span>
-                                        <div className="flex flex-col">
+                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country1) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country1)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country1} />
+                                            ) : (
+                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country1)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase">1. Ülke</span>
-                                            <span className="font-bold">{student.analysis.preferences.country1}</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country1}</span>
                                         </div>
                                     </div>
                                 )}
                                 {student.analysis?.preferences?.country2 && (
                                     <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <span className="text-2xl">{getFlagEmoji(student.analysis.preferences.country2)}</span>
-                                        <div className="flex flex-col">
+                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country2) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country2)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country2} />
+                                            ) : (
+                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country2)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase">2. Ülke</span>
-                                            <span className="font-bold">{student.analysis.preferences.country2}</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country2}</span>
                                         </div>
                                     </div>
                                 )}
                                 {student.analysis?.preferences?.country3 && (
                                     <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <span className="text-2xl">{getFlagEmoji(student.analysis.preferences.country3)}</span>
-                                        <div className="flex flex-col">
+                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country3) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country3)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country3} />
+                                            ) : (
+                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country3)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase">3. Ülke</span>
-                                            <span className="font-bold">{student.analysis.preferences.country3}</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country3}</span>
                                         </div>
                                     </div>
                                 )}
@@ -845,6 +1775,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                               </div>
                         </div>
                     </div>
+                    {student.analysis?.preferences?.notes && (
+                        <div className="mt-6 pt-4 border-t border-slate-100">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Tercih Notları</label>
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.notes}</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Social Activities */}
@@ -880,6 +1816,67 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                 )}
 
+                {/* Citizenship Info */}
+                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                        <Flag className="w-5 h-5 text-indigo-600 print:text-black" />
+                        <h3 className="font-bold text-slate-800">Vatandaşlık & Pasaport</h3>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                            {student.analysis?.citizenship?.isTurkishCitizen !== false && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                                    <CheckCircle className="w-3.5 h-3.5" /> Türk Vatandaşı
+                                </span>
+                            )}
+                            {student.analysis?.citizenship?.hasGreenPassport && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
+                                    <CheckCircle className="w-3.5 h-3.5" /> Yeşil Pasaport
+                                </span>
+                            )}
+                            {student.analysis?.citizenship?.hasBlackPassport && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
+                                    <CheckCircle className="w-3.5 h-3.5" /> Siyah Pasaport
+                                </span>
+                            )}
+                        </div>
+                        
+                        {student.analysis?.citizenship?.hasResidencePermit && (
+                            <div className="text-sm">
+                                <span className="font-bold text-slate-700">Oturum İzni:</span> 
+                                <span className="ml-2 text-slate-600">{student.analysis.citizenship.residencePermitNote || 'Var'}</span>
+                            </div>
+                        )}
+                        
+                        {student.analysis?.citizenship?.hasForeignCitizenship && (
+                            <div className="text-sm">
+                                <span className="font-bold text-slate-700">Diğer Vatandaşlık:</span> 
+                                <span className="ml-2 text-slate-600">{student.analysis.citizenship.foreignCitizenshipNote || 'Var'}</span>
+                            </div>
+                        )}
+
+                        <div className="pt-3 border-t border-slate-100 mt-4 print:hidden">
+                            {studentDocuments.find(d => d.id === 'passport') ? (
+                                <button 
+                                    onClick={() => setActiveTab('documents')}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors rounded-xl text-sm font-bold border border-emerald-200 shadow-sm"
+                                >
+                                    <FileCheck className="w-4 h-4" />
+                                    Pasaport Yüklendi (Görüntüle)
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => setActiveTab('documents')}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-white text-indigo-600 hover:bg-slate-50 transition-colors rounded-xl text-sm font-bold border border-slate-200 shadow-sm"
+                                >
+                                    <FileDown className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
+                                    Pasaport Yükle
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                         <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -887,10 +1884,26 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                     <div className="space-y-4">
                         {student.analysis?.language?.hasTakenExam ? (
-                            <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 print:bg-white print:border-slate-300">
-                                <p className="text-xs text-emerald-600 font-medium mb-1 print:text-slate-600">Sınav Skoru</p>
-                                <p className="text-sm font-bold text-emerald-800 print:text-black">{student.analysis.language.examScore}</p>
-                                <p className="text-xs text-emerald-600 mt-1 print:text-slate-500">{student.analysis.language.pastExamDate}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1 {isExamExpired(student.analysis.language.pastExamDate) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore || '-'}</p>
+                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)}</p>
+                                </div>
+                                {(student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
+                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2 {isExamExpired(student.analysis.language.pastExamDate2) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore2 || '-'}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)}</p>
+                                    </div>
+                                )}
+                                {(student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
+                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3 {isExamExpired(student.analysis.language.pastExamDate3) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore3 || '-'}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)}</p>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                              <div>
@@ -899,6 +1912,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     {student.analysis?.language?.estimatedLevel || '-'}
                                 </span>
                              </div>
+                        )}
+
+                        {student.analysis?.language?.wantsTutoring && (
+                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start gap-2 print:bg-white print:border-slate-300">
+                                <CheckCircle className="w-4 h-4 text-indigo-600 mt-0.5 print:text-slate-800 shrink-0" />
+                                <p className="text-sm text-indigo-800 font-medium print:text-slate-700">Öğrenci deneme sınavına katılmak ve özel ders hakkında bilgi almak istiyor.</p>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -913,13 +1933,35 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             {Object.entries(student.analysis.academic.exams as Record<string, ExamDetails>).map(([examName, details]) => {
                                 if (!details.selected) return null;
                                 return (
-                                    <div key={examName} className="bg-slate-50 p-3 rounded-xl border border-slate-100 print:bg-white print:border-slate-300">
-                                        <div className="flex justify-between items-start mb-2">
+                                    <div key={examName} className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 print:bg-white print:border-slate-300">
+                                        <div className="flex justify-between items-start">
                                             <span className="font-bold text-slate-700">{examName}</span>
-                                            <span className={`text-[10px] px-2 py-0.5 rounded ${details.status === 'Taken' ? 'bg-emerald-100 text-emerald-700 print:bg-white print:border print:border-slate-300' : 'bg-amber-100 text-amber-700 print:bg-white print:border print:border-slate-300'}`}>
+                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${details.status === 'Taken' ? 'bg-emerald-100 text-emerald-700 print:bg-emerald-50 print:border print:border-emerald-200' : 'bg-amber-100 text-amber-700 print:bg-amber-50 print:border print:border-amber-200'}`}>
                                                 {details.status === 'Taken' ? 'Girdi' : 'Hazırlanıyor'}
                                             </span>
                                         </div>
+                                        {(details.subject || details.score || details.date) && (
+                                            <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 grid grid-cols-2 gap-y-2.5 gap-x-2">
+                                                {details.subject && (
+                                                    <div className="col-span-2">
+                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Branş / Konu</p>
+                                                        <p className="text-xs font-medium text-slate-800">{details.subject}</p>
+                                                    </div>
+                                                )}
+                                                {details.date && (
+                                                    <div>
+                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Tarih</p>
+                                                        <p className="text-xs font-medium text-slate-800">{formatExamDate(details.date)}</p>
+                                                    </div>
+                                                )}
+                                                {details.score && (
+                                                    <div>
+                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Alınan Skor / Hedef</p>
+                                                        <p className="text-xs font-bold text-indigo-600">{details.score}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )
                             })}
@@ -930,9 +1972,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                         <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Bütçe</h3>
+                        <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
                     </div>
                     <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
                 </div>
@@ -1108,7 +2150,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
                             >
                                 <option value="">Seçiniz...</option>
-                                {COUNTRY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                                {allCountries.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
 
@@ -1234,32 +2276,41 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Edit Analysis Modal */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4 print:hidden">
-             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+        <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only print:hidden">
+             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-160px)] flex flex-col overflow-hidden mb-10 animate-fade-in">
                 <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
-                    <h3 className="text-lg font-bold text-slate-800">Öğrenci Analizini Güncelle</h3>
-                    <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                    <div className="flex items-center gap-3">
+                         <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+                             <BrainCircuit className="w-6 h-6" />
+                         </div>
+                         <div>
+                             <h3 className="text-lg font-bold text-slate-800">Analizi Güncelle</h3>
+                             <p className="text-sm text-slate-500">{student.firstName} {student.lastName}</p>
+                         </div>
+                    </div>
+                    <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                         <X className="w-6 h-6 text-slate-400" />
                     </button>
                 </div>
                 
-                <div className="flex flex-1 overflow-hidden">
-                    {/* Sidebar Tabs */}
-                    <div className="w-56 bg-slate-50 border-r border-slate-200 p-3 space-y-1">
+                 <div className="flex flex-1 overflow-hidden">
+                    <div className="w-64 bg-slate-50 border-r border-slate-200 p-4 space-y-2 overflow-y-auto">
                         {[
+                            { id: 'contact', label: 'İletişim Bilgileri', icon: Phone },
                             { id: 'language', label: 'Dil Yeterliliği', icon: Globe },
-                            { id: 'academic', label: 'Akademik', icon: GraduationCap },
+                            { id: 'academic', label: 'Akademik Durum', icon: GraduationCap },
+                            { id: 'citizenship', label: 'Vatandaşlık', icon: Flag },
                             { id: 'preferences', label: 'Tercihler', icon: BookOpen },
                             { id: 'social', label: 'Sosyal & Spor', icon: Activity },
-                            { id: 'budget', label: 'Bütçe', icon: CreditCard },
+                            { id: 'budget', label: 'Eğitim Bütçesi', icon: Coins },
                         ].map(tab => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveEditTab(tab.id)}
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                                     activeEditTab === tab.id 
                                     ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' 
-                                    : 'text-slate-500 hover:bg-white/50'
+                                    : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
                                 }`}
                             >
                                 <tab.icon className="w-4 h-4" />
@@ -1269,21 +2320,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-8 bg-white">
+                        {activeEditTab === 'contact' && renderEditContact()}
                         {activeEditTab === 'language' && renderEditLanguage()}
                         {activeEditTab === 'academic' && renderEditAcademic()}
+                        {activeEditTab === 'citizenship' && renderEditCitizenship()}
                         {activeEditTab === 'preferences' && renderEditPreferences()}
-                        {activeEditTab === 'social' && (
-                             <div className="space-y-4">
-                                <input placeholder="Spor" value={editForm.social.sports || ''} onChange={e => updateEditField('social', 'sports', e.target.value)} className="w-full border p-2 rounded text-sm"/>
-                             </div>
-                        )}
+                        {activeEditTab === 'social' && renderEditSocial()}
+                        {activeEditTab === 'budget' && renderEditBudget()}
                     </div>
                 </div>
 
                 <div className="p-5 border-t border-slate-200 bg-white flex justify-end gap-3">
-                    <button onClick={() => setIsEditModalOpen(false)} className="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium">Vazgeç</button>
-                    <button onClick={handleSaveAnalysis} className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 flex items-center gap-2">
-                        <Save className="w-4 h-4" /> Kaydet
+                    <button onClick={() => setIsEditModalOpen(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors">Vazgeç</button>
+                    <button onClick={handleSaveAnalysis} className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2">
+                        <Save className="w-4 h-4" /> Analizi Kaydet
                     </button>
                 </div>
              </div>

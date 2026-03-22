@@ -2,54 +2,24 @@
 import React, { useState, useEffect } from 'react';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
+import { interestedProgramService } from '../services/interestedProgramService';
+import { mainDegreeService } from '../services/mainDegreeService';
+import { countryService } from '../services/countryService';
 import { Student, PipelineStage, AnalysisReport, ExamDetails } from '../types';
 import { 
   Search, Plus, Filter, ChevronRight, X, ChevronDown, ChevronUp, 
   User, Phone, Mail, Calendar, School, Users, Globe, FileCheck, 
   ClipboardList, Save, CheckCircle, AlertCircle, Trash2, Sparkles,
-  GraduationCap, BookOpen, Coins, Activity, BrainCircuit
+  GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag
 } from 'lucide-react';
+import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 
 interface StudentListProps {
   onSelectStudent: (student: Student) => void;
 }
 
-const PROGRAM_OPTIONS = [
-  "Mühendislik", "Tıp", "Hukuk", "İşletme & Ekonomi", 
-  "Psikoloji", "Mimarlık", "Sanat & Tasarım", 
-  "Bilgisayar Bilimleri", "Sosyal Bilimler", "Diğer"
-];
+// Options will be loaded from services
 
-const COUNTRY_OPTIONS = [
-  "Amerika Birleşik Devletleri", "Birleşik Krallık", "Kanada", 
-  "Almanya", "Hollanda", "İtalya", "Fransa", "Avustralya", "İrlanda", "Diğer"
-];
-
-const getFlagEmoji = (countryName: string) => {
-  const flags: Record<string, string> = {
-    "Amerika Birleşik Devletleri": "🇺🇸",
-    "USA": "🇺🇸",
-    "United States": "🇺🇸",
-    "Birleşik Krallık": "🇬🇧",
-    "UK": "🇬🇧",
-    "United Kingdom": "🇬🇧",
-    "Kanada": "🇨🇦",
-    "Canada": "🇨🇦",
-    "Almanya": "🇩🇪",
-    "Germany": "🇩🇪",
-    "Hollanda": "🇳🇱",
-    "Netherlands": "🇳🇱",
-    "İtalya": "🇮🇹",
-    "Italy": "🇮🇹",
-    "Fransa": "🇫🇷",
-    "France": "🇫🇷",
-    "Avustralya": "🇦🇺",
-    "Australia": "🇦🇺",
-    "İrlanda": "🇮🇪",
-    "Ireland": "🇮🇪"
-  };
-  return flags[countryName] || "🏳️";
-};
 
 const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
   const [students, setStudents] = useState<Student[]>([]);
@@ -81,20 +51,33 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     currentGrade: '',
     educationStatus: ''
   });
+  const [studentContactInfo, setStudentContactInfo] = useState({
+      phone: '',
+      email: '',
+      parentName: '',
+      parentPhone: '',
+      parentEmail: '',
+      parent2Name: '',
+      parent2Phone: '',
+      parent2Email: ''
+  });
 
   const [showParentInfo, setShowParentInfo] = useState(false);
   const [calculatedAge, setCalculatedAge] = useState<string>('');
+  
+  // Dynamic Options
+  const [allPrograms, setAllPrograms] = useState<string[]>([]);
+  const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
+  const [allCountries, setAllCountries] = useState<string[]>([]);
+  const [activeStageTab, setActiveStageTab] = useState<PipelineStage>(PipelineStage.FOLLOW);
 
   // Form State for New Student
   const [formData, setFormData] = useState<Partial<Student>>({
     firstName: '',
     lastName: '',
     email: '',
-    phone: '',
+    phone: '0',
     dob: '',
-    educationStatus: undefined,
-    currentGrade: '',
-    schoolName: '',
     hasForeignCitizenship: false,
     foreignCitizenshipNote: '',
     hasGreenPassport: false,
@@ -103,13 +86,36 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
       relationship: '',
       phone: '',
       email: ''
-    }
+    },
+    parent2Info: {
+      fullName: '',
+      relationship: '',
+      phone: '',
+      email: ''
+    },
+    targetPrograms: []
   });
 
   useEffect(() => {
     loadStudents();
     loadTuitionRanges();
+    loadOptions();
   }, []);
+
+  const loadOptions = async () => {
+    try {
+        const [programs, mainDegs, countries] = await Promise.all([
+            interestedProgramService.getAll(),
+            mainDegreeService.getAll(),
+            countryService.getAll()
+        ]);
+        setAllPrograms(programs.map(p => p.name));
+        setAllMainDegrees(mainDegs.map(d => d.name));
+        setAllCountries(countries.map(c => c.name));
+    } catch (error) {
+        console.error("Failed to load options", error);
+    }
+  };
 
   const loadStudents = async () => {
     setIsLoading(true);
@@ -169,8 +175,44 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value;
+    
+    // If user tries to delete the starting 0, put it back
+    if (!value.startsWith('0')) {
+      value = '0' + value.replace(/\D/g, '');
+    } else {
+      // Keep only digits
+      value = '0' + value.substring(1).replace(/\D/g, '');
+    }
+    
+    // Limit to 11 digits (0 + 10)
+    if (value.length > 11) {
+      value = value.substring(0, 11);
+    }
+    
+    setFormData(prev => ({
+      ...prev,
+      phone: value
+    }));
+  };
+
+  const handleDobPartChange = (field: 'day' | 'month' | 'year', value: string) => {
+    const currentDob = formData.dob || '2008-01-01';
+    let [y, m, d] = currentDob.split('-');
+    
+    if (field === 'year') y = value;
+    if (field === 'month') m = value.padStart(2, '0');
+    if (field === 'day') d = value.padStart(2, '0');
+    
+    setFormData(prev => ({
+      ...prev,
+      dob: `${y}-${m}-${d}`
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent, goToAnalysis: boolean = false) => {
+    if (e) e.preventDefault();
     try {
         const newStudentPayload: Partial<Student> = {
             ...formData,
@@ -194,10 +236,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
             firstName: '',
             lastName: '',
             email: '',
-            phone: '',
+            phone: '0',
             dob: '',
-            parentInfo: { fullName: '', relationship: '', phone: '', email: '' }
+            parentInfo: { fullName: '', relationship: '', phone: '', email: '' },
+            parent2Info: { fullName: '', relationship: '', phone: '', email: '' }
         });
+
+        if (goToAnalysis) {
+          // Open analysis modal for the newly created student
+          // We need a small delay or use the direct object
+          setTimeout(() => {
+            const dummyEvent = { stopPropagation: () => {} } as any;
+            openAnalysisModal(createdStudent, dummyEvent);
+          }, 100);
+        }
+
     } catch (error: any) {
         const msg = error?.message || JSON.stringify(error);
         console.error("Error creating student:", msg);
@@ -213,12 +266,22 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
         academic: student.analysis?.academic || { exams: {} },
         social: student.analysis?.social || {},
         preferences: student.analysis?.preferences || {},
-        budget: student.analysis?.budget || {}
+        budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
     });
     setStudentAcademicInfo({
         schoolName: student.schoolName || '',
         currentGrade: student.currentGrade || '',
         educationStatus: student.educationStatus || ''
+    });
+    setStudentContactInfo({
+        phone: student.phone || '',
+        email: student.email || '',
+        parentName: student.parentInfo?.fullName || '',
+        parentPhone: student.parentInfo?.phone || '',
+        parentEmail: student.parentInfo?.email || '',
+        parent2Name: student.parent2Info?.fullName || '',
+        parent2Phone: student.parent2Info?.phone || '',
+        parent2Email: student.parent2Info?.email || ''
     });
 
     // Determine initial GPA scale
@@ -253,6 +316,22 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
         currentGrade: studentAcademicInfo.currentGrade,
         educationStatus: studentAcademicInfo.educationStatus as any,
         targetDegree: selectedStudentForAnalysis?.targetDegree,
+        phone: studentContactInfo.phone,
+        email: studentContactInfo.email,
+        parentInfo: {
+            ...selectedStudentForAnalysis.parentInfo,
+            fullName: studentContactInfo.parentName,
+            relationship: selectedStudentForAnalysis.parentInfo?.relationship || '',
+            phone: studentContactInfo.parentPhone,
+            email: studentContactInfo.parentEmail,
+        },
+        parent2Info: {
+            ...selectedStudentForAnalysis.parent2Info,
+            fullName: studentContactInfo.parent2Name,
+            relationship: selectedStudentForAnalysis.parent2Info?.relationship || '',
+            phone: studentContactInfo.parent2Phone,
+            email: studentContactInfo.parent2Email,
+        },
         analysis: analysisForm 
     };
 
@@ -358,25 +437,67 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                 </div>
 
                 {analysisForm.language.hasTakenExam && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm text-slate-600 mb-1">Sınav Skoru / Detayı</label>
-                            <input 
-                                type="text"
-                                value={analysisForm.language.examScore || ''}
-                                onChange={(e) => updateAnalysisField('language', 'examScore', e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                placeholder="Örn: IELTS 6.5"
-                            />
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">1. Sınav Skoru / Detayı</label>
+                                <input 
+                                    type="text"
+                                    value={analysisForm.language.examScore || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'examScore', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                    placeholder="Örn: IELTS 6.5"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={analysisForm.language.pastExamDate || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'pastExamDate', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                            <input 
-                                type="date"
-                                value={analysisForm.language.pastExamDate || ''}
-                                onChange={(e) => updateAnalysisField('language', 'pastExamDate', e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">2. Sınav Skoru (İsteğe Bağlı)</label>
+                                <input 
+                                    type="text"
+                                    value={analysisForm.language.examScore2 || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'examScore2', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={analysisForm.language.pastExamDate2 || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'pastExamDate2', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">3. Sınav Skoru (İsteğe Bağlı)</label>
+                                <input 
+                                    type="text"
+                                    value={analysisForm.language.examScore3 || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'examScore3', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
+                                <input 
+                                    type="date"
+                                    value={analysisForm.language.pastExamDate3 || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'pastExamDate3', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
@@ -737,24 +858,70 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Tarih</label>
-                                    <input 
-                                        type="date" 
-                                        value={details.date || ''}
-                                        onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
-                                    />
+                                    <label className="block text-xs text-slate-500 mb-1">{key === 'AP' ? 'Lise Sınıfı' : 'Tarih'}</label>
+                                    {key === 'AP' ? (
+                                        <select
+                                            value={details.date || ''}
+                                            onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                        >
+                                            <option value="">Seçiniz</option>
+                                            <option value="9. Sınıf">9. Sınıf</option>
+                                            <option value="10. Sınıf">10. Sınıf</option>
+                                            <option value="11. Sınıf">11. Sınıf</option>
+                                            <option value="12. Sınıf">12. Sınıf</option>
+                                            <option value="Mezun">Mezun</option>
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            type="date" 
+                                            value={details.date || ''}
+                                            onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                        />
+                                    )}
                                 </div>
                                 {key === 'AP' && (
                                     <div className="col-span-2">
-                                        <label className="block text-xs text-slate-500 mb-1">Ders(ler)</label>
-                                        <input 
-                                            type="text" 
+                                        <label className="block text-xs text-slate-500 mb-1">Ders</label>
+                                        <select 
                                             value={details.subject || ''}
                                             onChange={(e) => updateNestedExam(key, 'subject', e.target.value)}
                                             className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
-                                            placeholder="Calculus BC, Physics C..."
-                                        />
+                                        >
+                                            <option value="">AP Dersi Seçiniz</option>
+                                            <option value="AP Precalculus">AP Precalculus</option>
+                                            <option value="AP Calculus AB">AP Calculus AB</option>
+                                            <option value="AP Calculus BC">AP Calculus BC</option>
+                                            <option value="AP Statistics">AP Statistics</option>
+                                            <option value="AP Biology">AP Biology</option>
+                                            <option value="AP Chemistry">AP Chemistry</option>
+                                            <option value="AP Environmental Science">AP Environmental Science</option>
+                                            <option value="AP Physics 1">AP Physics 1</option>
+                                            <option value="AP Physics 2">AP Physics 2</option>
+                                            <option value="AP Physics C: Mechanics">AP Physics C: Mechanics</option>
+                                            <option value="AP Physics C: Electricity & Magnetism">AP Physics C: Electricity & Magnetism</option>
+                                            <option value="AP Computer Science A">AP Computer Science A</option>
+                                            <option value="AP Computer Science Principles">AP Computer Science Principles</option>
+                                            <option value="AP Macroeconomics">AP Macroeconomics</option>
+                                            <option value="AP Microeconomics">AP Microeconomics</option>
+                                            <option value="AP Psychology">AP Psychology</option>
+                                            <option value="AP English Language">AP English Language</option>
+                                            <option value="AP English Literature">AP English Literature</option>
+                                            <option value="AP World History: Modern">AP World History: Modern</option>
+                                            <option value="AP European History">AP European History</option>
+                                            <option value="AP US History">AP US History</option>
+                                            <option value="AP Human Geography">AP Human Geography</option>
+                                            <option value="AP Comparative Government">AP Comparative Government</option>
+                                            <option value="AP US Government">AP US Government</option>
+                                            <option value="AP Art History">AP Art History</option>
+                                            <option value="AP Music Theory">AP Music Theory</option>
+                                            <option value="AP 2-D Art and Design">AP 2-D Art and Design</option>
+                                            <option value="AP 3-D Art and Design">AP 3-D Art and Design</option>
+                                            <option value="AP Drawing">AP Drawing</option>
+                                            <option value="AP Research">AP Research</option>
+                                            <option value="AP Seminar">AP Seminar</option>
+                                        </select>
                                     </div>
                                 )}
                             </div>
@@ -782,28 +949,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
    const renderPreferencesTab = () => (
       <div className="space-y-6 animate-fade-in">
-           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-               <h4 className="text-sm font-semibold text-slate-700 mb-3">Hedef Program Seviyesi</h4>
-               <div>
-                   <label className="block text-sm text-slate-600 mb-1">Interested Program</label>
-                   <select 
-                       value={selectedStudentForAnalysis?.targetDegree || ''}
-                       onChange={(e) => {
-                           if (selectedStudentForAnalysis) {
-                               setSelectedStudentForAnalysis({ ...selectedStudentForAnalysis, targetDegree: e.target.value as any });
-                           }
-                       }}
-                       className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                   >
-                       <option value="">Seçiniz</option>
-                       <option value="Summer Course">Summer Course</option>
-                       <option value="Language Course">Language Course</option>
-                       <option value="High School">High School</option>
-                       <option value="Undergraduate">Undergraduate</option>
-                       <option value="Master">Master</option>
-                   </select>
-               </div>
-           </div>
 
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
@@ -816,7 +961,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                         >
                             <option value="">Seçiniz</option>
-                            {PROGRAM_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                     </div>
                     <div>
@@ -827,7 +972,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                         >
                             <option value="">Seçiniz</option>
-                            {PROGRAM_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                     </div>
                </div>
@@ -836,7 +981,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[1, 2, 3, 4, 5].map(i => (
+                    {[1, 2, 3].map(i => (
                         <div key={i}>
                             <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
                             <select 
@@ -845,14 +990,177 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                                 className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                             >
                                 <option value="">Seçiniz</option>
-                                {COUNTRY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                             </select>
                         </div>
                     ))}
                </div>
            </div>
+
+           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Tercih Notları</h4>
+               <textarea 
+                  value={analysisForm.preferences.notes || ''} 
+                  onChange={(e) => updateAnalysisField('preferences', 'notes', e.target.value)} 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]" 
+                  placeholder="Tercihlere dair ek notlar..."
+               />
+           </div>
       </div>
    );
+
+  const renderCitizenshipTab = () => (
+      <div className="space-y-6 animate-fade-in">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Flag className="w-4 h-4 text-indigo-500" />
+                Vatandaşlık ve Pasaport Bilgileri
+            </h4>
+            <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={!!analysisForm.citizenship?.isTurkishCitizen}
+                        onChange={(e) => updateAnalysisField('citizenship', 'isTurkishCitizen', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Türk Vatandaşı</span>
+                </label>
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={!!analysisForm.citizenship?.hasGreenPassport}
+                        onChange={(e) => updateAnalysisField('citizenship', 'hasGreenPassport', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Yeşil Pasaportu Var</span>
+                </label>
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={!!analysisForm.citizenship?.hasBlackPassport}
+                        onChange={(e) => updateAnalysisField('citizenship', 'hasBlackPassport', e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Siyah Pasaportu Var</span>
+                </label>
+                
+                <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                            type="checkbox"
+                            checked={!!analysisForm.citizenship?.hasResidencePermit}
+                            onChange={(e) => {
+                                updateAnalysisField('citizenship', 'hasResidencePermit', e.target.checked);
+                                if(!e.target.checked) updateAnalysisField('citizenship', 'residencePermitNote', '');
+                            }}
+                            className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">Oturum İzni Var</span>
+                    </label>
+                    {analysisForm.citizenship?.hasResidencePermit && (
+                        <div className="ml-8">
+                            <input 
+                                value={analysisForm.citizenship?.residencePermitNote || ''}
+                                onChange={(e) => updateAnalysisField('citizenship', 'residencePermitNote', e.target.value)}
+                                placeholder="Hangi ülkeye ait, bitiş tarihi vb. detaylar..."
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                            type="checkbox"
+                            checked={!!analysisForm.citizenship?.hasForeignCitizenship}
+                            onChange={(e) => {
+                                updateAnalysisField('citizenship', 'hasForeignCitizenship', e.target.checked);
+                                if(!e.target.checked) updateAnalysisField('citizenship', 'foreignCitizenshipNote', '');
+                            }}
+                            className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">Farklı bir Vatandaşlığı Var</span>
+                    </label>
+                    {analysisForm.citizenship?.hasForeignCitizenship && (
+                        <div className="ml-8">
+                            <input 
+                                value={analysisForm.citizenship?.foreignCitizenshipNote || ''}
+                                onChange={(e) => updateAnalysisField('citizenship', 'foreignCitizenshipNote', e.target.value)}
+                                placeholder="Hangi ülke vatandaşı (Örn: Almanya)"
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+      </div>
+  );
+
+  const renderContactTab = () => (
+      <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-indigo-500" />
+                  Öğrenci İletişim
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                      <input value={studentContactInfo.phone} onChange={e => setStudentContactInfo({...studentContactInfo, phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                      <input value={studentContactInfo.email} onChange={e => setStudentContactInfo({...studentContactInfo, email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
+              </div>
+          </div>
+          
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4">1. Veli</h4>
+              <div className="space-y-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                      <input value={studentContactInfo.parentName} onChange={e => setStudentContactInfo({...studentContactInfo, parentName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                          <input value={studentContactInfo.parentPhone} onChange={e => setStudentContactInfo({...studentContactInfo, parentPhone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                          <input value={studentContactInfo.parentEmail} onChange={e => setStudentContactInfo({...studentContactInfo, parentEmail: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-4">2. Veli</h4>
+              <div className="space-y-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                      <input value={studentContactInfo.parent2Name} onChange={e => setStudentContactInfo({...studentContactInfo, parent2Name: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Telefon</label>
+                          <input value={studentContactInfo.parent2Phone} onChange={e => setStudentContactInfo({...studentContactInfo, parent2Phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">E-posta</label>
+                          <input value={studentContactInfo.parent2Email} onChange={e => setStudentContactInfo({...studentContactInfo, parent2Email: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      </div>
+  );
 
   const renderSocialTab = () => (
       <div className="space-y-6 animate-fade-in">
@@ -930,41 +1238,44 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                  Yıllık Eğitim Bütçesi (Yaşam Hariç)
              </h4>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {tuitionRanges.length > 0 ? tuitionRanges.map((option) => (
-                    <label key={option} className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
-                        analysisForm.budget.range === option 
-                        ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' 
-                        : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
-                    }`}>
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            analysisForm.budget.range === option ? 'border-emerald-600' : 'border-slate-300'
+                {[
+                    "Bütçe Konusunda Kararsızım",
+                    "5.000'e kadar",
+                    "10.000'e kadar",
+                    "15.000'e kadar",
+                    "20.000'e kadar",
+                    "20.000 üzeri uygundur.."
+                ].map((option) => {
+                    const isSelected = analysisForm.budget?.range === option || analysisForm.budget?.ranges?.includes(option);
+                    return (
+                        <label key={option} className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
+                            isSelected 
+                            ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' 
+                            : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
                         }`}>
-                            {analysisForm.budget.range === option && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-full" />}
-                        </div>
-                        <input
-                            type="radio"
-                            name="budget_range"
-                            value={option}
-                            checked={analysisForm.budget.range === option}
-                            onChange={(e) => updateAnalysisField('budget', 'range', e.target.value)}
-                            className="hidden"
-                        />
-                        <span className={`text-sm font-medium ${analysisForm.budget.range === option ? 'text-emerald-900' : 'text-slate-700'}`}>
-                            {option}
-                        </span>
-                    </label>
-                )) : (
-                    <div className="col-span-2 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 italic text-sm">
-                        Bütçe aralıkları yükleniyor...
-                    </div>
-                )}
+                            <input
+                                type="radio"
+                                name="budget_range_analysis"
+                                checked={isSelected}
+                                onChange={() => {
+                                    updateAnalysisField('budget', 'range', option);
+                                    updateAnalysisField('budget', 'ranges', [option]);
+                                }}
+                                className="w-5 h-5 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                            />
+                            <span className={`text-sm font-medium ${isSelected ? 'text-emerald-900' : 'text-slate-700'}`}>
+                                {option}
+                            </span>
+                        </label>
+                    );
+                })}
              </div>
              <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
                  <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
                  <div>
                      <p className="text-sm font-semibold text-amber-900">Bütçe Hakkında Not</p>
                      <p className="text-xs text-amber-700 mt-1">
-                         Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsamaktadır. 
+                         Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsammaktadır. 
                          Konaklama, yemek ve diğer yaşam giderleri bu tutarlara dahil değildir.
                      </p>
                  </div>
@@ -975,14 +1286,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
   // Filter logic
   const [searchQuery, setSearchQuery] = useState('');
+  
   const filteredStudents = students.filter(student => {
     const searchLower = searchQuery.toLowerCase();
-    return (
+    const matchesSearch = (
       student.firstName.toLowerCase().includes(searchLower) ||
       student.lastName.toLowerCase().includes(searchLower) ||
       student.email.toLowerCase().includes(searchLower) ||
       student.phone.includes(searchQuery)
     );
+    const matchesStage = student.pipelineStage === activeStageTab;
+    return matchesSearch && matchesStage;
   });
 
   if (isLoading) {
@@ -1009,18 +1323,39 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
           />
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors shadow-sm font-medium">
-            <Filter className="w-4 h-4" />
-            Filters
-          </button>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 font-medium"
           >
             <Plus className="w-5 h-5" />
-            Add Student
+            Yeni Öğrenci
           </button>
         </div>
+      </div>
+
+      {/* Stage Tabs */}
+      <div className="flex gap-8 border-b border-slate-200 mb-2">
+          {[
+              { id: PipelineStage.FOLLOW, label: 'FOLLOW' },
+              { id: PipelineStage.ANALYSE, label: 'ANALYSE' },
+              { id: PipelineStage.PROCESS, label: 'PROCESS' },
+              { id: PipelineStage.ENROLLMENT, label: 'ENROLLMENT' },
+          ].map(stage => (
+              <button
+                  key={stage.id}
+                  onClick={() => setActiveStageTab(stage.id as PipelineStage)}
+                  className={`pb-4 px-2 text-sm font-bold tracking-wider transition-all relative ${
+                      activeStageTab === stage.id 
+                      ? 'text-indigo-600' 
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+              >
+                  {stage.label}
+                  {activeStageTab === stage.id && (
+                      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 rounded-full animate-in fade-in slide-in-from-bottom-1" />
+                  )}
+              </button>
+          ))}
       </div>
 
       {/* Student Table */}
@@ -1028,12 +1363,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
         <table className="w-full text-left">
           <thead>
             <tr className="text-slate-500 border-b border-slate-200 bg-slate-50/50">
-              <th className="py-4 pl-6 font-semibold text-xs uppercase tracking-wider">Student Name</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">STATUS</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Interested Program</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Interested</th>
-              <th className="py-4 font-semibold text-xs uppercase tracking-wider">Current Education</th>
-              <th className="py-4 pr-6 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
+              <th className="py-4 pl-6 font-semibold text-xs uppercase tracking-wider w-[25%]">Öğrenci Adı</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider w-[20%]">Programlar</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider w-[25%]">Tercihler</th>
+              <th className="py-4 font-semibold text-xs uppercase tracking-wider w-[20%]">Eğitim Durumu</th>
+              <th className="py-4 pr-6 font-semibold text-xs uppercase tracking-wider text-right w-[10%]">İşlemler</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -1062,47 +1396,48 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                     </div>
                   </div>
                 </td>
+                {/* Programlar Column */}
                 <td className="py-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                    student.pipelineStage === PipelineStage.FOLLOW ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                    student.pipelineStage === PipelineStage.ANALYSE ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                    student.pipelineStage === PipelineStage.PROCESS ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                    student.pipelineStage === PipelineStage.ENROLLMENT ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                    student.pipelineStage === PipelineStage.STUDENT ? 'bg-violet-50 text-violet-600 border-violet-100' :
-                    'bg-slate-50 text-slate-600 border-slate-100'
-                  }`}>
-                    {student.pipelineStage}
-                  </span>
-                </td>
-                {/* Interested Program Column */}
-                <td className="py-4">
-                  <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${
-                    student.targetDegree === 'Summer Course' ? 'bg-orange-50 text-orange-700 border-orange-100' :
-                    student.targetDegree === 'Language Course' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                    student.targetDegree === 'High School' ? 'bg-purple-50 text-purple-700 border-purple-100' :
-                    student.targetDegree === 'Undergraduate' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
-                    student.targetDegree === 'Master' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                    'bg-slate-50 text-slate-600 border-slate-100'
-                  }`}>
-                    {student.targetDegree || '-'}
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    {student.targetPrograms?.slice(0, 4).map((p, idx) => (
+                      <span key={idx} className="w-fit px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-bold truncate max-w-[180px]">
+                        {p}
+                      </span>
+                    ))}
+                    {(!student.targetPrograms || student.targetPrograms.length === 0) && (
+                      <span className="text-slate-400 text-xs italic">-</span>
+                    )}
+                  </div>
                 </td>
                 {/* Interested Column - Countries & Programs */}
                 <td className="py-4">
                    <div className="flex flex-col gap-2">
                        {/* Countries */}
                        {(student.targetCountries?.length > 0 || student.analysis?.preferences?.country1) && (
-                           <div className="flex flex-wrap gap-1">
-                                {(student.analysis?.preferences?.country1 ? [
-                                    student.analysis.preferences.country1,
-                                    student.analysis.preferences.country2,
-                                    student.analysis.preferences.country3
-                                ].filter(Boolean) : student.targetCountries).slice(0, 2).map((country, i) => (
-                                   <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                      <span className="mr-1">{getFlagEmoji(country)}</span> {country}
-                                   </span>
-                                ))}
-                           </div>
+                            <div className="flex flex-wrap gap-1">
+                                 {(student.analysis?.preferences?.country1 ? [
+                                     student.analysis.preferences.country1,
+                                     student.analysis.preferences.country2,
+                                     student.analysis.preferences.country3
+                                 ].filter(Boolean) : student.targetCountries).slice(0, 3).map((country, i) => {
+                                    const code = getCountryCode(country);
+                                    return (
+                                      <span key={i} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-white text-slate-700 border border-slate-200 shadow-xs ring-1 ring-slate-100/50">
+                                         {code ? (
+                                           <img 
+                                             src={`https://flagcdn.com/w40/${code.toLowerCase()}.png`} 
+                                             alt={country}
+                                             className="w-4 h-4 rounded-full object-cover border border-slate-100"
+                                           />
+                                         ) : (
+                                           <span className="w-4 h-4 flex items-center justify-center bg-slate-100 rounded-full text-[8px]">{getFlagEmoji(country)}</span>
+                                         )}
+                                         {country}
+                                      </span>
+                                    );
+                                 })}
+
+                            </div>
                        )}
                        
                        {/* Programs */}
@@ -1120,13 +1455,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                 </td>
                 {/* Education Column */}
                 <td className="py-4">
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium text-slate-700">{student.schoolName || '-'}</span>
-                        <span className="text-xs text-slate-500">
-                            {student.educationStatus ? `${student.educationStatus}` : ''}
-                            {student.currentGrade ? ` • ${student.currentGrade}` : ''}
-                        </span>
-                    </div>
+                        <div className="flex flex-col">
+                            <span className="text-[13px] font-bold text-slate-700">{student.schoolName || '-'}</span>
+                            <span className="text-xs font-medium text-slate-500 mt-0.5">{student.currentGrade || '-'}</span>
+                        </div>
                 </td>
                 <td className="py-4 pr-6 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -1159,23 +1491,16 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
       {/* Add Student Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-bold text-slate-800">Add New Student</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-8">
+        <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
               {/* Personal Info Section */}
-              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-6 flex items-center gap-2">
+              <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <User className="w-4 h-4" />
                   Kişisel Bilgiler
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Adı</label>
                     <div className="relative">
@@ -1222,64 +1547,96 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                       <input
                         name="phone"
                         value={formData.phone}
-                        onChange={handleInputChange}
-                        placeholder="+90 5xx xxx xx xx"
-                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
+                        onChange={handlePhoneChange}
+                        placeholder="05xx xxx xx xx"
+                        maxLength={11}
+                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white font-mono"
                       />
                     </div>
                   </div>
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Doğum Tarihi</label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="date"
-                        name="dob"
-                        value={formData.dob}
-                        onChange={handleInputChange}
-                        className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
-                      />
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <select
+                          value={formData.dob?.split('-')[2] || ''}
+                          onChange={(e) => handleDobPartChange('day', e.target.value)}
+                          className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
+                        >
+                          <option value="">Gün</option>
+                          {Array.from({ length: 31 }, (_, i) => (
+                            <option key={i + 1} value={(i + 1).toString().padStart(2, '0')}>{i + 1}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <select
+                          value={formData.dob?.split('-')[1] || ''}
+                          onChange={(e) => handleDobPartChange('month', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
+                        >
+                          <option value="">Ay</option>
+                          {['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'].map((month, i) => (
+                            <option key={i + 1} value={(i + 1).toString().padStart(2, '0')}>{month}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <select
+                          value={formData.dob?.split('-')[0] || ''}
+                          onChange={(e) => handleDobPartChange('year', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
+                        >
+                          <option value="">Yıl</option>
+                          {Array.from({ length: 50 }, (_, i) => {
+                            const year = new Date().getFullYear() - 10 - i;
+                            return <option key={year} value={year.toString()}>{year}</option>;
+                          })}
+                        </select>
+                      </div>
                     </div>
                     {calculatedAge && <p className="text-xs text-indigo-600 font-medium mt-1.5 ml-1">Yaş: {calculatedAge}</p>}
                   </div>
                 </div>
               </div>
 
-              {/* Education Section */}
+
+              {/* Target Programs Section */}
               <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                 <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-6 flex items-center gap-2">
-                  <GraduationCap className="w-4 h-4" />
-                  Eğitim Bilgileri
+                  <BookOpen className="w-4 h-4" />
+                  Programlar
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1">
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Eğitim Durumu</label>
-                        <select
-                            name="educationStatus"
-                            value={formData.educationStatus || ''}
-                            onChange={handleInputChange}
-                            className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
-                        >
-                            <option value="">Seçiniz</option>
-                            <option value="High School">Lise</option>
-                            <option value="University">Üniversite</option>
-                            <option value="Master">Yüksek Lisans</option>
-                            <option value="Graduate">Mezun</option>
-                        </select>
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Okul Adı</label>
-                        <div className="relative">
-                          <School className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input
-                              name="schoolName"
-                              value={formData.schoolName}
-                              onChange={handleInputChange}
-                              className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white"
-                              placeholder="Örn: Robert Koleji"
-                          />
-                        </div>
-                    </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">İlgilenilen Bölümler (Birden fazla seçebilirsiniz)</label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {allPrograms.map(program => (
+                      <label 
+                        key={program} 
+                        className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
+                          formData.targetPrograms?.includes(program)
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 ring-1 ring-indigo-200'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.targetPrograms?.includes(program)}
+                          onChange={(e) => {
+                            const current = formData.targetPrograms || [];
+                            if (e.target.checked) {
+                              setFormData({ ...formData, targetPrograms: [...current, program] });
+                            } else {
+                              setFormData({ ...formData, targetPrograms: current.filter(p => p !== program) });
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm font-medium">{program}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               
@@ -1291,48 +1648,98 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                     className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"
                   >
                       {showParentInfo ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      {showParentInfo ? 'Hide Parent Information' : 'Add Parent Information'}
+                      {showParentInfo ? 'Veli Bilgilerini Gizle' : 'Veli Bilgisi Ekle'}
                   </button>
                   
                   {showParentInfo && (
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in bg-slate-50 p-4 rounded-xl border border-slate-100">
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Parent Name</label>
-                            <input
-                                name="parentInfo.fullName"
-                                value={formData.parentInfo?.fullName}
-                                onChange={handleInputChange}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                            />
+                      <div className="space-y-6 animate-fade-in">
+                        {/* Parent 1 */}
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                          <h5 className="text-xs font-bold text-slate-400 uppercase mb-4">1. Veli Bilgileri</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli Adı Soyadı</label>
+                                <input
+                                    name="parentInfo.fullName"
+                                    value={formData.parentInfo?.fullName}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Yakınlık Derecesi</label>
+                                <input
+                                    name="parentInfo.relationship"
+                                    value={formData.parentInfo?.relationship}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                    placeholder="Anne, Baba, vb."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli Telefon</label>
+                                <input
+                                    name="parentInfo.phone"
+                                    value={formData.parentInfo?.phone}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli E-posta</label>
+                                <input
+                                    name="parentInfo.email"
+                                    value={formData.parentInfo?.email}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Relationship</label>
-                            <input
-                                name="parentInfo.relationship"
-                                value={formData.parentInfo?.relationship}
-                                onChange={handleInputChange}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                                placeholder="Mother, Father, etc."
-                            />
+                        </div>
+
+                        {/* Parent 2 */}
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                          <h5 className="text-xs font-bold text-slate-400 uppercase mb-4">2. Veli Bilgileri</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli Adı Soyadı</label>
+                                <input
+                                    name="parent2Info.fullName"
+                                    value={formData.parent2Info?.fullName}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Yakınlık Derecesi</label>
+                                <input
+                                    name="parent2Info.relationship"
+                                    value={formData.parent2Info?.relationship}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                    placeholder="Anne, Baba, vb."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli Telefon</label>
+                                <input
+                                    name="parent2Info.phone"
+                                    value={formData.parent2Info?.phone}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Veli E-posta</label>
+                                <input
+                                    name="parent2Info.email"
+                                    value={formData.parent2Info?.email}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Parent Phone</label>
-                            <input
-                                name="parentInfo.phone"
-                                value={formData.parentInfo?.phone}
-                                onChange={handleInputChange}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Parent Email</label>
-                            <input
-                                name="parentInfo.email"
-                                value={formData.parentInfo?.email}
-                                onChange={handleInputChange}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                            />
-                          </div>
+                        </div>
                       </div>
                   )}
               </div>
@@ -1343,13 +1750,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                   onClick={() => setIsModalOpen(false)}
                   className="px-5 py-2.5 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors"
                 >
-                  Cancel
+                  İptal
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e as any, true)}
+                  className="px-5 py-2.5 rounded-xl border border-indigo-200 text-indigo-600 font-medium hover:bg-indigo-50 transition-all flex items-center gap-2"
+                >
+                  <ClipboardList className="w-4 h-4" />
+                  Detaylı Analiz
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 transition-all"
                 >
-                  Create Student
+                  Kaydet
                 </button>
               </div>
             </form>
@@ -1359,8 +1774,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
       {/* Analysis Modal */}
       {isAnalysisModalOpen && selectedStudentForAnalysis && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
-             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+        <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-160px)] flex flex-col overflow-hidden mb-10 animate-fade-in">
                 <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
                     <div className="flex items-center gap-3">
                          <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
@@ -1380,8 +1795,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                     {/* Sidebar Tabs */}
                     <div className="w-64 bg-slate-50 border-r border-slate-200 p-4 space-y-2 overflow-y-auto">
                         {[
+                            { id: 'contact', label: 'İletişim Bilgileri', icon: Phone },
                             { id: 'language', label: 'Dil Yeterliliği', icon: Globe },
                             { id: 'academic', label: 'Akademik Durum', icon: GraduationCap },
+                            { id: 'citizenship', label: 'Vatandaşlık', icon: Flag },
                             { id: 'preferences', label: 'Tercihler', icon: BookOpen },
                             { id: 'social', label: 'Sosyal & Spor', icon: Activity },
                             { id: 'budget', label: 'Eğitim Bütçesi', icon: Coins },
@@ -1403,8 +1820,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-8 bg-white">
+                        {activeAnalysisTab === 'contact' && renderContactTab()}
                         {activeAnalysisTab === 'language' && renderLanguageTab()}
                         {activeAnalysisTab === 'academic' && renderAcademicTab()}
+                        {activeAnalysisTab === 'citizenship' && renderCitizenshipTab()}
                         {activeAnalysisTab === 'preferences' && renderPreferencesTab()}
                         {activeAnalysisTab === 'social' && renderSocialTab()}
                         {activeAnalysisTab === 'budget' && renderBudgetTab()}

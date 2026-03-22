@@ -1,5 +1,6 @@
 
-import { Student, PipelineStage, SystemUser, UserRole, CountryData, UniversityData } from "../types";
+import { Student, PipelineStage, SystemUser, UserRole, CountryData, UniversityData, MainDegreeData, InterestedProgramData } from "../types";
+
 
 export const MOCK_USERS: SystemUser[] = [
   {
@@ -51,6 +52,8 @@ export const MOCK_STUDENTS: Student[] = [
     lastName: "Mercer",
     email: "alex.m@example.com",
     phone: "+1 555 0101",
+    parentInfo: { fullName: "Ahmet Çalış", relationship: "Baba", phone: "05321112233", email: "ahmet@example.com" },
+    parent2Info: { fullName: "Ayşe Çalış", relationship: "Anne", phone: "05334445566", email: "ayse@example.com" },
     pipelineStage: PipelineStage.ANALYSE,
     gpa: 3.8,
     targetDegree: "Master",
@@ -58,6 +61,7 @@ export const MOCK_STUDENTS: Student[] = [
     budget: 15000,
     englishLevel: "C1",
     interests: ["AI", "Robotics", "Sustainable Energy"],
+    targetPrograms: ["Computer Science", "Artificial Intelligence"],
     avatarUrl: "https://picsum.photos/200/200?random=1",
     schoolName: "Tech University Berlin",
     currentGrade: "4. Sınıf",
@@ -76,11 +80,12 @@ export const MOCK_STUDENTS: Student[] = [
     phone: "+86 139 0000",
     pipelineStage: PipelineStage.PROCESS,
     gpa: 3.2,
-    targetDegree: "Bachelor",
+    targetDegree: "Undergraduate",
     targetCountries: ["USA", "Canada"],
     budget: 35000,
     englishLevel: "B2",
     interests: ["Business", "Marketing", "Fashion"],
+    targetPrograms: ["Business Management"],
     avatarUrl: "https://picsum.photos/200/200?random=2",
     schoolName: "Shanghai Int. High School",
     currentGrade: "12. Sınıf",
@@ -104,6 +109,7 @@ export const MOCK_STUDENTS: Student[] = [
     budget: 20000,
     englishLevel: "B2",
     interests: ["Public Health", "Nursing"],
+    targetPrograms: ["Nursing"],
     avatarUrl: "https://picsum.photos/200/200?random=3",
     schoolName: "Lagos State University",
     currentGrade: "Mezun",
@@ -200,6 +206,25 @@ export const MOCK_UNIVERSITIES: UniversityData[] = [
     }
 ];
 
+export const MOCK_MAIN_DEGREES: MainDegreeData[] = [
+    {
+        id: 'prog-1',
+        name: 'Bilgisayar Mühendisliği',
+        description: 'Yazılım, donanım ve bilgisayar sistemlerinin tasarımı, geliştirilmesi ve yönetimi üzerine odaklanan mühendislik dalıdır.',
+        careerOpportunities: 'Yazılım Geliştirici, Sistem Analisti, Veri Bilimci, Siber Güvenlik Uzmanı.',
+        aiImpact: 'Yapay zeka, bilgisayar mühendisliğinin temel bir parçası haline gelmiş olup, kodlama süreçlerini hızlandırmakta ve yeni çözüm yolları sunmaktadır.',
+        topCompanies: 'Google, Microsoft, Apple, Amazon, Meta.',
+        sectorStatusTR: 'Türkiye\'de teknokentler ve start-up ekosistemi sayesinde oldukça canlı bir sektördür.',
+        imageUrl: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?q=80&w=2000&auto=format&fit=crop'
+    }
+];
+
+export const MOCK_INTERESTED_PROGRAMS: InterestedProgramData[] = [
+    { id: 'int-1', name: 'Computer Science', description: 'Software development and algorithms.' },
+    { id: 'int-2', name: 'Law', description: 'Legal systems and justice.' },
+    { id: 'int-3', name: 'Psychology', description: 'Human mind and behavior.' }
+];
+
 export const MOCK_TUITION_RANGES = [
   "Bütçe Konusunda Kararsızım",
   "0 - 6.000 (Devlet Okulları)",
@@ -208,3 +233,4 @@ export const MOCK_TUITION_RANGES = [
   "18.000 - 24.000",
   "24.000 ve üzeri"
 ];
+

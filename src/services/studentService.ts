@@ -19,6 +19,7 @@ function mapDbToStudent(row: any): Student {
         budget: row.budget || 0,
         englishLevel: row.english_level,
         interests: row.interests || [],
+        targetPrograms: row.target_programs || [],
         avatarUrl: row.avatar_url,
         schoolName: row.school_name,
         currentGrade: row.current_grade,
@@ -30,6 +31,12 @@ function mapDbToStudent(row: any): Student {
             relationship: row.relationship || '',
             phone: row.parent_phone || '',
             email: row.parent_email || ''
+        },
+        parent2Info: {
+            fullName: row.parent2_name || '',
+            relationship: row.parent2_relationship || '',
+            phone: row.parent2_phone || '',
+            email: row.parent2_email || ''
         },
 
         hasForeignCitizenship: row.has_foreign_citizenship,
@@ -62,6 +69,7 @@ function mapStudentToDb(student: Partial<Student>): any {
         budget: student.budget,
         english_level: student.englishLevel,
         interests: student.interests,
+        target_programs: student.targetPrograms,
         avatar_url: student.avatarUrl,
         school_name: student.schoolName,
         current_grade: student.currentGrade,
@@ -72,6 +80,11 @@ function mapStudentToDb(student: Partial<Student>): any {
         relationship: student.parentInfo?.relationship,
         parent_phone: student.parentInfo?.phone,
         parent_email: student.parentInfo?.email,
+
+        parent2_name: student.parent2Info?.fullName,
+        parent2_relationship: student.parent2Info?.relationship,
+        parent2_phone: student.parent2Info?.phone,
+        parent2_email: student.parent2Info?.email,
 
         has_foreign_citizenship: student.hasForeignCitizenship,
         foreign_citizenship_note: student.foreignCitizenshipNote,
@@ -170,10 +183,17 @@ export const studentService = {
   async delete(id: string): Promise<void> {
       if (!supabase) return;
       try {
-        const { error } = await supabase.from('student_profiles').delete().eq('id', id);
+        const { data, error } = await supabase.from('student_profiles').delete().eq('id', id).select();
+        
         if (error) {
             console.error('Supabase delete failed:', error.message);
             throw new Error(error.message);
+        }
+        
+        // Supabase RLS (Row Level Security) kurallarında DELETE izni (Policy) yoksa, hata (error) döndürmek 
+        // yerine 0 satır silip boş bir array döndürür. Bu durumu yakalayalım:
+        if (!data || data.length === 0) {
+             throw new Error("VERİTABANI YETKİ HATASI: Kayıt silinemedi. Lütfen Supabase'de 'student_profiles' tablosu için DELETE RLS Policy (Silme izni) eklediğinizden emin olun.");
         }
       } catch (err: any) {
         console.error('Unexpected error deleting student:', err);

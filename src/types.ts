@@ -60,6 +60,10 @@ export interface AnalysisReport {
     hasTakenExam?: boolean; // Dil seviyeni belirleyecek bir sınava girdin mi?
     examScore?: string; // If yes, score/details
     pastExamDate?: string; // Sınava girdiği tarih
+    examScore2?: string;
+    pastExamDate2?: string;
+    examScore3?: string;
+    pastExamDate3?: string;
     estimatedLevel?: string; // Tahmini İngilizce Seviyen Nedir? (A1-C2, Unknown)
     isPreparingForExam?: boolean; // Hazırlandığın bir dil sınavı var mı? OR Tekrar Sınava girecek misin?
     targetExam?: string; // e.g., IELTS UKVI
@@ -93,10 +97,22 @@ export interface AnalysisReport {
     country3?: string;
     country4?: string;
     country5?: string;
+    notes?: string;
   };
   // 6. Bütçe Aralığı
   budget: {
     range?: string; // 0-6000, 6000-12000 etc.
+    ranges?: string[]; // Multiple budget ranges
+  };
+  // 7. Vatandaşlık & Pasaport
+  citizenship?: {
+    isTurkishCitizen?: boolean; 
+    hasGreenPassport?: boolean; 
+    hasBlackPassport?: boolean; 
+    hasResidencePermit?: boolean; 
+    residencePermitNote?: string; 
+    hasForeignCitizenship?: boolean; 
+    foreignCitizenshipNote?: string; 
   };
 }
 
@@ -123,6 +139,7 @@ export interface Student {
   
   // Parent Details
   parentInfo?: ParentInfo;
+  parent2Info?: ParentInfo;
 
   // Citizenship & Passport
   hasForeignCitizenship?: boolean;
@@ -143,6 +160,7 @@ export interface Student {
   budget: number;
   englishLevel?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
   interests: string[];
+  targetPrograms: string[];
   avatarUrl?: string;
   counselorNotes?: string;
   
@@ -232,4 +250,20 @@ export interface UniversityData {
     websiteUrl: string;
     departmentsUrl: string;
     tuitionRange: string;
+}
+export interface MainDegreeData {
+    id: string;
+    name: string;
+    description: string;
+    careerOpportunities: string;
+    aiImpact: string;
+    topCompanies: string;
+    sectorStatusTR: string;
+    imageUrl: string;
+}
+
+export interface InterestedProgramData {
+    id: string;
+    name: string;
+    description: string;
 }
