@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication } from '../types';
+import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData } from '../types';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
@@ -155,6 +155,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [allPrograms, setAllPrograms] = useState<string[]>([]);
   const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
   const [allCountries, setAllCountries] = useState<string[]>([]);
+  const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
 
   useEffect(() => {
     setStudent(initialStudent);
@@ -173,6 +174,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         ]);
         setAllPrograms(programs.map(p => p.name));
         setAllMainDegrees(mainDegs.map(d => d.name));
+        setMainDegreeDetails(mainDegs);
         setAllCountries(countries.map(c => c.name));
     } catch (error) {
         console.error("Failed to load options", error);
@@ -2488,16 +2490,54 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                )}
                {analysis && (
                    <>
-                    <div className="grid grid-cols-3 gap-6 print:grid-cols-1 print:gap-4">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center print:border-slate-300 print:shadow-none print:flex-row print:justify-start print:gap-4 print:text-left">
-                            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-2 print:mb-0 ${analysis.visaRiskScore > 50 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                {analysis.visaRiskScore}
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500 uppercase">Visa Risk Score</p>
-                            </div>
+                    {/* Preferred Degrees Details */}
+                    {student.analysis?.preferences && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            {[student.analysis.preferences.program1, student.analysis.preferences.program2]
+                                .filter((p): p is string => !!p)
+                                .map((progName, idx) => {
+                                    const degree = mainDegreeDetails.find(d => d.name === progName);
+                                    if (!degree) return null;
+                                    return (
+                                        <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none h-full">
+                                            <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-100">
+                                                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                                                    <GraduationCap className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-slate-800">{degree.name}</h3>
+                                                    <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider">Tercih Edilen Program {idx + 1}</p>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Açıklama</label>
+                                                    <p className="text-sm text-slate-600 leading-relaxed">{degree.description}</p>
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Kariyer Fırsatları</label>
+                                                        <p className="text-sm text-slate-600">{degree.careerOpportunities}</p>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">AI Etkisi</label>
+                                                        <p className="text-sm text-slate-600 italic">{degree.aiImpact}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="pt-3 border-t border-slate-100">
+                                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">En İyi Şirketler</label>
+                                                     <p className="text-sm font-medium text-slate-700">{degree.topCompanies}</p>
+                                                </div>
+                                                <div className="pt-3 border-t border-slate-100">
+                                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Türkiye'de Sektör Durumu</label>
+                                                     <p className="text-sm text-slate-600">{degree.sectorStatusTR}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                         </div>
-                    </div>
+                    )}
 
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none">
                         <h3 className="font-bold text-slate-800 mb-4">Suggested Universities</h3>
