@@ -909,7 +909,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
              <h4 className="text-sm font-semibold text-slate-700 mb-1">Girdiğin veya gireceğin sınavları ekle</h4>
              <p className="text-xs text-slate-400 mb-3">Örn: SAT, AP</p>
              <div className="grid grid-cols-2 gap-3 mb-4">
-                {['SAT', 'AP', 'IB', 'A-Level', 'TR-YOS'].map(exam => {
+                {['SAT', 'AP', 'IB', 'Diğer'].map(exam => {
                     const exams = editForm.academic.exams as Record<string, ExamDetails> | undefined;
                     const isSelected = exams?.[exam]?.selected;
                     return (
@@ -939,19 +939,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 <h5 className="font-bold text-sm text-slate-700">{key} Detayları</h5>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Durum</label>
-                                    <select 
-                                        value={details.status || ''}
-                                        onChange={(e) => updateNestedExam(key, 'status', e.target.value)}
-                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
-                                    >
-                                        <option value="">Seçiniz</option>
-                                        <option value="Taken">Girdim</option>
-                                        <option value="Preparing">Hazırlanıyorum</option>
-                                    </select>
-                                </div>
-                                {details.status === 'Taken' && (
+                                {key !== 'AP' && key !== 'IB' && (
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">Durum</label>
+                                        <select 
+                                            value={details.status || ''}
+                                            onChange={(e) => updateNestedExam(key, 'status', e.target.value)}
+                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                        >
+                                            <option value="">Seçiniz</option>
+                                            <option value="Taken">Girdim</option>
+                                            <option value="Preparing">Hazırlanıyorum</option>
+                                        </select>
+                                    </div>
+                                )}
+                                {key !== 'AP' && key !== 'IB' && details.status === 'Taken' && (
                                     <div>
                                         <label className="block text-xs text-slate-500 mb-1">Skor</label>
                                         <input 
@@ -962,71 +964,269 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                         />
                                     </div>
                                 )}
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">{key === 'AP' ? 'Lise Sınıfı' : 'Tarih'}</label>
-                                    {key === 'AP' ? (
-                                        <select
-                                            value={details.date || ''}
-                                            onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
-                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
-                                        >
-                                            <option value="">Seçiniz</option>
-                                            <option value="9. Sınıf">9. Sınıf</option>
-                                            <option value="10. Sınıf">10. Sınıf</option>
-                                            <option value="11. Sınıf">11. Sınıf</option>
-                                            <option value="12. Sınıf">12. Sınıf</option>
-                                            <option value="Mezun">Mezun</option>
-                                        </select>
-                                    ) : (
+                                {key !== 'AP' && key !== 'IB' && (
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">Tarih</label>
                                         <input 
                                             type="date" 
                                             value={details.date || ''}
                                             onChange={(e) => updateNestedExam(key, 'date', e.target.value)}
                                             className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
                                         />
-                                    )}
-                                </div>
+                                    </div>
+                                )}
+
                                 {key === 'AP' && (
-                                    <div className="col-span-2">
-                                        <label className="block text-xs text-slate-500 mb-1">Ders</label>
-                                        <select 
-                                            value={details.subject || ''}
-                                            onChange={(e) => updateNestedExam(key, 'subject', e.target.value)}
-                                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                    <div className="col-span-2 space-y-3 mt-2 border-t pt-3 border-slate-200">
+                                        <label className="block text-xs font-semibold text-slate-700">Dersler ve Durumları</label>
+                                        {(details.apSubjects?.length ? details.apSubjects : (details.subject ? [{ subject: details.subject, status: details.status || '', grade: '' }] : [{ subject: '', status: '', grade: '' }])).map((apSub, idx, arr) => (
+                                            <div key={idx} className="flex gap-2 items-start">
+                                                <div className="flex-1">
+                                                    <select 
+                                                        value={apSub.subject}
+                                                        onChange={(e) => {
+                                                            const newSubjects = [...arr];
+                                                            newSubjects[idx] = { ...newSubjects[idx], subject: e.target.value };
+                                                            updateNestedExam(key, 'apSubjects', newSubjects);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                                    >
+                                                        <option value="">Select AP Course</option>
+                                                        <optgroup label="Mathematics">
+                                                            <option value="AP Precalculus">Precalculus</option>
+                                                            <option value="AP Calculus AB">Calculus AB</option>
+                                                            <option value="AP Calculus BC">Calculus BC</option>
+                                                            <option value="AP Statistics">Statistics</option>
+                                                        </optgroup>
+                                                        <optgroup label="Sciences">
+                                                            <option value="AP Biology">Biology</option>
+                                                            <option value="AP Chemistry">Chemistry</option>
+                                                            <option value="AP Environmental Science">Environmental Science</option>
+                                                            <option value="AP Physics 1">Physics 1</option>
+                                                            <option value="AP Physics 2">Physics 2</option>
+                                                            <option value="AP Physics C: Mechanics">Physics C: Mechanics</option>
+                                                            <option value="AP Physics C: Electricity & Magnetism">Physics C: Electricity & Magnetism</option>
+                                                        </optgroup>
+                                                        <optgroup label="Computer Science">
+                                                            <option value="AP Computer Science A">Computer Science A</option>
+                                                            <option value="AP Computer Science Principles">Computer Science Principles</option>
+                                                        </optgroup>
+                                                        <optgroup label="Social Sciences">
+                                                            <option value="AP Macroeconomics">Macroeconomics</option>
+                                                            <option value="AP Microeconomics">Microeconomics</option>
+                                                            <option value="AP Psychology">Psychology</option>
+                                                            <option value="AP Human Geography">Human Geography</option>
+                                                            <option value="AP Comparative Government">Comparative Government & Politics</option>
+                                                            <option value="AP US Government">US Government & Politics</option>
+                                                        </optgroup>
+                                                        <optgroup label="English">
+                                                            <option value="AP English Language">English Language & Composition</option>
+                                                            <option value="AP English Literature">English Literature & Composition</option>
+                                                        </optgroup>
+                                                        <optgroup label="History & Humanities">
+                                                            <option value="AP World History: Modern">World History: Modern</option>
+                                                            <option value="AP European History">European History</option>
+                                                            <option value="AP US History">US History</option>
+                                                            <option value="AP Art History">Art History</option>
+                                                        </optgroup>
+                                                        <optgroup label="Arts">
+                                                            <option value="AP Music Theory">Music Theory</option>
+                                                            <option value="AP 2-D Art and Design">2-D Art and Design</option>
+                                                            <option value="AP 3-D Art and Design">3-D Art and Design</option>
+                                                            <option value="AP Drawing">Drawing</option>
+                                                        </optgroup>
+                                                        <optgroup label="Capstone">
+                                                            <option value="AP Research">Research</option>
+                                                            <option value="AP Seminar">Seminar</option>
+                                                        </optgroup>
+                                                    </select>
+                                                </div>
+                                                <div className="w-1/4">
+                                                    <select 
+                                                        value={apSub.grade || ''}
+                                                        onChange={(e) => {
+                                                            const newSubjects = [...arr];
+                                                            newSubjects[idx] = { ...newSubjects[idx], grade: e.target.value };
+                                                            updateNestedExam(key, 'apSubjects', newSubjects);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                                    >
+                                                        <option value="">Sınıf</option>
+                                                        <option value="9. Sınıf">9. Sınıf</option>
+                                                        <option value="10. Sınıf">10. Sınıf</option>
+                                                        <option value="11. Sınıf">11. Sınıf</option>
+                                                        <option value="12. Sınıf">12. Sınıf</option>
+                                                        <option value="Mezun">Mezun</option>
+                                                    </select>
+                                                </div>
+                                                <div className="w-1/4">
+                                                    <select 
+                                                        value={apSub.status}
+                                                        onChange={(e) => {
+                                                            const newSubjects = [...arr];
+                                                            newSubjects[idx] = { ...newSubjects[idx], status: e.target.value };
+                                                            updateNestedExam(key, 'apSubjects', newSubjects);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300" 
+                                                    >
+                                                        <option value="">Durum</option>
+                                                        <option value="Hazırlanıyor">Hazırlanıyor</option>
+                                                        <option value="1">1</option>
+                                                        <option value="2">2</option>
+                                                        <option value="3">3</option>
+                                                        <option value="4">4</option>
+                                                        <option value="5">5</option>
+                                                    </select>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const newSubjects = arr.filter((_, i) => i !== idx);
+                                                        updateNestedExam(key, 'apSubjects', newSubjects);
+                                                    }}
+                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded mt-0.5 transition-colors"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const currentSubjects = details.apSubjects?.length ? details.apSubjects : (details.subject ? [{ subject: details.subject, status: details.status || '', grade: '' }] : [{ subject: '', status: '', grade: '' }]);
+                                                updateNestedExam(key, 'apSubjects', [...currentSubjects, { subject: '', status: '', grade: '' }]);
+                                            }}
+                                            className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md transition-colors"
                                         >
-                                            <option value="">AP Dersi Seçiniz</option>
-                                            <option value="AP Precalculus">AP Precalculus</option>
-                                            <option value="AP Calculus AB">AP Calculus AB</option>
-                                            <option value="AP Calculus BC">AP Calculus BC</option>
-                                            <option value="AP Statistics">AP Statistics</option>
-                                            <option value="AP Biology">AP Biology</option>
-                                            <option value="AP Chemistry">AP Chemistry</option>
-                                            <option value="AP Environmental Science">AP Environmental Science</option>
-                                            <option value="AP Physics 1">AP Physics 1</option>
-                                            <option value="AP Physics 2">AP Physics 2</option>
-                                            <option value="AP Physics C: Mechanics">AP Physics C: Mechanics</option>
-                                            <option value="AP Physics C: Electricity & Magnetism">AP Physics C: Electricity & Magnetism</option>
-                                            <option value="AP Computer Science A">AP Computer Science A</option>
-                                            <option value="AP Computer Science Principles">AP Computer Science Principles</option>
-                                            <option value="AP Macroeconomics">AP Macroeconomics</option>
-                                            <option value="AP Microeconomics">AP Microeconomics</option>
-                                            <option value="AP Psychology">AP Psychology</option>
-                                            <option value="AP English Language">AP English Language</option>
-                                            <option value="AP English Literature">AP English Literature</option>
-                                            <option value="AP World History: Modern">AP World History: Modern</option>
-                                            <option value="AP European History">AP European History</option>
-                                            <option value="AP US History">AP US History</option>
-                                            <option value="AP Human Geography">AP Human Geography</option>
-                                            <option value="AP Comparative Government">AP Comparative Government</option>
-                                            <option value="AP US Government">AP US Government</option>
-                                            <option value="AP Art History">AP Art History</option>
-                                            <option value="AP Music Theory">AP Music Theory</option>
-                                            <option value="AP 2-D Art and Design">AP 2-D Art and Design</option>
-                                            <option value="AP 3-D Art and Design">AP 3-D Art and Design</option>
-                                            <option value="AP Drawing">AP Drawing</option>
-                                            <option value="AP Research">AP Research</option>
-                                            <option value="AP Seminar">AP Seminar</option>
-                                        </select>
+                                            <Plus className="w-3.5 h-3.5" /> Ek Ders Ekle
+                                        </button>
+                                    </div>
+                                )}
+                                {key === 'IB' && (
+                                    <div className="col-span-2 space-y-3 mt-1 border-t pt-3 border-slate-200">
+                                        <label className="block text-xs font-semibold text-slate-700">Subjects, Level and Status</label>
+                                        {(details.ibSubjects?.length ? details.ibSubjects : [{ subject: '', level: '', status: '' }]).map((ibSub, idx, arr) => (
+                                            <div key={idx} className="flex gap-2 items-start">
+                                                <div className="flex-1 min-w-0">
+                                                    <select 
+                                                        value={ibSub.subject}
+                                                        onChange={(e) => {
+                                                            const n = [...arr]; n[idx] = { ...n[idx], subject: e.target.value };
+                                                            updateNestedExam(key, 'ibSubjects', n);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                                    >
+                                                        <option value="">Select IB Course</option>
+                                                        <optgroup label="Language A">
+                                                            <option value="IB Language A: Language and Literature">Language A: Language and Literature</option>
+                                                            <option value="IB Language A: Literature">Language A: Literature</option>
+                                                        </optgroup>
+                                                        <optgroup label="Language Acquisition">
+                                                            <option value="IB Language B (English)">Language B (English)</option>
+                                                            <option value="IB Language B (French)">Language B (French)</option>
+                                                            <option value="IB Language B (Spanish)">Language B (Spanish)</option>
+                                                            <option value="IB Language B (German)">Language B (German)</option>
+                                                            <option value="IB Language B (Mandarin)">Language B (Mandarin)</option>
+                                                            <option value="IB Language B (Arabic)">Language B (Arabic)</option>
+                                                            <option value="IB Language B (Turkish)">Language B (Turkish)</option>
+                                                            <option value="IB Language Ab Initio (French)">Ab Initio (French)</option>
+                                                            <option value="IB Language Ab Initio (Spanish)">Ab Initio (Spanish)</option>
+                                                            <option value="IB Language Ab Initio (German)">Ab Initio (German)</option>
+                                                        </optgroup>
+                                                        <optgroup label="Individuals and Societies">
+                                                            <option value="IB Business Management">Business Management</option>
+                                                            <option value="IB Economics">Economics</option>
+                                                            <option value="IB Geography">Geography</option>
+                                                            <option value="IB Global Politics">Global Politics</option>
+                                                            <option value="IB History">History</option>
+                                                            <option value="IB ITGS">Information Technology in a Global Society</option>
+                                                            <option value="IB Philosophy">Philosophy</option>
+                                                            <option value="IB Psychology">Psychology</option>
+                                                            <option value="IB Social and Cultural Anthropology">Social and Cultural Anthropology</option>
+                                                            <option value="IB World Religions">World Religions</option>
+                                                        </optgroup>
+                                                        <optgroup label="Sciences">
+                                                            <option value="IB Biology">Biology</option>
+                                                            <option value="IB Chemistry">Chemistry</option>
+                                                            <option value="IB Computer Science">Computer Science</option>
+                                                            <option value="IB Design Technology">Design Technology</option>
+                                                            <option value="IB Environmental Systems and Societies">Environmental Systems and Societies</option>
+                                                            <option value="IB Physics">Physics</option>
+                                                            <option value="IB Sports, Exercise and Health Science">Sports, Exercise and Health Science</option>
+                                                        </optgroup>
+                                                        <optgroup label="Mathematics">
+                                                            <option value="IB Mathematics: Analysis and Approaches">Mathematics: Analysis and Approaches</option>
+                                                            <option value="IB Mathematics: Applications and Interpretation">Mathematics: Applications and Interpretation</option>
+                                                        </optgroup>
+                                                        <optgroup label="The Arts">
+                                                            <option value="IB Dance">Dance</option>
+                                                            <option value="IB Film">Film</option>
+                                                            <option value="IB Music">Music</option>
+                                                            <option value="IB Theatre">Theatre</option>
+                                                            <option value="IB Visual Arts">Visual Arts</option>
+                                                        </optgroup>
+                                                        <optgroup label="Core Components">
+                                                            <option value="IB Theory of Knowledge (TOK)">Theory of Knowledge (TOK)</option>
+                                                            <option value="IB Extended Essay (EE)">Extended Essay (EE)</option>
+                                                            <option value="IB Creativity, Activity, Service (CAS)">Creativity, Activity, Service (CAS)</option>
+                                                        </optgroup>
+                                                    </select>
+                                                </div>
+                                                <div className="w-24 shrink-0">
+                                                    <select
+                                                        value={ibSub.level}
+                                                        onChange={(e) => {
+                                                            const n = [...arr]; n[idx] = { ...n[idx], level: e.target.value };
+                                                            updateNestedExam(key, 'ibSubjects', n);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                                    >
+                                                        <option value="">Level</option>
+                                                        <option value="HL">HL</option>
+                                                        <option value="SL">SL</option>
+                                                    </select>
+                                                </div>
+                                                <div className="w-28 shrink-0">
+                                                    <select
+                                                        value={ibSub.status}
+                                                        onChange={(e) => {
+                                                            const n = [...arr]; n[idx] = { ...n[idx], status: n[idx].status };
+                                                            const updated = [...arr];
+                                                            updated[idx] = { ...updated[idx], status: e.target.value };
+                                                            updateNestedExam(key, 'ibSubjects', updated);
+                                                        }}
+                                                        className="w-full px-2 py-1.5 text-sm rounded border border-slate-300"
+                                                    >
+                                                        <option value="">Status</option>
+                                                        <option value="Preparing">Preparing</option>
+                                                        <option value="1">1</option>
+                                                        <option value="2">2</option>
+                                                        <option value="3">3</option>
+                                                        <option value="4">4</option>
+                                                        <option value="5">5</option>
+                                                        <option value="6">6</option>
+                                                        <option value="7">7</option>
+                                                    </select>
+                                                </div>
+                                                <button type="button" onClick={() => { const n = arr.filter((_, i) => i !== idx); updateNestedExam(key, 'ibSubjects', n); }} className="p-1.5 text-red-500 hover:bg-red-50 rounded mt-0.5 transition-colors shrink-0">
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={() => { const cur = details.ibSubjects?.length ? details.ibSubjects : [{ subject: '', level: '', status: '' }]; updateNestedExam(key, 'ibSubjects', [...cur, { subject: '', level: '', status: '' }]); }} className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md transition-colors">
+                                            <Plus className="w-3.5 h-3.5" /> Add IB Course
+                                        </button>
+                                    </div>
+                                )}
+                                {key === 'Diğer' && (
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="block text-xs text-slate-500">Not / Detay</label>
+                                        <textarea
+                                            value={details.notes || ''}
+                                            onChange={(e) => updateNestedExam(key, 'notes', e.target.value)}
+                                            placeholder="Sınav adı, tarih veya skor gibi detayları buraya yazabilirsiniz..."
+                                            className="w-full px-3 py-2 text-sm rounded border border-slate-300 min-h-[80px]"
+                                        />
                                     </div>
                                 )}
                             </div>
@@ -1691,8 +1891,104 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                 </div>
 
-                {/* Preferences */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                        <FileText className="w-5 h-5 text-indigo-600 print:text-black" />
+                        <h3 className="font-bold text-slate-800">Sınavlar</h3>
+                    </div>
+                    {student.analysis?.academic?.exams && Object.keys(student.analysis.academic.exams).length > 0 ? (
+                         <div className="space-y-4">
+                            {Object.entries(student.analysis.academic.exams as Record<string, ExamDetails>).map(([examName, details]) => {
+                                if (!details.selected) return null;
+                                return (
+                                    <div key={examName} className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 print:bg-white print:border-slate-300">
+                                        <div className="flex justify-between items-start">
+                                            <span className="font-bold text-slate-700">{examName}</span>
+                                            {examName !== 'AP' && examName !== 'IB' && (
+                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${details.status === 'Taken' ? 'bg-emerald-100 text-emerald-700 print:bg-emerald-50 print:border print:border-emerald-200' : 'bg-amber-100 text-amber-700 print:bg-amber-50 print:border print:border-amber-200'}`}>
+                                                    {details.status === 'Taken' ? 'Girdi' : 'Hazırlanıyor'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        
+                                        {examName === 'AP' ? (
+                                            <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 space-y-2">
+                                                {(details.apSubjects?.length ? details.apSubjects : (details.subject ? [{ subject: details.subject, status: details.status || '', grade: '' }] : [])).map((sub, idx) => sub.subject && (
+                                                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm gap-2">
+                                                        <span className="text-xs font-bold text-slate-700 flex-1">{sub.subject}</span>
+                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                            {sub.grade && (
+                                                                <span className="text-[10px] px-2 py-0.5 rounded font-bold border bg-slate-50 text-slate-600 border-slate-200">
+                                                                    {sub.grade}
+                                                                </span>
+                                                            )}
+                                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${sub.status === 'Hazırlanıyor' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                                {sub.status || '-'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : examName === 'IB' ? (
+                                            <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 space-y-2">
+                                                {(details.ibSubjects?.length ? details.ibSubjects : []).map((sub, idx) => sub.subject && (
+                                                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm gap-2">
+                                                        <span className="text-xs font-bold text-slate-700 flex-1 min-w-0 truncate">{sub.subject.replace(/^IB /, '')}</span>
+                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                            {sub.level && (
+                                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${sub.level === 'HL' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                                                    {sub.level}
+                                                                </span>
+                                                            )}
+                                                            {sub.status && (
+                                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${sub.status === 'Hazırlanıyor' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                                    {sub.status}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                                <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 grid grid-cols-2 gap-y-2.5 gap-x-2">
+                                                    {details.subject && (
+                                                        <div className="col-span-2">
+                                                            <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Branş / Konu</p>
+                                                            <p className="text-xs font-medium text-slate-800">{details.subject}</p>
+                                                        </div>
+                                                    )}
+                                                    {details.date && (
+                                                        <div>
+                                                            <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Tarih</p>
+                                                            <p className="text-xs font-medium text-slate-800">{formatExamDate(details.date)}</p>
+                                                        </div>
+                                                    )}
+                                                    {details.score && (
+                                                        <div>
+                                                            <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Alınan Skor / Hedef</p>
+                                                            <p className="text-xs font-bold text-indigo-600">{details.score}</p>
+                                                        </div>
+                                                    )}
+                                                    {details.notes && (
+                                                        <div className="col-span-2">
+                                                            <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Not / Detay</p>
+                                                            <p className="text-xs text-slate-700 mt-1 whitespace-pre-line">{details.notes}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        }
+                                    </div>
+                                )
+                            })}
+                         </div>
+                    ) : (
+                        <p className="text-sm text-slate-400 italic">Kayıtlı sınav bilgisi yok.</p>
+                    )}
+                </div>
+
+                {/* Preferences */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
                      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                         <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
                         <h3 className="font-bold text-slate-800">Eğitim Tercihleri</h3>
@@ -1782,20 +2078,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                     )}
                 </div>
-
-                {/* Social Activities */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <Activity className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Sosyal Faaliyetler</h3>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <DisplayField label="Spor" value={student.analysis?.social?.sports} />
-                        <DisplayField label="Sanat" value={student.analysis?.social?.arts} />
-                        <DisplayField label="Sosyal Çalışmalar" value={student.analysis?.social?.socialWork} />
-                        <DisplayField label="Projeler" value={student.analysis?.social?.projects} />
-                    </div>
-                </div>
             </div>
 
             <div className="space-y-6 print:mt-6">
@@ -1815,6 +2097,78 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                     </div>
                 )}
+
+
+
+                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                        <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
+                        <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
+                    </div>
+                    <div className="space-y-4">
+                        {student.analysis?.language?.hasTakenExam ? (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1 {isExamExpired(student.analysis.language.pastExamDate) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore || '-'}</p>
+                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)}</p>
+                                </div>
+                                {(student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
+                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2 {isExamExpired(student.analysis.language.pastExamDate2) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore2 || '-'}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)}</p>
+                                    </div>
+                                )}
+                                {(student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
+                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3 {isExamExpired(student.analysis.language.pastExamDate3) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore3 || '-'}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)}</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                             <div>
+                                <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
+                                <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-md print:border print:border-slate-200">
+                                    {student.analysis?.language?.estimatedLevel || '-'}
+                                </span>
+                             </div>
+                        )}
+
+                        {student.analysis?.language?.wantsTutoring && (
+                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start gap-2 print:bg-white print:border-slate-300">
+                                <CheckCircle className="w-4 h-4 text-indigo-600 mt-0.5 print:text-slate-800 shrink-0" />
+                                <p className="text-sm text-indigo-800 font-medium print:text-slate-700">Öğrenci deneme sınavına katılmak ve özel ders hakkında bilgi almak istiyor.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+
+
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                        <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
+                        <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
+                    </div>
+                    <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
+                </div>
+
+                {/* Social Activities */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                        <Activity className="w-5 h-5 text-indigo-600 print:text-black" />
+                        <h3 className="font-bold text-slate-800">Sosyal Faaliyetler</h3>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                        <DisplayField label="Spor" value={student.analysis?.social?.sports} />
+                        <DisplayField label="Sanat" value={student.analysis?.social?.arts} />
+                        <DisplayField label="Sosyal Çalışmalar" value={student.analysis?.social?.socialWork} />
+                        <DisplayField label="Projeler" value={student.analysis?.social?.projects} />
+                    </div>
+                </div>
 
                 {/* Citizenship Info */}
                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
@@ -1875,108 +2229,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             )}
                         </div>
                     </div>
-                </div>
-
-                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
-                    </div>
-                    <div className="space-y-4">
-                        {student.analysis?.language?.hasTakenExam ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1 {isExamExpired(student.analysis.language.pastExamDate) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore || '-'}</p>
-                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)}</p>
-                                </div>
-                                {(student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
-                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2 {isExamExpired(student.analysis.language.pastExamDate2) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore2 || '-'}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)}</p>
-                                    </div>
-                                )}
-                                {(student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
-                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3 {isExamExpired(student.analysis.language.pastExamDate3) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore3 || '-'}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)}</p>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                             <div>
-                                <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
-                                <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-md print:border print:border-slate-200">
-                                    {student.analysis?.language?.estimatedLevel || '-'}
-                                </span>
-                             </div>
-                        )}
-
-                        {student.analysis?.language?.wantsTutoring && (
-                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start gap-2 print:bg-white print:border-slate-300">
-                                <CheckCircle className="w-4 h-4 text-indigo-600 mt-0.5 print:text-slate-800 shrink-0" />
-                                <p className="text-sm text-indigo-800 font-medium print:text-slate-700">Öğrenci deneme sınavına katılmak ve özel ders hakkında bilgi almak istiyor.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <FileText className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Sınavlar</h3>
-                    </div>
-                    {student.analysis?.academic?.exams && Object.keys(student.analysis.academic.exams).length > 0 ? (
-                         <div className="space-y-4">
-                            {Object.entries(student.analysis.academic.exams as Record<string, ExamDetails>).map(([examName, details]) => {
-                                if (!details.selected) return null;
-                                return (
-                                    <div key={examName} className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 print:bg-white print:border-slate-300">
-                                        <div className="flex justify-between items-start">
-                                            <span className="font-bold text-slate-700">{examName}</span>
-                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${details.status === 'Taken' ? 'bg-emerald-100 text-emerald-700 print:bg-emerald-50 print:border print:border-emerald-200' : 'bg-amber-100 text-amber-700 print:bg-amber-50 print:border print:border-amber-200'}`}>
-                                                {details.status === 'Taken' ? 'Girdi' : 'Hazırlanıyor'}
-                                            </span>
-                                        </div>
-                                        {(details.subject || details.score || details.date) && (
-                                            <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 grid grid-cols-2 gap-y-2.5 gap-x-2">
-                                                {details.subject && (
-                                                    <div className="col-span-2">
-                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Branş / Konu</p>
-                                                        <p className="text-xs font-medium text-slate-800">{details.subject}</p>
-                                                    </div>
-                                                )}
-                                                {details.date && (
-                                                    <div>
-                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Tarih</p>
-                                                        <p className="text-xs font-medium text-slate-800">{formatExamDate(details.date)}</p>
-                                                    </div>
-                                                )}
-                                                {details.score && (
-                                                    <div>
-                                                        <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-0.5">Alınan Skor / Hedef</p>
-                                                        <p className="text-xs font-bold text-indigo-600">{details.score}</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            })}
-                         </div>
-                    ) : (
-                        <p className="text-sm text-slate-400 italic">Kayıtlı sınav bilgisi yok.</p>
-                    )}
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
-                    </div>
-                    <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
                 </div>
             </div>
 

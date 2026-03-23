@@ -48,10 +48,13 @@ export interface ParentInfo {
 
 export interface ExamDetails {
   selected: boolean;
-  status?: 'Taken' | 'Preparing';
+  status?: 'Taken' | 'Preparing' | string;
   score?: string;
   date?: string;
-  subject?: string; // Only for AP
+  subject?: string; // Legacy
+  apSubjects?: Array<{ subject: string; status: string; grade?: string }>; // Updated: added grade
+  ibSubjects?: Array<{ subject: string; level: string; status: string }>;
+  notes?: string; // For "Other" exam notes
 }
 
 export interface AnalysisReport {
