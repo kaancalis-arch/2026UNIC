@@ -244,16 +244,36 @@ export interface CountryData {
     popularJobs: string[];
 }
 
+export interface UniversityProgram {
+    id: string;
+    type: 'Bachelor' | 'Master';
+    name: string;
+    groupNames: string[]; // Refs to MainDegreeData.name (Selection from Bölüm Tanımları)
+    link: string;
+    tuitionRange: string; // Refs to tuition options (Eğitim Bütçesi)
+    campusLocation: string;
+    applicationCriteria: string;
+    languageScore: string;
+    notes: string;
+}
+
 export interface UniversityData {
     id: string;
     name: string;
     logo: string;
-    country: string;
-    city: string;
+    countries: string[];
+    rankingUrl?: string;
     websiteUrl: string;
     departmentsUrl: string;
-    tuitionRange: string;
+    tuitionRange?: string;
+    programs?: UniversityProgram[];
 }
+export interface MainCategoryData {
+    id: string;
+    name: string;
+    description?: string;
+}
+
 export interface MainDegreeData {
     id: string;
     name: string;
@@ -263,6 +283,7 @@ export interface MainDegreeData {
     topCompanies: string;
     sectorStatusTR: string;
     imageUrl: string;
+    categoryIds?: string[]; // Multiple categories (Many-to-Many)
 }
 
 export interface InterestedProgramData {

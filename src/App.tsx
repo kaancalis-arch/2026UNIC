@@ -8,6 +8,7 @@ import Settings from './pages/Settings';
 import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
 import Roadmaps from './pages/Roadmaps';
+import UniversitySearch from './pages/UniversitySearch';
 import { Student, SystemUser, UserRole } from './types';
 import { MOCK_USERS } from './services/mockData';
 
@@ -55,7 +56,7 @@ const App: React.FC = () => {
         if (currentUser.role !== UserRole.ADMIN) return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
         return <Settings />;
       case 'universities':
-        return <div className="p-10 text-center text-slate-500">University Search Module (Coming Soon)</div>;
+        return <UniversitySearch />;
       case 'roadmap':
         return <Roadmaps />;
       case 'files':

@@ -9,9 +9,9 @@ export const systemService = {
     try {
       // Fetching from 'tuition_list' table, column 'range'
       const { data, error } = await supabase
-        .from('tuition_list')
-        .select('range')
-        .order('id', { ascending: true }); // Assuming there is an ID or order column to keep consistency
+        .from('budget_ranges')
+        .select('label')
+        .order('sort_order', { ascending: true }); 
 
       if (error) {
         console.warn('Supabase fetch tuition ranges failed. Using mock data.', error.message);
@@ -20,7 +20,7 @@ export const systemService = {
 
       if (!data || data.length === 0) return MOCK_TUITION_RANGES;
 
-      return data.map((item: any) => item.range);
+      return data.map((item: any) => item.label);
     } catch (err) {
       console.warn('Unexpected error in systemService.getTuitionRanges. Using mock data.', err);
       return MOCK_TUITION_RANGES;

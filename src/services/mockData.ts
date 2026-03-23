@@ -188,8 +188,7 @@ export const MOCK_UNIVERSITIES: UniversityData[] = [
         id: 'uni-1',
         name: 'Technical University of Munich',
         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Logo_Technical_University_of_Munich.svg/200px-Logo_Technical_University_of_Munich.svg.png',
-        country: 'Germany',
-        city: 'Munich',
+        countries: ['Germany'],
         websiteUrl: 'https://www.tum.de/en/',
         departmentsUrl: 'https://www.tum.de/en/studies/degree-programs',
         tuitionRange: '0 - 1.000€ (State)'
@@ -198,8 +197,7 @@ export const MOCK_UNIVERSITIES: UniversityData[] = [
         id: 'uni-2',
         name: 'University of Amsterdam',
         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/University_of_Amsterdam_logo.svg/200px-University_of_Amsterdam_logo.svg.png',
-        country: 'Netherlands',
-        city: 'Amsterdam',
+        countries: ['Netherlands'],
         websiteUrl: 'https://www.uva.nl/en',
         departmentsUrl: 'https://www.uva.nl/en/education/bachelors/bachelors.html',
         tuitionRange: '10.000€ - 15.000€'
@@ -227,10 +225,10 @@ export const MOCK_INTERESTED_PROGRAMS: InterestedProgramData[] = [
 
 export const MOCK_TUITION_RANGES = [
   "Bütçe Konusunda Kararsızım",
-  "0 - 6.000 (Devlet Okulları)",
-  "6.000 - 12.000",
-  "12.000 - 18.000",
-  "18.000 - 24.000",
-  "24.000 ve üzeri"
+  "5.000'e kadar",
+  "10.000'e kadar",
+  "15.000'e kadar",
+  "20.000'e kadar",
+  "20.000 üzeri uygundur"
 ];
 

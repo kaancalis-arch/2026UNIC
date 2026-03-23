@@ -34,7 +34,6 @@ export const mainDegreeService = {
     if (!supabase) return degree;
 
     const dbPayload = {
-        id: degree.id,
         name: degree.name,
         description: degree.description,
         career_opportunities: degree.careerOpportunities,
@@ -42,7 +41,11 @@ export const mainDegreeService = {
         top_companies: degree.topCompanies,
         sector_status_tr: degree.sectorStatusTR,
         image_url: degree.imageUrl
-    };
+    } as any;
+
+    if (!degree.id.startsWith('deg-')) {
+        dbPayload.id = degree.id;
+    }
 
     const { data, error } = await supabase
       .from('programs')

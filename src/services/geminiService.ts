@@ -9,8 +9,13 @@ let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'undefined') {
+    // Priority: 1. localStorage (user configured) 2. environment variable
+    const localKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
+    const envKey = process.env.GEMINI_API_KEY;
+    
+    const apiKey = localKey || envKey;
+
+    if (!apiKey || apiKey === 'undefined' || apiKey === '') {
       console.warn("GEMINI_API_KEY is missing. AI features will use fallback data.");
       return null;
     }

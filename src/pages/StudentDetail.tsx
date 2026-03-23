@@ -10,6 +10,7 @@ import { countryService } from '../services/countryService';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { MOCK_TUITION_RANGES } from '../services/mockData';
 import { 
   ArrowLeft, 
   BrainCircuit, 
@@ -1545,14 +1546,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                  Yıllık Eğitim Bütçesi (Yaşam Hariç)
              </h4>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                    "Bütçe Konusunda Kararsızım",
-                    "5.000'e kadar",
-                    "10.000'e kadar",
-                    "15.000'e kadar",
-                    "20.000'e kadar",
-                    "20.000 üzeri uygundur.."
-                ].map((option) => {
+                {tuitionRanges.map((option) => {
                     const isSelected = editForm.budget?.range === option || editForm.budget?.ranges?.includes(option);
                     return (
                         <label key={option} className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${

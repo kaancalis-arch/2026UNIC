@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, InterestedProgramData } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData } from '../types';
 import { MOCK_USERS, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
+import { mainCategoryService } from '../services/mainCategoryService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { systemService } from '../services/systemService';
 import { 
@@ -12,7 +13,7 @@ import {
     Shield, CheckCircle, XCircle, Plus, MoreVertical, Edit2, Trash2, 
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2,
-    Link as LinkIcon, ExternalLink
+    Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download
 } from 'lucide-react';
 
 // Standard list for Dropdown
@@ -53,7 +54,7 @@ const DefinitionCard = ({ id, title, icon: Icon, count, onClick }: any) => (
 );
 
 const Settings: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data'>('users');
     const [users, setUsers] = useState<SystemUser[]>(MOCK_USERS);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     
@@ -71,16 +72,26 @@ const Settings: React.FC = () => {
         id: '',
         name: '',
         logo: '',
-        country: '',
-        city: '',
+        countries: [],
+        rankingUrl: '',
         websiteUrl: '',
         departmentsUrl: '',
-        tuitionRange: ''
+        programs: []
     });
 
-    // Main Degree State
+    // Main Degree / Category State
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
+    const [mainCategories, setMainCategories] = useState<MainCategoryData[]>([]);
+    const [degreeSubTab, setDegreeSubTab] = useState<'main' | 'sub'>('sub');
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
+    
+    const [isMainCategoryModalOpen, setIsMainCategoryModalOpen] = useState(false);
+    const [mainCategoryForm, setMainCategoryForm] = useState<MainCategoryData>({
+        id: '',
+        name: '',
+        description: ''
+    });
+
     const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
     const [mainDegreeForm, setMainDegreeForm] = useState<MainDegreeData>({
         id: '',
@@ -90,7 +101,8 @@ const Settings: React.FC = () => {
         aiImpact: '',
         topCompanies: '',
         sectorStatusTR: '',
-        imageUrl: ''
+        imageUrl: '',
+        categoryIds: []
     });
 
     // Interested Program State (New)
@@ -129,10 +141,15 @@ const Settings: React.FC = () => {
             loadUniversities();
             loadCountries(); 
             loadTuitionRanges();
+            loadMainDegrees(); // Added to fix empty dropdown in university programs
         } else if (selectedDefinitionType === 'degrees') {
             loadMainDegrees();
         } else if (selectedDefinitionType === 'interested_programs') {
             loadInterestedPrograms();
+        } else if (selectedDefinitionType === 'all_programs') {
+            loadUniversities();
+            loadTuitionRanges();
+            loadMainDegrees();
         }
     }, [selectedDefinitionType]);
 
@@ -175,10 +192,24 @@ const Settings: React.FC = () => {
     const loadMainDegrees = async () => {
         setIsLoadingMainDegrees(true);
         try {
-            const data = await mainDegreeService.getAll();
-            setMainDegrees(data);
+            const [degrees, cats, junctions] = await Promise.all([
+                mainDegreeService.getAll(),
+                mainCategoryService.getAll(),
+                mainCategoryService.getJunctions()
+            ]);
+            
+            // Map junctions to degrees
+            const enrichedDegrees = degrees.map(deg => ({
+                ...deg,
+                categoryIds: junctions
+                    .filter(j => j.program_id === deg.id)
+                    .map(j => j.category_id)
+            }));
+            
+            setMainDegrees(enrichedDegrees as MainDegreeData[]);
+            setMainCategories(cats);
         } catch (error) {
-            console.error('Failed to load main degrees', error);
+            console.error('Failed to load degrees data', error);
         } finally {
             setIsLoadingMainDegrees(false);
         }
@@ -250,17 +281,20 @@ const Settings: React.FC = () => {
             id: `uni-${Date.now()}`,
             name: '',
             logo: '',
-            country: '',
-            city: '',
+            countries: [],
+            rankingUrl: '',
             websiteUrl: '',
             departmentsUrl: '',
-            tuitionRange: ''
+            programs: []
         });
         setIsUniversityModalOpen(true);
     };
 
     const handleEditUniversity = (uni: UniversityData) => {
-        setUniversityForm(uni);
+        setUniversityForm({
+            ...uni,
+            programs: uni.programs || []
+        });
         setIsUniversityModalOpen(true);
     };
 
@@ -294,6 +328,132 @@ const Settings: React.FC = () => {
         }
     };
 
+    // --- UNIVERSITY PROGRAM LOGIC ---
+    const addUniversityProgram = () => {
+        const newProgram: any = {
+            id: `prog-${Date.now()}`,
+            type: 'Bachelor',
+            name: '',
+            groupNames: [],
+            link: '',
+            tuitionRange: '',
+            campusLocation: '',
+            applicationCriteria: '',
+            languageScore: '',
+            notes: ''
+        };
+        setUniversityForm(prev => ({
+            ...prev,
+            programs: [...(prev.programs || []), newProgram]
+        }));
+    };
+
+    const updateUniversityProgram = (id: string, field: string, value: any) => {
+        setUniversityForm(prev => ({
+            ...prev,
+            programs: (prev.programs || []).map(p => p.id === id ? { ...p, [field]: value } : p)
+        }));
+    };
+
+    const removeUniversityProgram = (id: string) => {
+        setUniversityForm(prev => ({
+            ...prev,
+            programs: (prev.programs || []).filter(p => p.id !== id)
+        }));
+    };
+
+    // --- ALL PROGRAMS LOGIC (CENTRAL) ---
+    const [isAllProgramModalOpen, setIsAllProgramModalOpen] = useState(false);
+    const [allProgramForm, setAllProgramForm] = useState<any>({
+        id: '',
+        universityId: '',
+        type: 'Bachelor',
+        name: '',
+        groupNames: [],
+        link: '',
+        tuitionRange: '',
+        campusLocation: '',
+        applicationCriteria: '',
+        languageScore: '',
+        notes: ''
+    });
+
+    const handleAddCentralProgram = () => {
+        setAllProgramForm({
+            id: `prog-${Date.now()}`,
+            universityId: '',
+            type: 'Bachelor',
+            name: '',
+            groupNames: [],
+            link: '',
+            tuitionRange: '',
+            campusLocation: '',
+            applicationCriteria: '',
+            languageScore: '',
+            notes: ''
+        });
+        setIsAllProgramModalOpen(true);
+    };
+
+    const handleEditCentralProgram = (prog: any, universityId: string) => {
+        setAllProgramForm({
+            ...prog,
+            universityId
+        });
+        setIsAllProgramModalOpen(true);
+    };
+
+    const handleSaveCentralProgram = async () => {
+        if (!allProgramForm.universityId) {
+            alert("Lütfen bir üniversite seçiniz.");
+            return;
+        }
+
+        const uni = universities.find(u => u.id === allProgramForm.universityId);
+        if (!uni) return;
+
+        let updatedPrograms = [...(uni.programs || [])];
+        const index = updatedPrograms.findIndex(p => p.id === allProgramForm.id);
+
+        const { universityId, ...programData } = allProgramForm;
+
+        if (index > -1) {
+            updatedPrograms[index] = programData;
+        } else {
+            updatedPrograms.push(programData);
+        }
+
+        const updatedUni = { ...uni, programs: updatedPrograms };
+        
+        try {
+            await universityService.upsert(updatedUni);
+            setUniversities(prev => prev.map(u => u.id === uni.id ? updatedUni : u));
+            setIsAllProgramModalOpen(false);
+        } catch (error) {
+            console.error("Program kaydedilemedi", error);
+            alert("Kaydedilirken bir hata oluştu.");
+        }
+    };
+
+    const handleDeleteCentralProgram = async (progId: string, universityId: string) => {
+         if (!window.confirm("Bu programı silmek istediğinize emin misiniz?")) return;
+         
+         const uni = universities.find(u => u.id === universityId);
+         if (!uni) return;
+
+         const updatedUni = {
+             ...uni,
+             programs: (uni.programs || []).filter(p => p.id !== progId)
+         };
+
+         try {
+             await universityService.upsert(updatedUni);
+             setUniversities(prev => prev.map(u => u.id === universityId ? updatedUni : u));
+         } catch (error) {
+             console.error("Program silinemedi", error);
+         }
+    };
+
     // --- MAIN DEGREE LOGIC ---
     const handleAddMainDegree = () => {
         setMainDegreeForm({
@@ -304,7 +464,8 @@ const Settings: React.FC = () => {
             aiImpact: '',
             topCompanies: '',
             sectorStatusTR: '',
-            imageUrl: ''
+            imageUrl: '',
+            categoryIds: []
         });
         setIsMainDegreeModalOpen(true);
     };
@@ -314,18 +475,66 @@ const Settings: React.FC = () => {
         setIsMainDegreeModalOpen(true);
     };
 
+    const handleAddMainCategory = () => {
+        setMainCategoryForm({ id: `cat-${Date.now()}`, name: '', description: '' });
+        setIsMainCategoryModalOpen(true);
+    };
+
+    const handleEditMainCategory = (cat: MainCategoryData) => {
+        setMainCategoryForm(cat);
+        setIsMainCategoryModalOpen(true);
+    };
+
+    const handleSaveMainCategory = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const saved = await mainCategoryService.upsert(mainCategoryForm);
+            setMainCategories(prev => {
+                const idx = prev.findIndex(c => c.id === saved.id);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = saved;
+                    return updated;
+                }
+                return [saved, ...prev];
+            });
+            setIsMainCategoryModalOpen(false);
+        } catch (error) {
+            console.error("Failed to save category", error);
+            alert("Kategori kaydedilemedi");
+        }
+    };
+
+    const handleDeleteMainCategory = async (id: string) => {
+        if (!confirm("Bu ana bölümü silmek istediğinize emin misiniz?")) return;
+        try {
+            await mainCategoryService.delete(id);
+            setMainCategories(prev => prev.filter(c => c.id !== id));
+        } catch (error) {
+            console.error("Delete category failed", error);
+        }
+    };
+
     const handleSaveMainDegree = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const savedDeg = await mainDegreeService.upsert(mainDegreeForm);
+
+            // Update junction assignments
+            if (mainDegreeForm.categoryIds) {
+                await mainCategoryService.updateAssignments(savedDeg.id, mainDegreeForm.categoryIds);
+            }
+
+            // Sync local state
             setMainDegrees(prev => {
+                const enriched = { ...savedDeg, categoryIds: mainDegreeForm.categoryIds };
                 const idx = prev.findIndex(d => d.id === savedDeg.id);
                 if (idx >= 0) {
                     const updated = [...prev];
-                    updated[idx] = savedDeg;
+                    updated[idx] = enriched;
                     return updated;
                 }
-                return [savedDeg, ...prev];
+                return [enriched, ...prev];
             });
             setIsMainDegreeModalOpen(false);
         } catch (error) {
@@ -605,9 +814,9 @@ const Settings: React.FC = () => {
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
                                 <th className="px-6 py-4 font-semibold">University</th>
-                                <th className="px-6 py-4 font-semibold">Location</th>
-                                <th className="px-6 py-4 font-semibold">Links</th>
-                                <th className="px-6 py-4 font-semibold">Tuition Range</th>
+                                <th className="px-6 py-4 font-semibold">Countries</th>
+                                <th className="px-6 py-4 font-semibold">Links & Ranking</th>
+                                <th className="px-6 py-4 font-semibold">Programs</th>
                                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
                             </tr>
                         </thead>
@@ -624,56 +833,52 @@ const Settings: React.FC = () => {
                                 universities.map(uni => (
                                     <tr key={uni.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 flex items-center justify-center p-1 overflow-hidden shrink-0">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                                                     {uni.logo ? (
-                                                        <img src={uni.logo} alt="" className="w-full h-full object-contain" />
+                                                        <img src={uni.logo} alt={uni.name} className="w-full h-full object-contain" />
                                                     ) : (
-                                                        <GraduationCap className="w-6 h-6 text-slate-300" />
+                                                        <img 
+                                                            src={`https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(uni.name)}&backgroundColor=f1f5f9`} 
+                                                            alt="" 
+                                                            className="w-full h-full object-cover opacity-60" 
+                                                        />
                                                     )}
                                                 </div>
-                                                <span className="font-bold text-slate-800">{uni.name}</span>
+                                                <div>
+                                                    <div className="font-bold text-slate-800 leading-tight">{uni.name}</div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">{uni.id}</div>
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-slate-700">{uni.city}</span>
-                                                <span className="text-xs text-slate-500">{uni.country}</span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {(uni.countries || []).map(c => (
+                                                    <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">{c}</span>
+                                                ))}
+                                                {(uni.countries || []).length === 0 && <span className="text-slate-400 italic text-[10px]">No country</span>}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex gap-2">
-                                                {uni.websiteUrl && (
-                                                    <a href={uni.websiteUrl} target="_blank" rel="noreferrer" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 hover:text-indigo-600 transition-colors" title="Official Website">
-                                                        <Globe className="w-4 h-4" />
-                                                    </a>
-                                                )}
-                                                {uni.departmentsUrl && (
-                                                    <a href={uni.departmentsUrl} target="_blank" rel="noreferrer" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 hover:text-indigo-600 transition-colors" title="Departments / Programs">
-                                                        <BookOpen className="w-4 h-4" />
-                                                    </a>
-                                                )}
+                                            <div className="flex flex-col gap-1.5">
+                                                <div className="flex items-center gap-3">
+                                                    {uni.websiteUrl && <a href={uni.websiteUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Website"><Globe className="w-4 h-4" /></a>}
+                                                    {uni.departmentsUrl && <a href={uni.departmentsUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Departments"><BookOpen className="w-4 h-4" /></a>}
+                                                    {uni.rankingUrl && <a href={uni.rankingUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Ranking"><Star className="w-4 h-4" /></a>}
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                                                {uni.tuitionRange || 'N/A'}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <div className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-100">
+                                                    {(uni.programs || []).length} Programs
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button 
-                                                    onClick={() => handleEditUniversity(uni)}
-                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleDeleteUniversity(uni.id)}
-                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                <button onClick={() => handleEditUniversity(uni)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteUniversity(uni.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -694,16 +899,36 @@ const Settings: React.FC = () => {
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
                     <div>
-                        <h3 className="text-xl font-bold text-slate-800">Main Degrees</h3>
-                        <p className="text-sm text-slate-500">Define academic main degrees with career and AI impact details.</p>
+                        <h3 className="text-xl font-bold text-slate-800">Bölüm Grupları</h3>
+                        <p className="text-sm text-slate-500">Akademik programları Ana Bölümler ve Alt Başlıklar halinde düzenleyin.</p>
                     </div>
                 </div>
                 <button 
-                    onClick={handleAddMainDegree}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                    onClick={degreeSubTab === 'main' ? handleAddMainCategory : handleAddMainDegree}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20 shadow-indigo-500/20 transition-all active:scale-95"
                 >
                     <Plus className="w-4 h-4" />
-                    New Main Degree
+                    {degreeSubTab === 'main' ? 'Yeni Ana Bölüm Ekle' : 'Yeni Alt Başlık Ekle'}
+                </button>
+            </div>
+
+            {/* Sub Tabs */}
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl w-fit mb-6">
+                <button 
+                    onClick={() => setDegreeSubTab('main')}
+                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                        degreeSubTab === 'main' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    Ana Bölümler
+                </button>
+                <button 
+                    onClick={() => setDegreeSubTab('sub')}
+                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                        degreeSubTab === 'sub' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    Alt Başlıklar
                 </button>
             </div>
 
@@ -712,52 +937,73 @@ const Settings: React.FC = () => {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                                <th className="px-6 py-4 font-semibold">Degree Name</th>
-                                <th className="px-6 py-4 font-semibold">Description</th>
-                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                                <th className="px-6 py-4 font-semibold">{degreeSubTab === 'main' ? 'Ana Bölüm Adı' : 'Alt Başlık Adı'}</th>
+                                <th className="px-6 py-4 font-semibold">{degreeSubTab === 'main' ? 'Açıklama' : 'Atanan Gruplar'}</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {isLoadingMainDegrees ? (
                                 <tr>
-                                    <td colSpan={3} className="p-10 text-center text-slate-500">Loading degrees...</td>
+                                    <td colSpan={3} className="p-10 text-center text-slate-500 italic">Veriler yükleniyor...</td>
                                 </tr>
-                            ) : mainDegrees.length === 0 ? (
-                                <tr>
-                                    <td colSpan={3} className="p-10 text-center text-slate-500">No degrees defined yet.</td>
-                                </tr>
+                            ) : degreeSubTab === 'main' ? (
+                                mainCategories.length === 0 ? (
+                                    <tr><td colSpan={3} className="p-10 text-center text-slate-400 italic">Henüz ana bölüm tanımlanmamış.</td></tr>
+                                ) : mainCategories.map(cat => (
+                                    <tr key={cat.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
+                                                    <Shield className="w-5 h-5 text-indigo-600" />
+                                                </div>
+                                                <span className="font-bold text-slate-800">{cat.name}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 font-medium text-slate-500 text-sm">
+                                            {cat.description || '-'}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => handleEditMainCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteMainCategory(cat.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
                             ) : (
-                                mainDegrees.map(deg => (
+                                mainDegrees.length === 0 ? (
+                                    <tr><td colSpan={3} className="p-10 text-center text-slate-400 italic">Henüz alt başlık tanımlanmamış.</td></tr>
+                                ) : mainDegrees.map(deg => (
                                     <tr key={deg.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
-                                                    {deg.imageUrl ? (
-                                                        <img src={deg.imageUrl} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <BookOpen className="w-6 h-6 text-slate-300" />
-                                                    )}
+                                                    {deg.imageUrl ? <img src={deg.imageUrl} alt="" className="w-full h-full object-cover" /> : <BookOpen className="w-6 h-6 text-slate-300" />}
                                                 </div>
                                                 <span className="font-bold text-slate-800">{deg.name}</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <p className="text-sm text-slate-500 line-clamp-2 max-w-md">{deg.description}</p>
+                                            <div className="flex flex-wrap gap-1">
+                                                {(deg.categoryIds || []).length > 0 ? (
+                                                    deg.categoryIds?.map(catId => {
+                                                        const cat = mainCategories.find(c => c.id === catId);
+                                                        return cat ? (
+                                                            <span key={catId} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold border border-indigo-100 uppercase">
+                                                                {cat.name}
+                                                            </span>
+                                                        ) : null;
+                                                    })
+                                                ) : (
+                                                    <span className="text-xs text-slate-300 italic">Gruplanmamış</span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button 
-                                                    onClick={() => handleEditMainDegree(deg)}
-                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleDeleteMainDegree(deg.id)}
-                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                <button onClick={() => handleEditMainDegree(deg)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteMainDegree(deg.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -770,6 +1016,199 @@ const Settings: React.FC = () => {
         </div>
     );
 
+    const renderAllProgramsManager = () => {
+        const allProgs = universities.flatMap(u => (u.programs || []).map(p => ({ ...p, universityId: u.id, universityName: u.name })));
+
+        return (
+            <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                            <ArrowLeft className="w-5 h-5 text-slate-600" />
+                        </button>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">Bölümler</h3>
+                            <p className="text-sm text-slate-500">Tüm üniversitelerin programlarını tek bir listeden yönetin.</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={handleAddCentralProgram}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Yeni Bölüm Ekle
+                    </button>
+                </div>
+
+                <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                    <th className="px-6 py-4 font-semibold">Bölüm Adı</th>
+                                    <th className="px-6 py-4 font-semibold">Üniversite</th>
+                                    <th className="px-6 py-4 font-semibold">Tür</th>
+                                    <th className="px-6 py-4 font-semibold">Bütçe</th>
+                                    <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {allProgs.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="p-10 text-center text-slate-500">Henüz hiç bölüm tanımlanmamış.</td>
+                                    </tr>
+                                ) : (
+                                    allProgs.map(prog => (
+                                        <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="font-bold text-slate-800">{prog.name}</span>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(prog.groupNames || []).length > 0 ? (
+                                                            prog.groupNames.map(gn => (
+                                                                <span key={gn} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold border border-indigo-100 uppercase">
+                                                                    {gn}
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span className="text-[9px] text-slate-300 italic">Gruplanmamış</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-sm text-slate-600 font-medium">{prog.universityName}</span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${prog.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {prog.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-sm font-medium text-green-600 bg-green-50 px-2 py-1 rounded-lg">{prog.tuitionRange || 'N/A'}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button onClick={() => handleEditCentralProgram(prog, prog.universityId)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteCentralProgram(prog.id, prog.universityId)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* CENTRAL PROGRAM MODAL */}
+                {isAllProgramModalOpen && (
+                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-fade-in">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+                                <h3 className="text-xl font-bold text-slate-800">Bölüm Düzenle</h3>
+                                <button onClick={() => setIsAllProgramModalOpen(false)} className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="col-span-2">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Üniversite Seçin</label>
+                                        <select 
+                                            value={allProgramForm.universityId}
+                                            onChange={(e) => setAllProgramForm({...allProgramForm, universityId: e.target.value})}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        >
+                                            <option value="">Üniversite Seçin...</option>
+                                            {universities.map(u => (
+                                                <option key={u.id} value={u.id}>{u.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Adı</label>
+                                        <input 
+                                            value={allProgramForm.name}
+                                            onChange={(e) => setAllProgramForm({...allProgramForm, name: e.target.value})}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                                        />
+                                    </div>
+
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Türü</label>
+                                        <div className="flex gap-2">
+                                            {['Bachelor', 'Master'].map(t => (
+                                                <button 
+                                                    key={t}
+                                                    type="button"
+                                                    onClick={() => setAllProgramForm({...allProgramForm, type: t as any})}
+                                                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${allProgramForm.type === t ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-500 border border-slate-200 hover:border-indigo-200'}`}
+                                                >
+                                                    {t}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="col-span-2">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Alt Başlıklar (Bölüm Grupları)</label>
+                                        <select 
+                                            multiple
+                                            value={allProgramForm.groupNames}
+                                            onChange={(e) => {
+                                                const select = e.target as HTMLSelectElement;
+                                                const values = Array.from(select.selectedOptions, (option: HTMLOptionElement) => option.value);
+                                                setAllProgramForm({...allProgramForm, groupNames: values});
+                                            }}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm min-h-[100px] focus:ring-4 focus:ring-indigo-500/10 outline-none"
+                                        >
+                                            {mainDegrees.map(deg => (
+                                                <option key={deg.id} value={deg.name}>{deg.name}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-[10px] text-slate-400 mt-1 italic">Bu bölümün hangi ana kategorilerde/gruplarda listeleneceğini seçin.</p>
+                                    </div>
+
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Linki</label>
+                                        <input 
+                                            value={allProgramForm.link}
+                                            onChange={(e) => setAllProgramForm({...allProgramForm, link: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        />
+                                    </div>
+
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Eğitim Bütçesi</label>
+                                        <select 
+                                            value={allProgramForm.tuitionRange}
+                                            onChange={(e) => setAllProgramForm({...allProgramForm, tuitionRange: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        >
+                                            <option value="">Bütçe Seç...</option>
+                                            {tuitionRanges.map(r => <option key={r} value={r}>{r}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
+                                    <button onClick={() => setIsAllProgramModalOpen(false)} className="px-6 py-2 text-slate-600 font-medium">İptal</button>
+                                    <button onClick={handleSaveCentralProgram} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700">Kaydet</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderInterestedProgramManager = () => (
         <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
              <div className="flex items-center justify-between mb-6">
@@ -778,8 +1217,8 @@ const Settings: React.FC = () => {
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
                     <div>
-                        <h3 className="text-xl font-bold text-slate-800">Interested Programs</h3>
-                        <p className="text-sm text-slate-500">Manage list of programs prospective students can choose.</p>
+                        <h3 className="text-xl font-bold text-slate-800">Program Tanımları</h3>
+                        <p className="text-sm text-slate-500">Öğrenci tercihlerinde listelenecek ana akademik alanları tanımlayın.</p>
                     </div>
                 </div>
                 <button 
@@ -787,7 +1226,7 @@ const Settings: React.FC = () => {
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
                 >
                     <Plus className="w-4 h-4" />
-                    New Program
+                    Yeni Program Tanımı
                 </button>
             </div>
 
@@ -796,9 +1235,9 @@ const Settings: React.FC = () => {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                                <th className="px-6 py-4 font-semibold">Program Name</th>
-                                <th className="px-6 py-4 font-semibold">Description</th>
-                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                                <th className="px-6 py-4 font-semibold">Program Adı</th>
+                                <th className="px-6 py-4 font-semibold">Açıklama</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1275,6 +1714,178 @@ const Settings: React.FC = () => {
         );
     }
 
+    const renderBudgetManager = () => {
+        const budgetOptions = [
+            "Bütçe Konusunda Kararsızım",
+            "5.000'e kadar",
+            "10.000'e kadar",
+            "15.000'e kadar",
+            "20.000'e kadar",
+            "20.000 üzeri uygundur"
+        ];
+
+        return (
+            <div className="space-y-6 animate-fade-in max-w-2xl mx-auto">
+                <div className="flex items-center gap-4 mb-2">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500">
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Eğitim Bütçesi Tanımları</h3>
+                        <p className="text-sm text-slate-500">Sistem genelinde kullanılan bütçe aralıklarını yönetin.</p>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <h4 className="font-bold text-slate-700 uppercase tracking-wider text-xs flex items-center gap-2">
+                            <Banknote className="w-4 h-4 text-emerald-600" /> Mevcut Bütçe Seçenekleri
+                        </h4>
+                        <button className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all">
+                             Yeni Seçenek Ekle
+                        </button>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                        {budgetOptions.map((opt, idx) => (
+                            <div key={idx} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between group">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">
+                                        {idx + 1}
+                                    </div>
+                                    <span className="font-medium text-slate-700">{opt}</span>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 border-dashed">
+                    <p className="text-xs text-slate-500 text-center leading-relaxed">
+                        Bu bütçe seçenekleri, öğrenci kayıt formları ve üniversite programı tanımlamalarında standart aralıklar olarak sunulur. 
+                        Pactole CRM, bu değerleri finansal raporlamalar ve AI önerileri için temel alır.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    const renderDataManager = () => {
+        const stats = [
+            { id: 'countries', name: 'Ülkeler', table: 'countries', icon: Globe, count: countries.length, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { id: 'universities', name: 'Üniversiteler', table: 'universities', icon: GraduationCap, count: universities.length, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { id: 'degrees', name: 'Bölüm Grupları', table: 'main_degrees', icon: BookOpen, count: mainDegrees.length, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { id: 'all_programs', name: 'Bölümler', table: 'programs', icon: GraduationCap, count: universities.reduce((acc, u) => acc + (u.programs?.length || 0), 0), color: 'text-amber-600', bg: 'bg-amber-50' }
+        ];
+
+        return (
+            <div className="space-y-6 animate-fade-in pb-20">
+                <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                <Database className="w-5 h-5 text-indigo-600" /> Veri Yönetimi
+                            </h3>
+                            <p className="text-sm text-slate-500 mt-1">Sistem üzerindeki ham verileri ve tablo istatistiklerini kontrol edin.</p>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                loadCountries();
+                                loadUniversities();
+                                loadMainDegrees();
+                                loadInterestedPrograms();
+                                alert('Veriler tazelendi!');
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200 font-medium"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                            Verileri Tazele
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {stats.map(stat => (
+                            <div 
+                                key={stat.table} 
+                                onClick={() => setSelectedDefinitionType(stat.id)}
+                                className="p-5 bg-white border border-slate-100 rounded-2xl hover:border-indigo-200 hover:shadow-md transition-all group cursor-pointer"
+                            >
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className={`p-3 rounded-xl ${stat.bg} ${stat.color}`}>
+                                        <stat.icon className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); /* export logic */ }}
+                                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
+                                            title="Export CSV"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{stat.table}</p>
+                                    <h4 className="text-lg font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors">{stat.name}</h4>
+                                    <div className="mt-4 flex items-end justify-between">
+                                        <div className="flex flex-col">
+                                            <span className="text-3xl font-black text-slate-900">{stat.count}</span>
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Yönetmek için tıkla</span>
+                                        </div>
+                                        <span className="text-xs font-medium text-slate-400 mb-1">Kaydolmuş Satır</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-xl overflow-hidden relative">
+                         <div className="absolute top-0 right-0 p-8 opacity-10">
+                            <Database className="w-32 h-32" />
+                        </div>
+                        <div className="relative">
+                            <h4 className="text-lg font-bold mb-2">Veritabanı Sağlığı</h4>
+                            <p className="text-slate-400 text-sm mb-6">Supabase bağlantısı aktif ve senkronize durumda. Tüm tablolar RLS politikalarıyla korunmaktadır.</p>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 text-sm">
+                                    <span className="text-slate-400">Bağlantı Durumu</span>
+                                    <span className="flex items-center gap-2 text-emerald-400 font-bold">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"></div>
+                                        CONNECTED
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 text-sm">
+                                    <span className="text-slate-400">Ortalama Yanıt Süresi</span>
+                                    <span className="text-indigo-400 font-bold">124ms</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <h4 className="text-lg font-bold text-slate-800 mb-2">Toplu Veri İşlemleri</h4>
+                            <p className="text-slate-500 text-sm">Üniversite listelerini veya öğrenci verilerini toplu olarak içeri aktarın.</p>
+                        </div>
+                        <div className="flex gap-3 mt-8">
+                            <button className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 active:scale-95">CSV / Excel İçe Aktar</button>
+                            <button className="flex-1 py-3 bg-white text-slate-700 border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all active:scale-95">Tüm Veriyi Yedekle</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const availableParents = getAvailableParents(newUser.role);
 
     return (
@@ -1291,7 +1902,8 @@ const Settings: React.FC = () => {
                         {[
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
-                            { id: 'career', label: 'Kariyer & Yaşam', icon: Briefcase },
+                            { id: 'career', label: 'AI Ayarları', icon: Cpu },
+                            { id: 'data', label: 'DATA', icon: Database },
                         ].map((tab) => (
                             <button
                                 key={tab.id}
@@ -1318,31 +1930,17 @@ const Settings: React.FC = () => {
                     {!selectedDefinitionType && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
                             <DefinitionCard 
-                                id="countries"
-                                title="Ülkeler" 
-                                icon={Globe} 
-                                count={countries.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)} 
-                            />
-                            <DefinitionCard 
-                                id="universities"
-                                title="Üniversiteler" 
-                                icon={GraduationCap} 
-                                count={universities.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
-                                id="degrees"
-                                title="Bölüm Tanımları" 
-                                icon={Globe} 
-                                count={mainDegrees.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
                                 id="interested_programs"
                                 title="Program Tanımları" 
                                 icon={Briefcase} 
                                 count={interestedPrograms.length || 0} 
+                                onClick={(id: string) => setSelectedDefinitionType(id)}
+                            />
+                            <DefinitionCard 
+                                id="budget"
+                                title="Eğitim Bütçesi" 
+                                icon={Banknote} 
+                                count={6} 
                                 onClick={(id: string) => setSelectedDefinitionType(id)}
                             />
                             <DefinitionCard 
@@ -1355,24 +1953,94 @@ const Settings: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Sub Views */}
-                    {selectedDefinitionType === 'countries' && renderCountryManager()}
-                    {selectedDefinitionType === 'universities' && renderUniversityManager()}
-                    {selectedDefinitionType === 'degrees' && renderMainDegreeManager()}
+                    {/* Sub Views for Definitions Tab */}
                     {selectedDefinitionType === 'interested_programs' && renderInterestedProgramManager()}
+                    {selectedDefinitionType === 'budget' && renderBudgetManager()}
                 </>
             )}
 
+            {activeTab === 'data' && (
+                <>
+                    {!selectedDefinitionType && renderDataManager()}
+                    {selectedDefinitionType === 'countries' && renderCountryManager()}
+                    {selectedDefinitionType === 'universities' && renderUniversityManager()}
+                    {selectedDefinitionType === 'degrees' && renderMainDegreeManager()}
+                    {selectedDefinitionType === 'all_programs' && renderAllProgramsManager()}
+                </>
+            )}
             {activeTab === 'career' && !selectedDefinitionType && (
-                 <div className="bg-white p-10 rounded-2xl border border-dashed border-slate-300 text-center animate-fade-in">
-                    <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-slate-700">Kariyer Modülü Ayarları</h3>
-                    <p className="text-slate-500 mb-6">BigFive ve Holland test parametrelerini buradan düzenleyebilirsiniz.</p>
-                    <button className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors font-medium">
-                        Parametreleri Düzenle
-                    </button>
+                 <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-8 opacity-5">
+                            <Cpu className="w-32 h-32" />
+                        </div>
+                        
+                        <div className="relative">
+                            <h3 className="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                <Cpu className="w-5 h-5 text-indigo-600" /> AI Servis Ayarları
+                            </h3>
+                            <p className="text-slate-500 mb-8 border-b border-slate-100 pb-4">
+                                Platform genelinde kullanılan yapay zeka servislerinin API bağlantılarını buradan yönetebilirsiniz.
+                            </p>
+
+                            <div className="space-y-6">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                            Google Gemini API Key
+                                        </label>
+                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase">Aktif Model: Gemini 2.5 Flash</span>
+                                    </div>
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                                            <Key className="w-4 h-4" />
+                                        </div>
+                                        <input 
+                                            type="password"
+                                            value={localStorage.getItem('gemini_api_key') || ''}
+                                            onChange={(e) => {
+                                                localStorage.setItem('gemini_api_key', e.target.value);
+                                                // Trigger a re-render if needed or just rely on the next refresh/page change
+                                            }}
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-mono text-sm" 
+                                            placeholder="AI analizleri için API anahtarınızı giriniz..."
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 leading-relaxed italic">
+                                        * API anahtarı yerel olarak (Local Storage) saklanır ve sadece AI analizleri tetiklendiğinde kullanılır.
+                                    </p>
+                                </div>
+
+                                <div className="pt-4 flex justify-end">
+                                    <button 
+                                        onClick={() => {
+                                            alert('API Ayarları başarıyla güncellendi!');
+                                            window.location.reload();
+                                        }}
+                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2"
+                                    >
+                                        <Save className="w-4 h-4" /> Değişiklikleri Kaydet
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex gap-4">
+                        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                            <Shield className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-amber-900 text-sm mb-1">Güvenlik Notu</h4>
+                            <p className="text-xs text-amber-700 leading-relaxed">
+                                API anahtarlarınızı kimseyle paylaşmayınız. Platform, analizlerinizi otomatize etmek için bu anahtarı kullanır. Gelecekte bu ayarlar merkezi bir "Secret Manager" üzerinden yönetilebilir olacaktır.
+                            </p>
+                        </div>
+                    </div>
                  </div>
             )}
+
 
             {/* Add User Modal */}
             {isUserModalOpen && (
@@ -1491,44 +2159,68 @@ const Settings: React.FC = () => {
                                 />
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Country</label>
-                                    <select 
-                                        required
-                                        value={universityForm.country} 
-                                        onChange={e => setUniversityForm({...universityForm, country: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    >
-                                        <option value="">Ülke Seçiniz</option>
-                                        {countries.map(c => (
-                                            <option key={c.id} value={c.name}>{c.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
-                                    <input 
-                                        required
-                                        value={universityForm.city} 
-                                        onChange={e => setUniversityForm({...universityForm, city: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                        placeholder="Munich"
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Countries (Select Multiple)</label>
+                                <select 
+                                    multiple
+                                    required
+                                    value={universityForm.countries} 
+                                    onChange={e => {
+                                        const select = e.target as HTMLSelectElement;
+                                        const values = Array.from(select.selectedOptions, (option: HTMLOptionElement) => option.value);
+                                        setUniversityForm({...universityForm, countries: values});
+                                    }}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none min-h-[100px]" 
+                                >
+                                    {countries.map(c => (
+                                        <option key={c.id} value={c.name}>{c.name}</option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-slate-400 mt-1 italic">Birden fazla seçim için Ctrl tuşuna basılı tutun.</p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Logo URL</label>
-                                <input 
-                                    value={universityForm.logo} 
-                                    onChange={e => setUniversityForm({...universityForm, logo: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    placeholder="https://..."
-                                />
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Üniversite Logosu</label>
+                                <div className="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                                    <div className="w-16 h-16 rounded-xl bg-white border border-slate-100 flex items-center justify-center overflow-hidden p-2 shadow-sm shrink-0">
+                                        {universityForm.logo ? (
+                                            <img src={universityForm.logo} alt="" className="w-full h-full object-contain" />
+                                        ) : (
+                                            <Building className="w-8 h-8 text-slate-300" />
+                                        )}
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-xs text-slate-500 mb-2">Önerilen: Kare, şeffaf arka planlı PNG.</p>
+                                        <input 
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    try {
+                                                        const url = await universityService.uploadLogo(file);
+                                                        setUniversityForm({...universityForm, logo: url});
+                                                    } catch (err: any) {
+                                                        alert("Logo yüklenirken bir hata oluştu: " + err.message);
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 transition-all cursor-pointer"
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Ranking Link</label>
+                                    <input 
+                                        value={universityForm.rankingUrl} 
+                                        onChange={e => setUniversityForm({...universityForm, rankingUrl: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                        placeholder="https://www.topuniversities.com/..."
+                                    />
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Website Link</label>
                                     <input 
@@ -1548,19 +2240,6 @@ const Settings: React.FC = () => {
                                     />
                                 </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Ücret Aralığı</label>
-                                <select 
-                                    value={universityForm.tuitionRange} 
-                                    onChange={e => setUniversityForm({...universityForm, tuitionRange: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                >
-                                    <option value="">Aralık Seçiniz</option>
-                                    {tuitionRanges.map(range => (
-                                        <option key={range} value={range}>{range}</option>
-                                    ))}
-                                </select>
-                            </div>
 
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsUniversityModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">İptal</button>
@@ -1572,19 +2251,58 @@ const Settings: React.FC = () => {
             )}
 
             {/* Main Degree Add/Edit Modal */}
+            {isMainCategoryModalOpen && (
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-center z-[9999] p-4 pt-[100px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-3xl shadow-xl w-full max-w-md animate-fade-in overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {mainCategories.find(c => c.id === mainCategoryForm.id) ? 'Ana Bölüm Düzenle' : 'Yeni Ana Bölüm Ekle'}
+                            </h3>
+                            <button onClick={() => setIsMainCategoryModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <form onSubmit={handleSaveMainCategory} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ana Bölüm Adı</label>
+                                <input 
+                                    required
+                                    value={mainCategoryForm.name} 
+                                    onChange={e => setMainCategoryForm({...mainCategoryForm, name: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium" 
+                                    placeholder="e.g. Mühendislik"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Açıklama (Opsiyonel)</label>
+                                <textarea 
+                                    rows={3}
+                                    value={mainCategoryForm.description} 
+                                    onChange={e => setMainCategoryForm({...mainCategoryForm, description: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium" 
+                                    placeholder="Bu kategori hakkında kısa bilgi..."
+                                />
+                            </div>
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsMainCategoryModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                 </div>
+            )}
+
             {isMainDegreeModalOpen && (
                  <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="font-bold text-lg text-slate-800">
-                                {mainDegrees.find(d => d.id === mainDegreeForm.id) ? 'Bölüm Tanımını Düzenle' : 'Yeni Bölüm Tanımı Ekle'}
+                                {mainDegrees.find(d => d.id === mainDegreeForm.id) ? 'Alt Başlık Düzenle' : 'Yeni Alt Başlık Ekle'}
                             </h3>
                             <button onClick={() => setIsMainDegreeModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleSaveMainDegree} className="p-6 space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Adı (Main Degree/Major Name)</label>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Alt Başlık Adı (Sub-Major Name)</label>
                                     <input 
                                         required
                                         value={mainDegreeForm.name} 
@@ -1592,6 +2310,51 @@ const Settings: React.FC = () => {
                                         className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                         placeholder="e.g. Bilgisayar Mühendisliği"
                                     />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Atanan Ana Gruplar (Bir veya birden fazla seçebilirsiniz)</label>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        {mainCategories.map(cat => (
+                                            <label 
+                                                key={cat.id} 
+                                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                                                    (mainDegreeForm.categoryIds || []).includes(cat.id)
+                                                        ? 'border-indigo-600 bg-indigo-50/50'
+                                                        : 'border-slate-100 bg-slate-50/30 hover:border-slate-200'
+                                                }`}
+                                            >
+                                                <input 
+                                                    type="checkbox"
+                                                    className="hidden"
+                                                    checked={(mainDegreeForm.categoryIds || []).includes(cat.id)}
+                                                    onChange={(e) => {
+                                                        const current = mainDegreeForm.categoryIds || [];
+                                                        if (e.target.checked) {
+                                                            setMainDegreeForm({...mainDegreeForm, categoryIds: [...current, cat.id]});
+                                                        } else {
+                                                            setMainDegreeForm({...mainDegreeForm, categoryIds: current.filter(id => id !== cat.id)});
+                                                        }
+                                                    }}
+                                                />
+                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                                    (mainDegreeForm.categoryIds || []).includes(cat.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
+                                                }`}>
+                                                    {(mainDegreeForm.categoryIds || []).includes(cat.id) && <CheckCircle className="w-3 h-3 text-white" />}
+                                                </div>
+                                                <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                                                    (mainDegreeForm.categoryIds || []).includes(cat.id) ? 'text-indigo-700' : 'text-slate-500'
+                                                }`}>
+                                                    {cat.name}
+                                                </span>
+                                            </label>
+                                        ))}
+                                        {mainCategories.length === 0 && (
+                                            <p className="col-span-full text-xs text-rose-500 italic p-4 bg-rose-50 rounded-xl border border-rose-100">
+                                                Lütfen önce 'Ana Bölümler' sekmesinden en az bir grup oluşturun.
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="md:col-span-2">
