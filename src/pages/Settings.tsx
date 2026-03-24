@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData } from '../types';
 import { MOCK_USERS, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { mainCategoryService } from '../services/mainCategoryService';
 import { interestedProgramService } from '../services/interestedProgramService';
+import { sharedInstitutionService } from '../services/sharedInstitutionService';
 import { systemService } from '../services/systemService';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
@@ -76,6 +77,8 @@ const Settings: React.FC = () => {
         rankingUrl: '',
         websiteUrl: '',
         departmentsUrl: '',
+        consultingType: '',
+        sharedInstitutionId: '',
         programs: []
     });
 
@@ -114,6 +117,16 @@ const Settings: React.FC = () => {
         name: '',
         description: ''
     });
+
+    // Shared Institutions State (New)
+    const [sharedInstitutions, setSharedInstitutions] = useState<SharedInstitutionData[]>([]);
+    const [isLoadingSharedInstitutions, setIsLoadingSharedInstitutions] = useState(false);
+    const [isSharedInstitutionModalOpen, setIsSharedInstitutionModalOpen] = useState(false);
+    const [sharedInstitutionForm, setSharedInstitutionForm] = useState<SharedInstitutionData>({
+        id: '',
+        name: '',
+        description: ''
+    });
     
     // Tuition Ranges State
     const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
@@ -142,10 +155,13 @@ const Settings: React.FC = () => {
             loadCountries(); 
             loadTuitionRanges();
             loadMainDegrees(); // Added to fix empty dropdown in university programs
+            loadSharedInstitutions(); // Added to support selection dropdown
         } else if (selectedDefinitionType === 'degrees') {
             loadMainDegrees();
         } else if (selectedDefinitionType === 'interested_programs') {
             loadInterestedPrograms();
+        } else if (selectedDefinitionType === 'shared_institutions') {
+            loadSharedInstitutions();
         } else if (selectedDefinitionType === 'all_programs') {
             loadUniversities();
             loadTuitionRanges();
@@ -224,6 +240,18 @@ const Settings: React.FC = () => {
             console.error('Failed to load interested programs', error);
         } finally {
             setIsLoadingInterestedPrograms(false);
+        }
+    };
+
+    const loadSharedInstitutions = async () => {
+        setIsLoadingSharedInstitutions(true);
+        try {
+            const data = await sharedInstitutionService.getAll();
+            setSharedInstitutions(data);
+        } catch (error) {
+            console.error('Failed to load shared institutions', error);
+        } finally {
+            setIsLoadingSharedInstitutions(false);
         }
     };
 
@@ -592,6 +620,49 @@ const Settings: React.FC = () => {
         try {
             await interestedProgramService.delete(id);
             setInterestedPrograms(prev => prev.filter(p => p.id !== id));
+        } catch (error) { console.error(error); }
+    };
+
+    // --- SHARED INSTITUTION LOGIC ---
+    const handleAddSharedInstitution = () => {
+        setSharedInstitutionForm({
+            id: `shint-${Date.now()}`,
+            name: '',
+            contactName: '',
+            contactInfo: ''
+        });
+        setIsSharedInstitutionModalOpen(true);
+    };
+
+    const handleEditSharedInstitution = (inst: SharedInstitutionData) => {
+        setSharedInstitutionForm(inst);
+        setIsSharedInstitutionModalOpen(true);
+    };
+
+    const handleSaveSharedInstitution = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const savedInst = await sharedInstitutionService.upsert(sharedInstitutionForm);
+            setSharedInstitutions(prev => {
+                const idx = prev.findIndex(p => p.id === savedInst.id);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = savedInst;
+                    return updated;
+                }
+                return [savedInst, ...prev];
+            });
+            setIsSharedInstitutionModalOpen(false);
+        } catch (error) {
+            console.error("Failed to save shared institution", error);
+        }
+    };
+
+    const handleDeleteSharedInstitution = async (id: string) => {
+        if(!window.confirm("Bu kurumu silmek istediğinize emin misiniz?")) return;
+        try {
+            await sharedInstitutionService.delete(id);
+            setSharedInstitutions(prev => prev.filter(p => p.id !== id));
         } catch (error) { console.error(error); }
     };
 
@@ -1017,7 +1088,12 @@ const Settings: React.FC = () => {
     );
 
     const renderAllProgramsManager = () => {
-        const allProgs = universities.flatMap(u => (u.programs || []).map(p => ({ ...p, universityId: u.id, universityName: u.name })));
+        const allProgs = universities.flatMap(u => (u.programs || []).map(p => ({ 
+            ...p, 
+            universityId: u.id, 
+            universityName: u.name,
+            country: (u.countries && u.countries.length > 0) ? u.countries[0] : '-' 
+        })));
 
         return (
             <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
@@ -1045,9 +1121,10 @@ const Settings: React.FC = () => {
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                                    <th className="px-6 py-4 font-semibold">Bölüm Adı</th>
                                     <th className="px-6 py-4 font-semibold">Üniversite</th>
+                                    <th className="px-6 py-4 font-semibold">Ülke</th>
                                     <th className="px-6 py-4 font-semibold">Tür</th>
+                                    <th className="px-6 py-4 font-semibold">Bölüm Adı</th>
                                     <th className="px-6 py-4 font-semibold">Bütçe</th>
                                     <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                                 </tr>
@@ -1055,17 +1132,28 @@ const Settings: React.FC = () => {
                             <tbody className="divide-y divide-slate-100">
                                 {allProgs.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="p-10 text-center text-slate-500">Henüz hiç bölüm tanımlanmamış.</td>
+                                        <td colSpan={6} className="p-10 text-center text-slate-500">Henüz hiç bölüm tanımlanmamış.</td>
                                     </tr>
                                 ) : (
                                     allProgs.map(prog => (
                                         <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors">
                                             <td className="px-6 py-4">
+                                                <span className="text-sm text-slate-800 font-bold">{prog.universityName}</span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-sm text-slate-600 font-medium">{prog.country}</span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${prog.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {prog.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
                                                 <div className="flex flex-col gap-1.5">
                                                     <span className="font-bold text-slate-800">{prog.name}</span>
                                                     <div className="flex flex-wrap gap-1">
                                                         {(prog.groupNames || []).length > 0 ? (
-                                                            prog.groupNames.map(gn => (
+                                                            prog.groupNames.map((gn: string) => (
                                                                 <span key={gn} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold border border-indigo-100 uppercase">
                                                                     {gn}
                                                                 </span>
@@ -1077,15 +1165,7 @@ const Settings: React.FC = () => {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className="text-sm text-slate-600 font-medium">{prog.universityName}</span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${prog.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                    {prog.type}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className="text-sm font-medium text-green-600 bg-green-50 px-2 py-1 rounded-lg">{prog.tuitionRange || 'N/A'}</span>
+                                                <span className="text-sm font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{prog.tuitionRange || 'N/A'}</span>
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2">
@@ -1258,6 +1338,69 @@ const Settings: React.FC = () => {
                                             <div className="flex items-center justify-end gap-2">
                                                 <button onClick={() => handleEditInterestedProgram(prog)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
                                                 <button onClick={() => handleDeleteInterestedProgram(prog.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderSharedInstitutionManager = () => (
+        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+             <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-slate-600" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Kurumlar</h3>
+                        <p className="text-sm text-slate-500">Sistemdeki kurum tanımlarını (paylaşımlı vb.) buradan yönetin.</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleAddSharedInstitution}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                    <Plus className="w-4 h-4" />
+                    Yeni Kurum
+                </button>
+            </div>
+
+            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                <th className="px-6 py-4 font-semibold">Kurum Adı</th>
+                                <th className="px-6 py-4 font-semibold">Yetkili Adı</th>
+                                <th className="px-6 py-4 font-semibold">İletişim Bilgileri</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {isLoadingSharedInstitutions ? (
+                                <tr>
+                                    <td colSpan={4} className="p-10 text-center text-slate-500">Yükleniyor...</td>
+                                </tr>
+                            ) : sharedInstitutions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={4} className="p-10 text-center text-slate-500">Henüz kurum eklenmedi.</td>
+                                </tr>
+                            ) : (
+                                sharedInstitutions.map(inst => (
+                                    <tr key={inst.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-bold text-slate-800">{inst.name}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.contactName || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.contactInfo || '-'}</td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => handleEditSharedInstitution(inst)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteSharedInstitution(inst.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1937,6 +2080,13 @@ const Settings: React.FC = () => {
                                 onClick={(id: string) => setSelectedDefinitionType(id)}
                             />
                             <DefinitionCard 
+                                id="shared_institutions"
+                                title="Kurumlar" 
+                                icon={Building} 
+                                count={sharedInstitutions.length || 0} 
+                                onClick={(id: string) => setSelectedDefinitionType(id)}
+                            />
+                            <DefinitionCard 
                                 id="budget"
                                 title="Eğitim Bütçesi" 
                                 icon={Banknote} 
@@ -2141,26 +2291,26 @@ const Settings: React.FC = () => {
             {isUniversityModalOpen && (
                  <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="font-bold text-lg text-slate-800">
-                                {universityForm.id.startsWith('uni-') && !universities.find(u => u.id === universityForm.id) ? 'Add New University' : 'Edit University'}
+                                {universityForm.id.startsWith('uni-') && !universities.find(u => u.id === universityForm.id) ? 'Yeni Üniversite Ekle' : 'Üniversite Düzenle'}
                             </h3>
                             <button onClick={() => setIsUniversityModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleSaveUniversity} className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">University Name</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Üniversite Adı</label>
                                 <input 
                                     required
                                     value={universityForm.name} 
                                     onChange={e => setUniversityForm({...universityForm, name: e.target.value})}
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    placeholder="e.g. Technical University of Munich"
+                                    placeholder="Örn: Technical University of Munich"
                                 />
                             </div>
                             
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Countries (Select Multiple)</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Ülkeler (Birden fazla seçilebilir)</label>
                                 <select 
                                     multiple
                                     required
@@ -2212,8 +2362,47 @@ const Settings: React.FC = () => {
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Danışmanlık Tipi</label>
+                                    <select 
+                                        value={universityForm.consultingType || ''} 
+                                        onChange={e => {
+                                            const type = e.target.value;
+                                            setUniversityForm({
+                                                ...universityForm, 
+                                                consultingType: type,
+                                                sharedInstitutionId: type === 'Depozito - Paylaşımlı' ? universityForm.sharedInstitutionId : ''
+                                            });
+                                        }}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    >
+                                        <option value="">Seçiniz...</option>
+                                        <option value="Depozito">Depozito</option>
+                                        <option value="Danışmanlık">Danışmanlık</option>
+                                        <option value="Kabul Sonrası Danışmanlık">Kabul Sonrası Danışmanlık</option>
+                                        <option value="Depozito - Paylaşımlı">Depozito - Paylaşımlı</option>
+                                    </select>
+                                </div>
+                                {universityForm.consultingType === 'Depozito - Paylaşımlı' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Paylaşımlı Kurum Seçimi</label>
+                                        <select 
+                                            value={universityForm.sharedInstitutionId || ''} 
+                                            onChange={e => setUniversityForm({...universityForm, sharedInstitutionId: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        >
+                                            <option value="">Kurum Seçiniz...</option>
+                                            {sharedInstitutions.map(inst => (
+                                                <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Ranking Link</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Sıralama Linki (Ranking)</label>
                                     <input 
                                         value={universityForm.rankingUrl} 
                                         onChange={e => setUniversityForm({...universityForm, rankingUrl: e.target.value})}
@@ -2222,7 +2411,7 @@ const Settings: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Website Link</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Web Sitesi</label>
                                     <input 
                                         value={universityForm.websiteUrl} 
                                         onChange={e => setUniversityForm({...universityForm, websiteUrl: e.target.value})}
@@ -2231,7 +2420,7 @@ const Settings: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Departments Link</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Bölümler Sayfası (Link)</label>
                                     <input 
                                         value={universityForm.departmentsUrl} 
                                         onChange={e => setUniversityForm({...universityForm, departmentsUrl: e.target.value})}
@@ -2473,6 +2662,55 @@ const Settings: React.FC = () => {
                             </div>
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsInterestedProgramModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Shared Institution Form Modal (Kurumlar) */}
+            {isSharedInstitutionModalOpen && (
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mb-10 animate-fade-in">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {sharedInstitutions.find(p => p.id === sharedInstitutionForm.id) ? 'Kurum Düzenle' : 'Yeni Kurum Ekle'}
+                            </h3>
+                            <button onClick={() => setIsSharedInstitutionModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <form onSubmit={handleSaveSharedInstitution} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Kurum Adı</label>
+                                <input 
+                                    required
+                                    value={sharedInstitutionForm.name} 
+                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, name: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                    placeholder="Örn: X Danışmanlık A.Ş."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Yetkili Adı</label>
+                                <input 
+                                    value={sharedInstitutionForm.contactName || ''} 
+                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, contactName: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                    placeholder="Örn: Ahmet Bey"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">İletişim Bilgileri</label>
+                                <textarea 
+                                    rows={3}
+                                    value={sharedInstitutionForm.contactInfo || ''} 
+                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, contactInfo: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                    placeholder="Telefon, E-posta, Adres vb."
+                                />
+                            </div>
+                            <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
                                 <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
                             </div>
                         </form>

@@ -257,6 +257,14 @@ export interface UniversityProgram {
     notes: string;
 }
 
+export interface SharedInstitutionData {
+    id: string;
+    name: string;
+    description?: string;
+    contactName?: string;
+    contactInfo?: string;
+}
+
 export interface UniversityData {
     id: string;
     name: string;
@@ -266,6 +274,8 @@ export interface UniversityData {
     websiteUrl: string;
     departmentsUrl: string;
     tuitionRange?: string;
+    consultingType?: string; // e.g. "Depozito", "Danışmanlık", "Kabul Sonrası Danışmanlık", "Depozito - Paylaşımlı"
+    sharedInstitutionId?: string; // Ref to SharedInstitutionData setup if "Depozito - Paylaşımlı"
     programs?: UniversityProgram[];
 }
 export interface MainCategoryData {

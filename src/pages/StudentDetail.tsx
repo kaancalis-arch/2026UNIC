@@ -7,6 +7,7 @@ import { systemService } from '../services/systemService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
+import { universityService } from '../services/universityService';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -24,6 +25,7 @@ import {
   Sparkles,
   User,
   GraduationCap,
+  School,
   Globe,
   Activity,
   CreditCard,
@@ -156,6 +158,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [allPrograms, setAllPrograms] = useState<string[]>([]);
   const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
   const [allCountries, setAllCountries] = useState<string[]>([]);
+  const [allUniversities, setAllUniversities] = useState<any[]>([]);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
 
   useEffect(() => {
@@ -168,15 +171,17 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
   const loadOptions = async () => {
     try {
-        const [programs, mainDegs, countries] = await Promise.all([
+        const [programs, mainDegs, countries, universities] = await Promise.all([
             interestedProgramService.getAll(),
             mainDegreeService.getAll(),
-            countryService.getAll()
+            countryService.getAll(),
+            universityService.getAll()
         ]);
         setAllPrograms(programs.map(p => p.name));
         setAllMainDegrees(mainDegs.map(d => d.name));
         setMainDegreeDetails(mainDegs);
         setAllCountries(countries.map(c => c.name));
+        setAllUniversities(universities);
     } catch (error) {
         console.error("Failed to load options", error);
     }
@@ -230,6 +235,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         setShowAppForm(false);
     } catch (e) {
         console.error("Failed to add application", e);
+    }
+  };
+
+  const addSuggestedUniversityAsOffer = async (uni: { name: string, country: string }) => {
+    const application: UniversityApplication = {
+        id: Math.random().toString(36).substr(2, 9),
+        universityName: uni.name,
+        programName: student.analysis?.preferences?.program1 || 'Genel Başvuru',
+        status: 'Başvuru Aşamasında',
+    };
+    const updatedApps = [...(student.applications || []), application];
+    try {
+        await studentService.update(student.id, { applications: updatedApps });
+        setStudent(prev => ({ ...prev, applications: updatedApps }));
+        // Optionally switch tab to applications? No, let's stay on analysis
+    } catch (e) {
+        console.error("Failed to add suggested university", e);
     }
   };
 
@@ -481,6 +503,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         }
     }
   };
+
 
   const handleSaveAnalysis = async () => {
       if (gpaError) {
@@ -2533,32 +2556,141 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                     )}
 
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none">
-                        <h3 className="font-bold text-slate-800 mb-4">Suggested Universities</h3>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 print:bg-white print:border-b print:border-slate-300">
-                                    <tr>
-                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Üniversite</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Ülke</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {analysis.suggestedUniversities.map((uni, i) => (
-                                        <tr key={i}>
-                                            <td className="px-4 py-3 font-medium text-slate-700">{uni.name}</td>
-                                            <td className="px-4 py-3 text-slate-600">{uni.country}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                   </>
-               )}
-           </div> 
-        )}
-      </div>
+                    {/* Suggested Universities – filtered from system */}
+                    {(() => {
+                        const prefCountries = [
+                            student.analysis?.preferences?.country1,
+                            student.analysis?.preferences?.country2,
+                            student.analysis?.preferences?.country3,
+                        ].filter(Boolean) as string[];
+
+                        const prefPrograms = [
+                            student.analysis?.preferences?.program1,
+                            student.analysis?.preferences?.program2,
+                        ].filter(Boolean) as string[];
+
+                        const prefBudget = student.analysis?.preferences?.budget || student.budget;
+
+                        // Parse budget ceiling from student's budget range string
+                        const budgetCeiling = (() => {
+                            if (typeof prefBudget === 'number') return prefBudget;
+                            if (typeof prefBudget === 'string') {
+                                const m = String(prefBudget).replace(/\./g, '').match(/\d+/g);
+                                if (m) return parseInt(m[m.length - 1], 10);
+                            }
+                            return Infinity;
+                        })();
+
+                        const filteredUnis = allUniversities.filter((uni: any) => {
+                            const uniCountries: string[] = uni.countries || [];
+                            const matchesCountry = prefCountries.length === 0 || 
+                                uniCountries.some(c => prefCountries.includes(c));
+
+                            const uniPrograms: any[] = uni.programs || [];
+                            const matchesProgram = prefPrograms.length === 0 ||
+                                uniPrograms.some((p: any) => prefPrograms.includes(p.groupNames?.[0] || p.name));
+
+                            const uniTuition = uni.tuitionRange || '';
+                            const matchesBudget = (() => {
+                                if (!uniTuition || budgetCeiling === Infinity) return true;
+                                const nums = uniTuition.replace(/\./g, '').match(/\d+/g);
+                                if (!nums) return true;
+                                const minTuition = parseInt(nums[0], 10);
+                                return minTuition <= budgetCeiling;
+                            })();
+
+                            return matchesCountry && matchesProgram && matchesBudget;
+                        });
+
+                        return (
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none">
+                                <div className="flex items-center justify-between mb-5">
+                                    <div>
+                                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                            <GraduationCap className="w-5 h-5 text-indigo-600" />
+                                            Önerilen Üniversiteler
+                                        </h3>
+                                        <p className="text-xs text-slate-400 mt-0.5">Tercihlerinize uyan partner üniversitelerimiz</p>
+                                    </div>
+                                    <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">
+                                        {filteredUnis.length} Okul
+                                    </span>
+                                </div>
+
+                                {filteredUnis.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                        <AlertCircle className="w-8 h-8 text-slate-300 mb-2" />
+                                        <p className="text-sm text-slate-500 italic">Tercihlerinize uyan üniversite bulunamadı.</p>
+                                        <p className="text-[11px] text-slate-400 mt-1">Üniversite Arama'dan manuel ekleyebilirsiniz.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {filteredUnis.map((uni: any, idx: number) => {
+                                            const isAdded = student.applications?.some(app => app.universityName === uni.name);
+                                            const countryName = (uni.countries || [])[0] || '';
+                                            const countryCode = getCountryCode(countryName);
+                                            const programNames = (uni.programs || []).slice(0, 2).map((p: any) => p.name).join(', ');
+
+                                            return (
+                                                <div key={idx} className="flex items-center gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
+                                                    {/* Flag */}
+                                                    <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                        {countryCode ? (
+                                                            <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} className="w-full h-full object-cover" alt={countryName} />
+                                                        ) : (
+                                                            <GraduationCap className="w-5 h-5 text-slate-300" />
+                                                        )}
+                                                    </div>
+
+                                                    {/* Info */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">{uni.name}</p>
+                                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                            {countryName && (
+                                                                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">{countryName}</span>
+                                                            )}
+                                                            {uni.tuitionRange && (
+                                                                <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">💶 {uni.tuitionRange}</span>
+                                                            )}
+                                                            {programNames && (
+                                                                <span className="text-[10px] text-slate-400 truncate max-w-[160px]">{programNames}</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Action */}
+                                                    <button
+                                                        onClick={() => addSuggestedUniversityAsOffer({ name: uni.name, country: countryName })}
+                                                        disabled={isAdded}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                                                            isAdded
+                                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
+                                                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm hover:shadow-indigo-500/20'
+                                                        }`}
+                                                    >
+                                                        {isAdded ? (
+                                                            <><CheckCircle className="w-3.5 h-3.5" /> Eklendi</>
+                                                        ) : (
+                                                            <><Plus className="w-3.5 h-3.5" /> Teklif Ekle</>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+
+                </>
+            )}
+        </div>
+    )}
+  </div>
+
+
+
 
       {/* Edit Analysis Modal */}
       {isEditModalOpen && (

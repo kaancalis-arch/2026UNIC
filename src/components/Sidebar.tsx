@@ -63,8 +63,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         baseItems.push({ id: 'roadmap', label: 'Roadmaps', icon: Map });
     }
     
-    baseItems.push({ id: 'files', label: 'File Manager', icon: FileText });
-    
     // Visa Section
     baseItems.push({ 
       id: 'visa', 

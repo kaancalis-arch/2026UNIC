@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { ClipboardCheck, CheckSquare, Square, Info, AlertCircle, Globe } from 'lucide-react';
+import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
 
 const VisaChecklist: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState('USA');
@@ -42,12 +43,19 @@ const VisaChecklist: React.FC = () => {
             <button
               key={country}
               onClick={() => setSelectedCountry(country)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                 selectedCountry === country 
                   ? 'bg-indigo-600 text-white shadow-md' 
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
+              <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-black/10">
+                  {getCountryCode(country) ? (
+                      <img src={`https://flagcdn.com/w40/${getCountryCode(country).toLowerCase()}.png`} className="w-full h-full object-cover" alt={country} />
+                  ) : (
+                      <span className="text-[10px]">{getFlagEmoji(country)}</span>
+                  )}
+              </div>
               {country}
             </button>
           ))}

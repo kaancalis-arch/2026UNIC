@@ -12,6 +12,7 @@ import { mainDegreeService } from '../services/mainDegreeService';
 import { mainCategoryService } from '../services/mainCategoryService';
 import { systemService } from '../services/systemService';
 import { jsPDF } from 'jspdf';
+import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
 
 const UniversitySearch: React.FC = () => {
     const [universities, setUniversities] = useState<UniversityData[]>([]);
@@ -487,7 +488,13 @@ const UniversitySearch: React.FC = () => {
 
                                             return (
                                                 <div key={c} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200/50">
-                                                    <span>{info.flag}</span>
+                                                    <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center bg-white border border-slate-200 shrink-0 shadow-sm">
+                                                        {getCountryCode(c) ? (
+                                                            <img src={`https://flagcdn.com/w40/${getCountryCode(c).toLowerCase()}.png`} className="w-full h-full object-cover" alt={c} />
+                                                        ) : (
+                                                            <span className="text-xs">{getFlagEmoji(c)}</span>
+                                                        )}
+                                                    </div>
                                                     <span>{c}</span>
                                                     <span className="text-slate-400 mx-1">•</span>
                                                     <span className="text-indigo-600">{info.currency}</span>

@@ -27,8 +27,10 @@ export const universityService = {
           countries: row.countries || [],
           rankingUrl: row.ranking_url || '',
           websiteUrl: row.website_url,
-          departmentsUrl: row.departments_url, // Fixed mapping
-          programs: row.programs || [] // Fallback if missing
+          departmentsUrl: row.departments_url,
+          consultingType: row.consulting_type, // Added mapping
+          sharedInstitutionId: row.shared_institution_id, // Added mapping
+          programs: row.programs || []
         }));
     } catch (err) {
         console.warn('Unexpected error in universityService.getAll. Using mock data.', err);
@@ -39,8 +41,6 @@ export const universityService = {
   async upsert(university: UniversityData): Promise<UniversityData> {
     if (!supabase) return university;
 
-    // Local ID check (e.g. uni-123456789) - Supabase IDs are UUIDs.
-    // If it's a local ID, we omit it to let Supabase generate a real UUID.
     const isLocalId = university.id.startsWith('uni-');
 
     const dbPayload: any = {
@@ -50,6 +50,8 @@ export const universityService = {
         ranking_url: university.rankingUrl,
         website_url: university.websiteUrl,
         departments_url: university.departmentsUrl,
+        consulting_type: university.consultingType, // Added mapping
+        shared_institution_id: university.sharedInstitutionId, // Added mapping
         programs: university.programs || []
     };
 
@@ -66,8 +68,6 @@ export const universityService = {
 
         if (error) {
             console.error('Supabase upsert failed:', error.message, 'Code:', error.code);
-            
-            // Helpful message for RLS Permission issue
             if (error.code === '42501') {
                 throw new Error("VERİTABANI YETKİ HATASI: Kayıt yapılamadı. Lütfen Supabase'de 'universities' tablosu için INSERT/UPDATE RLS Policy (İzinleri) eklediğinizden emin olun.");
             }
@@ -82,6 +82,8 @@ export const universityService = {
             rankingUrl: data.ranking_url || '',
             websiteUrl: data.website_url,
             departmentsUrl: data.departments_url,
+            consultingType: data.consulting_type, // Added mapping
+            sharedInstitutionId: data.shared_institution_id, // Added mapping
             programs: data.programs || []
         };
     } catch (err: any) {
