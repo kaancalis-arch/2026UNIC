@@ -10,7 +10,7 @@ import { UniversityData, UniversityProgram, MainDegreeData, MainCategoryData } f
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { mainCategoryService } from '../services/mainCategoryService';
-import { systemService } from '../services/systemService';
+import { systemService, BudgetRange } from '../services/systemService';
 import { jsPDF } from 'jspdf';
 import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
 
@@ -27,7 +27,7 @@ const UniversitySearch: React.FC = () => {
     const [selectedCountry, setSelectedCountry] = useState<string>('');
     const [selectedType, setSelectedType] = useState<string>('');
     const [selectedBudget, setSelectedBudget] = useState<string>('');
-    const [allBudgets, setAllBudgets] = useState<string[]>([]);
+    const [budgetRanges, setBudgetRanges] = useState<BudgetRange[]>([]);
     
     // Selection
     const [selectedUnis, setSelectedUnis] = useState<string[]>([]);
@@ -39,12 +39,12 @@ const UniversitySearch: React.FC = () => {
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [uniData, degreeData, cats, junctions, budgetData] = await Promise.all([
+            const [uniData, degreeData, cats, junctions, rawBudgets] = await Promise.all([
                 universityService.getAll(),
                 mainDegreeService.getAll(),
                 mainCategoryService.getAll(),
                 mainCategoryService.getJunctions(),
-                systemService.getTuitionRanges()
+                systemService.getBudgetRangesRaw()
             ]);
             
             // Enrich degrees with category IDs
@@ -56,7 +56,7 @@ const UniversitySearch: React.FC = () => {
             setUniversities(uniData);
             setMainDegrees(enrichedDegrees as MainDegreeData[]);
             setMainCategories(cats);
-            setAllBudgets(budgetData);
+            setBudgetRanges(rawBudgets);
         } catch (error) {
             console.error("Failed to load search data", error);
         } finally {
@@ -100,17 +100,23 @@ const UniversitySearch: React.FC = () => {
         const matchesType = !selectedType || (uni.programs || []).some(prog => prog.type === selectedType);
         
         const matchesBudget = (() => {
-            if (!selectedBudget || selectedBudget === "Bütçe Konusunda Kararsızım" || selectedBudget === "20.000 üzeri uygundur") return true;
+            if (!selectedBudget) return true;
             
-            const acceptableRangesMap: Record<string, string[]> = {
-                "5.000'e kadar": ["5.000'e kadar"],
-                "10.000'e kadar": ["5.000'e kadar", "10.000'e kadar"],
-                "15.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar"],
-                "20.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar", "20.000'e kadar"]
-            };
+            const selectedObj = budgetRanges.find(b => b.label === selectedBudget);
+            if (!selectedObj) return true; // Skip if invalid
             
-            const acceptable = acceptableRangesMap[selectedBudget] || [selectedBudget];
-            return (uni.programs || []).some(prog => acceptable.includes(prog.tuitionRange));
+            if (selectedObj.sort_order === 1) return true;
+            
+            return (uni.programs || []).some(prog => {
+                const progBudgetObj = budgetRanges.find(b => b.label === prog.tuitionRange);
+                if (!progBudgetObj) return false;
+                
+                if (selectedObj.sort_order >= 100) {
+                    return progBudgetObj.sort_order === selectedObj.sort_order;
+                }
+                
+                return progBudgetObj.sort_order <= selectedObj.sort_order;
+            });
         })();
         
         return matchesSearch && matchesCountry && matchesDegree && matchesType && matchesBudget;
@@ -360,8 +366,8 @@ const UniversitySearch: React.FC = () => {
                             className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all text-sm appearance-none cursor-pointer"
                         >
                             <option value="">Bütçe Seçiniz</option>
-                            {allBudgets.map(b => (
-                                <option key={b} value={b}>{b}</option>
+                            {budgetRanges.map(b => (
+                                <option key={b.id} value={b.label}>{b.label}</option>
                             ))}
                         </select>
                     </div>
@@ -473,15 +479,20 @@ const UniversitySearch: React.FC = () => {
                                                                     (p.groupNames || []).some(gn => gn.toLowerCase() === selectedDegree.toLowerCase());
                                                 const matchType = !selectedType || p.type === selectedType;
                                                 const matchBudget = (() => {
-                                                    if (!selectedBudget || selectedBudget === "Bütçe Konusunda Kararsızım" || selectedBudget === "20.000 üzeri uygundur") return true;
-                                                    const acceptableRangesMap: Record<string, string[]> = {
-                                                        "5.000'e kadar": ["5.000'e kadar"],
-                                                        "10.000'e kadar": ["5.000'e kadar", "10.000'e kadar"],
-                                                        "15.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar"],
-                                                        "20.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar", "20.000'e kadar"]
-                                                    };
-                                                    const acceptable = acceptableRangesMap[selectedBudget] || [selectedBudget];
-                                                    return acceptable.includes(p.tuitionRange);
+                                                    if (!selectedBudget) return true;
+                                                    const selectedObj = budgetRanges.find(b => b.label === selectedBudget);
+                                                    if (!selectedObj) return true;
+                                                    
+                                                    if (selectedObj.sort_order === 1) return true;
+
+                                                    const progBudgetObj = budgetRanges.find(b => b.label === p.tuitionRange);
+                                                    if (!progBudgetObj) return false;
+                                                    
+                                                    if (selectedObj.sort_order >= 100) {
+                                                        return progBudgetObj.sort_order === selectedObj.sort_order;
+                                                    }
+                                                    
+                                                    return progBudgetObj.sort_order <= selectedObj.sort_order;
                                                 })();
                                                 return matchDegree && matchType && matchBudget;
                                             }).map(p => p.tuitionRange)));
@@ -519,15 +530,20 @@ const UniversitySearch: React.FC = () => {
                                                 const matchType = !selectedType || prog.type === selectedType;
                                                 
                                                 const matchBudget = (() => {
-                                                    if (!selectedBudget || selectedBudget === "Bütçe Konusunda Kararsızım" || selectedBudget === "20.000 üzeri uygundur") return true;
-                                                    const acceptableRangesMap: Record<string, string[]> = {
-                                                        "5.000'e kadar": ["5.000'e kadar"],
-                                                        "10.000'e kadar": ["5.000'e kadar", "10.000'e kadar"],
-                                                        "15.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar"],
-                                                        "20.000'e kadar": ["5.000'e kadar", "10.000'e kadar", "15.000'e kadar", "20.000'e kadar"]
-                                                    };
-                                                    const acceptable = acceptableRangesMap[selectedBudget] || [selectedBudget];
-                                                    return acceptable.includes(prog.tuitionRange);
+                                                    if (!selectedBudget) return true;
+                                                    const selectedObj = budgetRanges.find(b => b.label === selectedBudget);
+                                                    if (!selectedObj) return true;
+
+                                                    if (selectedObj.sort_order === 1) return true;
+
+                                                    const progBudgetObj = budgetRanges.find(b => b.label === prog.tuitionRange);
+                                                    if (!progBudgetObj) return false;
+                                                    
+                                                    if (selectedObj.sort_order >= 100) {
+                                                        return progBudgetObj.sort_order === selectedObj.sort_order;
+                                                    }
+                                                    
+                                                    return progBudgetObj.sort_order <= selectedObj.sort_order;
                                                 })();
                                                 
                                                 return matchDegree && matchType && matchBudget;

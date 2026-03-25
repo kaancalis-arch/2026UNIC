@@ -16,6 +16,7 @@ import {
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download
 } from 'lucide-react';
+import { formatTitleCase } from '../lib/utils';
 
 // Standard list for Dropdown
 const STANDARD_EDUCATION_TYPES = [
@@ -131,6 +132,12 @@ const Settings: React.FC = () => {
     // Tuition Ranges State
     const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
 
+    // Budget Ranges State (CRUD)
+    const [budgetRangesList, setBudgetRangesList] = useState<any[]>([]);
+    const [isLoadingBudgetRanges, setIsLoadingBudgetRanges] = useState(false);
+    const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+    const [budgetForm, setBudgetForm] = useState({ id: '', label: '', sort_order: 0 });
+
     // Country Edit/Create State
     const [isEditingCountry, setIsEditingCountry] = useState(false);
     const [countryForm, setCountryForm] = useState<CountryData>(MOCK_COUNTRIES[0]);
@@ -166,6 +173,8 @@ const Settings: React.FC = () => {
             loadUniversities();
             loadTuitionRanges();
             loadMainDegrees();
+        } else if (selectedDefinitionType === 'budget') {
+            loadBudgetRangesList();
         }
     }, [selectedDefinitionType]);
 
@@ -202,6 +211,18 @@ const Settings: React.FC = () => {
             setTuitionRanges(ranges);
         } catch (error) {
             console.error('Failed to load tuition ranges', error);
+        }
+    };
+
+    const loadBudgetRangesList = async () => {
+        setIsLoadingBudgetRanges(true);
+        try {
+            const ranges = await systemService.getBudgetRangesRaw();
+            setBudgetRangesList(ranges);
+        } catch (error) {
+            console.error('Failed to load budget ranges', error);
+        } finally {
+            setIsLoadingBudgetRanges(false);
         }
     };
 
@@ -1215,7 +1236,7 @@ const Settings: React.FC = () => {
                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Adı</label>
                                         <input 
                                             value={allProgramForm.name}
-                                            onChange={(e) => setAllProgramForm({...allProgramForm, name: e.target.value})}
+                                            onChange={(e) => setAllProgramForm({...allProgramForm, name: formatTitleCase(e.target.value)})}
                                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
                                         />
                                     </div>
@@ -1857,16 +1878,42 @@ const Settings: React.FC = () => {
         );
     }
 
-    const renderBudgetManager = () => {
-        const budgetOptions = [
-            "Bütçe Konusunda Kararsızım",
-            "5.000'e kadar",
-            "10.000'e kadar",
-            "15.000'e kadar",
-            "20.000'e kadar",
-            "20.000 üzeri uygundur"
-        ];
+    const handleAddBudget = () => {
+        setBudgetForm({ id: '', label: '', sort_order: budgetRangesList.length + 1 });
+        setIsBudgetModalOpen(true);
+    };
 
+    const handleEditBudget = (item: any) => {
+        setBudgetForm({ ...item });
+        setIsBudgetModalOpen(true);
+    };
+
+    const handleSaveBudget = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (budgetForm.id) {
+                await systemService.updateBudgetRange(budgetForm.id, budgetForm.label);
+            } else {
+                await systemService.addBudgetRange(budgetForm.label, budgetForm.sort_order);
+            }
+            await loadBudgetRangesList();
+            setIsBudgetModalOpen(false);
+        } catch (error: any) {
+            alert('Bütçe aralığı kaydedilirken hata oluştu: ' + error.message);
+        }
+    };
+
+    const handleDeleteBudget = async (id: string) => {
+        if (!window.confirm("Bu bütçe seçeneğini silmek istediğinizden emin misiniz?")) return;
+        try {
+            await systemService.deleteBudgetRange(id);
+            await loadBudgetRangesList();
+        } catch (error: any) {
+            alert('Bütçe aralığı silinirken hata oluştu: ' + error.message);
+        }
+    };
+
+    const renderBudgetManager = () => {
         return (
             <div className="space-y-6 animate-fade-in max-w-2xl mx-auto">
                 <div className="flex items-center gap-4 mb-2">
@@ -1879,29 +1926,40 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
                     <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                         <h4 className="font-bold text-slate-700 uppercase tracking-wider text-xs flex items-center gap-2">
                             <Banknote className="w-4 h-4 text-emerald-600" /> Mevcut Bütçe Seçenekleri
                         </h4>
-                        <button className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all">
-                             Yeni Seçenek Ekle
+                        <button 
+                            onClick={handleAddBudget}
+                            className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all flex items-center gap-1"
+                        >
+                             <Plus className="w-3 h-3" /> Yeni Seçenek Ekle
                         </button>
                     </div>
-                    <div className="divide-y divide-slate-100">
-                        {budgetOptions.map((opt, idx) => (
-                            <div key={idx} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between group">
+                    <div className="divide-y divide-slate-100 flex-1 overflow-y-auto">
+                        {isLoadingBudgetRanges ? (
+                             <div className="p-10 text-center text-slate-500 flex items-center justify-center gap-2">
+                                <Loader2 className="w-5 h-5 animate-spin" /> Yükleniyor...
+                            </div>
+                        ) : budgetRangesList.length === 0 ? (
+                            <div className="p-10 text-center text-slate-500">
+                                Henüz bütçe aralığı eklenmemiş.
+                            </div>
+                        ) : budgetRangesList.map((opt, idx) => (
+                            <div key={opt.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between group">
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">
-                                        {idx + 1}
+                                        {opt.sort_order}
                                     </div>
-                                    <span className="font-medium text-slate-700">{opt}</span>
+                                    <span className="font-medium text-slate-700">{opt.label}</span>
                                 </div>
                                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
+                                    <button onClick={() => handleEditBudget(opt)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
                                         <Edit2 className="w-4 h-4" />
                                     </button>
-                                    <button className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
+                                    <button onClick={() => handleDeleteBudget(opt.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded border border-transparent hover:border-slate-200">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
@@ -1916,6 +1974,46 @@ const Settings: React.FC = () => {
                         Pactole CRM, bu değerleri finansal raporlamalar ve AI önerileri için temel alır.
                     </p>
                 </div>
+
+                {isBudgetModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-sm animate-fade-in overflow-hidden shadow-2xl">
+                            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <h3 className="font-bold text-slate-800">
+                                    {budgetForm.id ? 'Bütçe Seçeneği Düzenle' : 'Yeni Bütçe Seçeneği'}
+                                </h3>
+                                <button onClick={() => setIsBudgetModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                                    <X className="w-5 h-5"/>
+                                </button>
+                            </div>
+                            <form onSubmit={handleSaveBudget} className="p-5 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Açıklama (Label)</label>
+                                    <input 
+                                        required
+                                        value={budgetForm.label}
+                                        onChange={(e) => setBudgetForm({...budgetForm, label: e.target.value})}
+                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Sıra (Sort Order)</label>
+                                    <input 
+                                        type="number"
+                                        required
+                                        value={budgetForm.sort_order}
+                                        onChange={(e) => setBudgetForm({...budgetForm, sort_order: Number(e.target.value)})}
+                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    />
+                                </div>
+                                <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setIsBudgetModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">İptal</button>
+                                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-lg shadow-sm">Kaydet</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -2455,7 +2553,7 @@ const Settings: React.FC = () => {
                                 <input 
                                     required
                                     value={mainCategoryForm.name} 
-                                    onChange={e => setMainCategoryForm({...mainCategoryForm, name: e.target.value})}
+                                    onChange={e => setMainCategoryForm({...mainCategoryForm, name: formatTitleCase(e.target.value)})}
                                     className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium" 
                                     placeholder="e.g. Mühendislik"
                                 />
@@ -2495,7 +2593,7 @@ const Settings: React.FC = () => {
                                     <input 
                                         required
                                         value={mainDegreeForm.name} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, name: e.target.value})}
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, name: formatTitleCase(e.target.value)})}
                                         className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                         placeholder="e.g. Bilgisayar Mühendisliği"
                                     />
@@ -2645,7 +2743,7 @@ const Settings: React.FC = () => {
                                 <input 
                                     required
                                     value={interestedProgramForm.name} 
-                                    onChange={e => setInterestedProgramForm({...interestedProgramForm, name: e.target.value})}
+                                    onChange={e => setInterestedProgramForm({...interestedProgramForm, name: formatTitleCase(e.target.value)})}
                                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                     placeholder="e.g. Computer Science"
                                 />
