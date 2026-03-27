@@ -101,6 +101,7 @@ export interface AnalysisReport {
     country4?: string;
     country5?: string;
     notes?: string;
+    wantsCoaching?: boolean;
   };
   // 6. Bütçe Aralığı
   budget: {

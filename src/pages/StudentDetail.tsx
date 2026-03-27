@@ -417,7 +417,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
   // --- Document Logic End ---
 
-  const openEditModal = () => {
+  const openEditModal = (tab?: string) => {
+      if (tab) setActiveEditTab(tab);
+
       // Determine initial GPA scale
       const currentGpa = student.analysis?.academic?.gpa;
       if (currentGpa) {
@@ -1281,33 +1283,74 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
    const renderEditPreferences = () => (
       <div className="space-y-6 animate-fade-in">
 
-           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-               <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
-                        <select 
-                            value={editForm.preferences.program1 || ''}
-                            onChange={(e) => updateEditField('preferences', 'program1', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        >
-                            <option value="">Seçiniz</option>
-                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">2. Tercih</label>
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                         <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
                          <select 
-                            value={editForm.preferences.program2 || ''}
-                            onChange={(e) => updateEditField('preferences', 'program2', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        >
-                            <option value="">Seçiniz</option>
-                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
+                             value={editForm.preferences.program1 || ''}
+                             onChange={(e) => updateEditField('preferences', 'program1', e.target.value)}
+                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                         >
+                             <option value="">Seçiniz</option>
+                             <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
+                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                         </select>
+                     </div>
+                     <div>
+                         <label className="block text-sm text-slate-600 mb-1">2. Tercih</label>
+                          <select 
+                             value={editForm.preferences.program2 || ''}
+                             onChange={(e) => updateEditField('preferences', 'program2', e.target.value)}
+                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                         >
+                             <option value="">Seçiniz</option>
+                             <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
+                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                         </select>
+                     </div>
+                </div>
+
+                {/* Coaching Support Request */}
+                {(editForm.preferences.program1 === "Bölüm konusunda kesin kararlı değilim" || editForm.preferences.program2 === "Bölüm konusunda kesin kararlı değilim") && (
+                    <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden mt-6 animate-fade-in">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
+                        <div className="relative z-10 flex items-start gap-4">
+                            <div className="p-3 bg-white rounded-xl shadow-sm text-violet-600 mt-1">
+                                <Sparkles className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-base font-semibold text-violet-900 mb-3 leading-tight">
+                                    Bölüm çalışması konusunda Koçluk desteği almak ister misiniz?
+                                </label>
+                                <div className="flex gap-3">
+                                    <button 
+                                        onClick={() => updateEditField('preferences', 'wantsCoaching', true)}
+                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                            editForm.preferences.wantsCoaching === true 
+                                            ? 'bg-violet-600 text-white shadow-md shadow-violet-200 scale-105' 
+                                            : 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-100'
+                                        }`}
+                                    >
+                                        Evet, İstiyorum
+                                    </button>
+                                    <button 
+                                        onClick={() => updateEditField('preferences', 'wantsCoaching', false)}
+                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                            editForm.preferences.wantsCoaching === false 
+                                            ? 'bg-slate-600 text-white' 
+                                            : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        Hayır
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-               </div>
-           </div>
+                )}
+            </div>
 
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
@@ -1726,6 +1769,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           <div className="min-w-0">
             <div className="flex items-center flex-wrap gap-4">
               <h2 className="text-2xl font-bold text-slate-800 truncate">{student.firstName} {student.lastName}</h2>
+              <button 
+                  onClick={() => openEditModal('contact')}
+                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-xs font-semibold"
+              >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  Düzenle
+              </button>
+
               <div className="flex items-center gap-3 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
                   <div className="flex items-center gap-1.5">
                       <Phone className="w-4 h-4 text-slate-400" />
@@ -1798,13 +1849,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
                  </div>
 
-                 <button 
-                    onClick={openEditModal}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors shadow-sm text-xs font-bold"
-                >
-                    <Edit2 className="w-4 h-4" />
-                    Analizi Güncelle
-                </button>
+
                  <button 
                     onClick={handleAnalyze}
                     disabled={loading}
@@ -1877,10 +1922,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             <div className="lg:col-span-2 space-y-6">
                  {/* Academic Info */}
                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <GraduationCap className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Akademik Bilgiler</h3>
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <GraduationCap className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Akademik Bilgiler</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('academic')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
+
                     <div className="flex flex-col gap-5">
                         <div className="flex flex-col gap-1.5">
                             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Eğitim Durumu</label>
@@ -1911,10 +1966,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <FileText className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Sınavlar</h3>
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Sınavlar</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('academic')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
+
                     {student.analysis?.academic?.exams && Object.keys(student.analysis.academic.exams).length > 0 ? (
                          <div className="space-y-4">
                             {Object.entries(student.analysis.academic.exams as Record<string, ExamDetails>).map(([examName, details]) => {
@@ -2008,9 +2073,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                 {/* Preferences */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
-                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Eğitim Tercihleri</h3>
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Eğitim Tercihleri</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('preferences')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
@@ -2120,10 +2194,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
 
                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('language')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
+
                     <div className="space-y-4">
                         {student.analysis?.language?.hasTakenExam ? (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2168,18 +2252,36 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('budget')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
                     <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
                 </div>
 
                 {/* Social Activities */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <Activity className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Sosyal Faaliyetler</h3>
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <Activity className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Sosyal Faaliyetler</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('social')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                         <DisplayField label="Spor" value={student.analysis?.social?.sports} />
@@ -2191,9 +2293,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                 {/* Citizenship Info */}
                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                        <Flag className="w-5 h-5 text-indigo-600 print:text-black" />
-                        <h3 className="font-bold text-slate-800">Vatandaşlık & Pasaport</h3>
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <Flag className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Vatandaşlık & Pasaport</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('citizenship')}
+                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                        >
+                            <Edit2 className="w-3 h-3" />
+                            Düzenle
+                        </button>
                     </div>
                     <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
@@ -2694,15 +2805,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Edit Analysis Modal */}
       {isEditModalOpen && (
-        <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only print:hidden">
-             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-160px)] flex flex-col overflow-hidden mb-10 animate-fade-in">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in-only print:hidden">
+             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
                 <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
                     <div className="flex items-center gap-3">
                          <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
                              <BrainCircuit className="w-6 h-6" />
                          </div>
                          <div>
-                             <h3 className="text-lg font-bold text-slate-800">Analizi Güncelle</h3>
+                             <h3 className="text-lg font-bold text-slate-800">Öğrenci Analizi</h3>
                              <p className="text-sm text-slate-500">{student.firstName} {student.lastName}</p>
                          </div>
                     </div>

@@ -1245,6 +1245,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                         >
                             <option value="">Seçiniz</option>
+                            <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                     </div>
@@ -1256,10 +1257,50 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                             className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                         >
                             <option value="">Seçiniz</option>
+                            <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                     </div>
                 </div>
+
+                {/* Coaching Support Request */}
+                {(analysisForm.preferences.program1 === "Bölüm konusunda kesin kararlı değilim" || analysisForm.preferences.program2 === "Bölüm konusunda kesin kararlı değilim") && (
+                    <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden mt-6 animate-fade-in">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
+                        <div className="relative z-10 flex items-start gap-4">
+                            <div className="p-3 bg-white rounded-xl shadow-sm text-violet-600 mt-1">
+                                <Sparkles className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-base font-semibold text-violet-900 mb-3 leading-tight">
+                                    Bölüm çalışması konusunda Koçluk desteği almak ister misiniz?
+                                </label>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => updateAnalysisField('preferences', 'wantsCoaching', true)}
+                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                            analysisForm.preferences.wantsCoaching === true
+                                            ? 'bg-violet-600 text-white shadow-md shadow-violet-200 scale-105'
+                                            : 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-100'
+                                        }`}
+                                    >
+                                        Evet, İstiyorum
+                                    </button>
+                                    <button
+                                        onClick={() => updateAnalysisField('preferences', 'wantsCoaching', false)}
+                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                                            analysisForm.preferences.wantsCoaching === false
+                                            ? 'bg-slate-600 text-white'
+                                            : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        Hayır
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -2101,8 +2142,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
 
             {/* Analysis Modal */}
             {isAnalysisModalOpen && selectedStudentForAnalysis && (
-                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-160px)] flex flex-col overflow-hidden mb-10 animate-fade-in">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
                         <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
