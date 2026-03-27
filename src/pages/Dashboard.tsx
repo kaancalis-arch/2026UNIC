@@ -2,7 +2,7 @@ import React from 'react';
 import { Student, PipelineStage } from '../types';
 import { studentService } from '../services/studentService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { Users, TrendingUp, CheckCircle, GraduationCap, ArrowUpRight, ArrowDownRight, Sparkles, Globe, Activity, Zap } from 'lucide-react';
+import { Users, TrendingUp, CheckCircle, GraduationCap, ArrowUpRight, ArrowDownRight, Globe, Activity, Zap, AlertCircle } from 'lucide-react';
 import { getFlagEmoji } from '../utils/countryUtils';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -47,6 +47,38 @@ const STAGE_COLORS: Record<string, string> = {
 const Dashboard: React.FC = () => {
   const [students, setStudents] = React.useState<Student[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const todayIso = new Date().toISOString().split('T')[0];
+
+  const getReminderMeta = React.useCallback((date?: string) => {
+    if (!date) {
+      return { isVisible: false, isCritical: false, diffInDays: null as number | null };
+    }
+
+    const today = new Date(todayIso);
+    const reminder = new Date(date);
+
+    if (Number.isNaN(reminder.getTime())) {
+      return { isVisible: true, isCritical: false, diffInDays: null as number | null };
+    }
+
+    const diffInDays = Math.floor((today.getTime() - reminder.getTime()) / (1000 * 60 * 60 * 24));
+    const isVisible = reminder.getTime() <= today.getTime();
+
+    return {
+      isVisible,
+      isCritical: isVisible && diffInDays > 3,
+      diffInDays
+    };
+  }, [todayIso]);
+
+  const formatReminderDate = React.useCallback((date?: string) => {
+    if (!date) return '-';
+
+    const parsedDate = new Date(date);
+    if (Number.isNaN(parsedDate.getTime())) return date;
+
+    return parsedDate.toLocaleDateString('tr-TR');
+  }, []);
 
   React.useEffect(() => {
     const loadData = async () => {
@@ -89,6 +121,15 @@ const Dashboard: React.FC = () => {
   const enrollmentCount = students.filter(s => s.pipelineStage === PipelineStage.ENROLLMENT).length;
   const studentCount = students.filter(s => s.pipelineStage === PipelineStage.STUDENT).length;
   const conversionRate = totalStudents > 0 ? Math.round((studentCount / totalStudents) * 100) : 0;
+  const reminderStudents = students
+    .map(student => ({ student, reminder: getReminderMeta(student.reminderDate) }))
+    .filter(item => item.reminder.isVisible)
+    .sort((a, b) => {
+      const aTime = a.student.reminderDate ? new Date(a.student.reminderDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.student.reminderDate ? new Date(b.student.reminderDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    })
+    .slice(0, 8);
 
   // Status distribution
   const statusCounts = Object.values(PipelineStage).map(stage => ({
@@ -117,7 +158,7 @@ const Dashboard: React.FC = () => {
   students.forEach(s => {
     const status = s.visaStatus || (
       s.pipelineStage === PipelineStage.STUDENT ? 'Approved' :
-      s.pipelineStage === PipelineStage.ENROLLMENT ? 'In Progress' : 'Not Started'
+        s.pipelineStage === PipelineStage.ENROLLMENT ? 'In Progress' : 'Not Started'
     );
     if (status === 'Approved') visaStatusCounts['Onaylı']++;
     else if (status === 'In Progress') visaStatusCounts['Devam Eden']++;
@@ -142,6 +183,8 @@ const Dashboard: React.FC = () => {
       gradient: 'from-indigo-500 to-violet-600',
       sparkColor: '#a5b4fc',
       sparkline: generateSparkline(totalStudents),
+      route: 'students',
+      ariaLabel: 'Öğrenci listesini aç',
     },
     {
       title: "Aktif Süreçte",
@@ -152,6 +195,8 @@ const Dashboard: React.FC = () => {
       gradient: 'from-cyan-500 to-blue-600',
       sparkColor: '#67e8f9',
       sparkline: generateSparkline(processCount),
+      route: 'students',
+      ariaLabel: 'Aktif süreçteki öğrencileri görüntüle',
     },
     {
       title: "Dönüşüm Oranı",
@@ -162,6 +207,8 @@ const Dashboard: React.FC = () => {
       gradient: 'from-emerald-500 to-teal-600',
       sparkColor: '#6ee7b7',
       sparkline: generateSparkline(conversionRate),
+      route: 'roadmap',
+      ariaLabel: 'Dönüşüm süreci yol haritalarını görüntüle',
     },
     {
       title: "Analiz Bekliyor",
@@ -172,8 +219,21 @@ const Dashboard: React.FC = () => {
       gradient: 'from-amber-500 to-orange-600',
       sparkColor: '#fcd34d',
       sparkline: generateSparkline(followCount),
+      route: 'students',
+      ariaLabel: 'Analiz bekleyen öğrencileri görüntüle',
     },
   ];
+
+  const handleCardNavigation = (route: string) => {
+    window.location.hash = route;
+  };
+
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, route: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleCardNavigation(route);
+    }
+  };
 
   /* ── Custom Tooltip ── */
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -206,20 +266,11 @@ const Dashboard: React.FC = () => {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
           <div>
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 mb-4"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] font-semibold text-white/80 tracking-wide">Premium Analytics</span>
-            </motion.div>
             <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
               UNIC Dashboard
             </h1>
             <p className="text-slate-400 mt-2 text-sm md:text-base max-w-lg">
-              Platform genelindeki öğrenci durumları, ülke tercihleri ve süreç takibi — tek bakışta.
+              Öğrenci durumları, ülke tercihleri ve süreç takibi.
             </p>
           </div>
 
@@ -239,7 +290,12 @@ const Dashboard: React.FC = () => {
             key={card.title}
             variants={itemVariants}
             whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400 } }}
-            className="group relative overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-shadow duration-500"
+            role="button"
+            tabIndex={0}
+            aria-label={card.ariaLabel}
+            onClick={() => handleCardNavigation(card.route)}
+            onKeyDown={(event) => handleCardKeyDown(event, card.route)}
+            className="group relative overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-shadow duration-500 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
           >
             {/* Top gradient line */}
             <div className={cn("absolute top-0 left-0 right-0 h-1 bg-gradient-to-r", card.gradient)} />
@@ -291,7 +347,12 @@ const Dashboard: React.FC = () => {
         {/* Pipeline Bar Chart (2 cols wide) */}
         <motion.div
           variants={scaleIn}
-          className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+          role="button"
+          tabIndex={0}
+          aria-label="Öğrenci pipeline dağılımını ve CRM listesini aç"
+          onClick={() => handleCardNavigation('students')}
+          onKeyDown={(event) => handleCardKeyDown(event, 'students')}
+          className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-indigo-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
         >
           <div className="flex items-center justify-between p-6 pb-2">
             <div>
@@ -333,7 +394,12 @@ const Dashboard: React.FC = () => {
         {/* Visa Pie Chart */}
         <motion.div
           variants={scaleIn}
-          className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+          role="button"
+          tabIndex={0}
+          aria-label="Vize sonuçlarını aç"
+          onClick={() => handleCardNavigation('visa-results')}
+          onKeyDown={(event) => handleCardKeyDown(event, 'visa-results')}
+          className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-indigo-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
         >
           <div className="p-6 pb-2">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Vize Durumu</h3>
@@ -383,57 +449,55 @@ const Dashboard: React.FC = () => {
         </motion.div>
       </div>
 
-      {/* ── Countries & Quick Stats Row ── */}
+      {/* ── Reminder & Quick Stats Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Country leaderboard */}
-        <motion.div variants={scaleIn} className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* Reminder leaderboard */}
+        <motion.div
+          variants={scaleIn}
+          className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+        >
           <div className="flex items-center justify-between p-6 pb-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-50">
-                <Globe className="w-4 h-4 text-amber-600" />
+              <div className="p-2 rounded-xl bg-rose-50">
+                <AlertCircle className="w-4 h-4 text-rose-600" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Tercih Edilen Ülkeler</h3>
-                <p className="text-xs text-slate-400">En popüler hedef ülkeler</p>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Reminder Date</h3>
+                <p className="text-xs text-slate-400">Bugün ve geçmiş tarihli hatırlatmalar</p>
               </div>
             </div>
-            <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2.5 py-1 rounded-lg uppercase tracking-wider">Top {countryData.length}</span>
+            <span className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2.5 py-1 rounded-lg uppercase tracking-wider">{reminderStudents.length} kayıt</span>
           </div>
 
           <div className="px-6 pb-6 space-y-3">
-            {countryData.map((country, i) => {
-              const maxCount = countryData[0]?.count || 1;
-              const percentage = Math.round((country.count / maxCount) * 100);
+            {reminderStudents.map(({ student, reminder }, i) => {
               return (
                 <motion.div
-                  key={country.name}
+                  key={student.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.3 + i * 0.08 }}
-                  className="group flex items-center gap-4"
+                  className="group flex items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"
                 >
-                  <span className="text-lg w-8 shrink-0">{country.flag}</span>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-semibold text-slate-700">{country.name}</span>
-                      <span className="text-xs font-bold text-slate-500">{country.count} öğrenci</span>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-700 leading-tight">{student.firstName}</div>
+                        <div className="text-sm font-semibold text-slate-700 leading-tight">{student.lastName}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-500">{formatReminderDate(student.reminderDate)}</span>
+                        {reminder.isCritical && <AlertCircle className="w-4 h-4 text-rose-500" />}
+                      </div>
                     </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${percentage}%` }}
-                        transition={{ duration: 0.8, delay: 0.5 + i * 0.1, ease: 'easeOut' }}
-                        className="h-full rounded-full"
-                        style={{ background: `linear-gradient(90deg, ${CHART_COLORS[i % CHART_COLORS.length]}, ${CHART_COLORS[(i + 1) % CHART_COLORS.length]})` }}
-                      />
-                    </div>
+                    <div className="text-xs text-slate-500">{student.phone}</div>
                   </div>
                 </motion.div>
               );
             })}
-            {countryData.length === 0 && (
-              <p className="text-center text-sm text-slate-400 py-8">Henüz ülke tercihi verisi yok.</p>
+            {reminderStudents.length === 0 && (
+              <p className="text-center text-sm text-slate-400 py-8">Bugün veya geçmiş tarihli reminder kaydı yok.</p>
             )}
           </div>
         </motion.div>
@@ -441,7 +505,14 @@ const Dashboard: React.FC = () => {
         {/* Quick summary cards */}
         <motion.div variants={scaleIn} className="space-y-4">
           {/* Conversion funnel mini card */}
-          <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white relative overflow-hidden">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Yol haritası sayfasını aç"
+            onClick={() => handleCardNavigation('roadmap')}
+            onKeyDown={(event) => handleCardKeyDown(event, 'roadmap')}
+            className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-6 text-white relative overflow-hidden cursor-pointer transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-violet-700"
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
             <div className="relative">
@@ -473,7 +544,14 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Quick success metric */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Vize checklist sayfasını aç"
+            onClick={() => handleCardNavigation('visa-checklist')}
+            onKeyDown={(event) => handleCardKeyDown(event, 'visa-checklist')}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-emerald-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+          >
             <div className="flex items-center gap-3 mb-3">
               <div className="p-2 rounded-xl bg-emerald-50">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />

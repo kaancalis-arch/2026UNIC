@@ -12,6 +12,7 @@ function mapDbToStudent(row: any): Student {
         email: row.email,
         phone: row.phone,
         dob: row.dob,
+        reminderDate: row.reminder_date,
         pipelineStage: row.pipeline_stage as PipelineStage,
         gpa: row.gpa,
         targetDegree: row.target_degree,
@@ -24,7 +25,7 @@ function mapDbToStudent(row: any): Student {
         schoolName: row.school_name,
         currentGrade: row.current_grade,
         educationStatus: row.education_status,
-        
+
         // Map individual DB columns to the parentInfo object
         parentInfo: {
             fullName: row.parent_name || '',
@@ -61,7 +62,8 @@ function mapStudentToDb(student: Partial<Student>): any {
         last_name: student.lastName,
         email: student.email,
         phone: student.phone,
-        dob: student.dob,
+        dob: student.dob || null,
+        reminder_date: student.reminderDate,
         pipeline_stage: student.pipelineStage,
         gpa: student.gpa,
         target_degree: student.targetDegree,
@@ -74,7 +76,7 @@ function mapStudentToDb(student: Partial<Student>): any {
         school_name: student.schoolName,
         current_grade: student.currentGrade,
         education_status: student.educationStatus,
-        
+
         // Map parentInfo object properties to individual DB columns
         parent_name: student.parentInfo?.fullName,
         relationship: student.parentInfo?.relationship,
@@ -107,97 +109,155 @@ function mapStudentToDb(student: Partial<Student>): any {
 }
 
 export const studentService = {
-  async getAll(): Promise<Student[]> {
-    if (!supabase) return MOCK_STUDENTS;
+    async getAll(): Promise<Student[]> {
+        if (!supabase) return MOCK_STUDENTS;
 
-    try {
-        const { data, error } = await supabase
-        .from('student_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        try {
+            const { data, error } = await supabase
+                .from('student_profiles')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-        if (error) {
-            console.warn('Supabase fetch failed (likely invalid key or table missing). Using mock data. Error:', error.message);
-            // In a real scenario, you might want to show an error or empty list, 
-            // but for resilience we fall back to mock data if the DB connection fails completely.
+            if (error) {
+                console.warn('Supabase fetch failed (likely invalid key or table missing). Using mock data. Error:', error.message);
+                // In a real scenario, you might want to show an error or empty list, 
+                // but for resilience we fall back to mock data if the DB connection fails completely.
+                return MOCK_STUDENTS;
+            }
+
+            if (!data) return MOCK_STUDENTS;
+
+            return data.map(mapDbToStudent);
+        } catch (err) {
+            console.warn('Unexpected error in studentService.getAll. Using mock data.', err);
             return MOCK_STUDENTS;
         }
+    },
 
-        if (!data) return MOCK_STUDENTS;
+    async findDuplicateContact(email?: string, phone?: string, excludeId?: string): Promise<Student | null> {
+        if (!supabase) return null;
 
-        return data.map(mapDbToStudent);
-    } catch (err) {
-        console.warn('Unexpected error in studentService.getAll. Using mock data.', err);
-        return MOCK_STUDENTS;
+        const normalizedEmail = email?.trim().toLowerCase();
+        const normalizedPhone = phone?.trim();
+
+        try {
+            if (normalizedEmail) {
+                let emailQuery = supabase
+                    .from('student_profiles')
+                    .select('*')
+                    .ilike('email', normalizedEmail)
+                    .limit(1);
+
+                if (excludeId) {
+                    emailQuery = emailQuery.neq('id', excludeId);
+                }
+
+                const { data: emailData, error: emailError } = await emailQuery;
+
+                if (emailError) {
+                    throw new Error(emailError.message || 'E-posta kontrolü başarısız oldu');
+                }
+
+                if (emailData && emailData.length > 0) {
+                    return mapDbToStudent(emailData[0]);
+                }
+            }
+
+            if (normalizedPhone) {
+                let phoneQuery = supabase
+                    .from('student_profiles')
+                    .select('*')
+                    .eq('phone', normalizedPhone)
+                    .limit(1);
+
+                if (excludeId) {
+                    phoneQuery = phoneQuery.neq('id', excludeId);
+                }
+
+                const { data: phoneData, error: phoneError } = await phoneQuery;
+
+                if (phoneError) {
+                    throw new Error(phoneError.message || 'Telefon kontrolü başarısız oldu');
+                }
+
+                if (phoneData && phoneData.length > 0) {
+                    return mapDbToStudent(phoneData[0]);
+                }
+            }
+
+            return null;
+        } catch (err: any) {
+            console.error('Error in studentService.findDuplicateContact:', err);
+            throw err;
+        }
+    },
+
+    async create(student: Partial<Student>): Promise<Student> {
+        if (!supabase) {
+            return { ...student, id: `local-${Date.now()}` } as Student;
+        }
+
+        const dbStudent = mapStudentToDb(student);
+
+        try {
+            const { data, error } = await supabase
+                .from('student_profiles')
+                .insert([dbStudent])
+                .select()
+                .single();
+
+            if (error) {
+                // Throw a readable error so the UI can display it
+                throw new Error(error.message || "Database insert failed");
+            }
+            if (!data) throw new Error("No data returned from insert");
+
+            return mapDbToStudent(data);
+        } catch (err: any) {
+            console.error('Error in studentService.create:', err);
+            throw err; // Re-throw to be caught by the UI
+        }
+    },
+
+    async update(id: string, updates: Partial<Student>): Promise<void> {
+        if (!supabase) return;
+
+        const dbUpdates = mapStudentToDb(updates);
+
+        try {
+            const { error } = await supabase
+                .from('student_profiles')
+                .update(dbUpdates)
+                .eq('id', id);
+
+            if (error) {
+                console.error('Supabase update failed:', error.message);
+                throw new Error(error.message);
+            }
+        } catch (err: any) {
+            console.error('Unexpected error updating student:', err);
+            throw err;
+        }
+    },
+
+    async delete(id: string): Promise<void> {
+        if (!supabase) return;
+        try {
+            const { data, error } = await supabase.from('student_profiles').delete().eq('id', id).select();
+
+            if (error) {
+                console.error('Supabase delete failed:', error.message);
+                throw new Error(error.message);
+            }
+
+            // Supabase RLS (Row Level Security) kurallarında DELETE izni (Policy) yoksa, hata (error) döndürmek 
+            // yerine 0 satır silip boş bir array döndürür. Bu durumu yakalayalım:
+            if (!data || data.length === 0) {
+                throw new Error("VERİTABANI YETKİ HATASI: Kayıt silinemedi. Lütfen Supabase'de 'student_profiles' tablosu için DELETE RLS Policy (Silme izni) eklediğinizden emin olun.");
+            }
+        } catch (err: any) {
+            console.error('Unexpected error deleting student:', err);
+            throw err;
+        }
     }
-  },
-
-  async create(student: Partial<Student>): Promise<Student> {
-    if (!supabase) {
-        return { ...student, id: `local-${Date.now()}` } as Student;
-    }
-
-    const dbStudent = mapStudentToDb(student);
-
-    try {
-        const { data, error } = await supabase
-        .from('student_profiles')
-        .insert([dbStudent])
-        .select()
-        .single();
-
-        if (error) {
-            // Throw a readable error so the UI can display it
-            throw new Error(error.message || "Database insert failed");
-        }
-        if (!data) throw new Error("No data returned from insert");
-        
-        return mapDbToStudent(data);
-    } catch (err: any) {
-        console.error('Error in studentService.create:', err);
-        throw err; // Re-throw to be caught by the UI
-    }
-  },
-
-  async update(id: string, updates: Partial<Student>): Promise<void> {
-      if (!supabase) return;
-      
-      const dbUpdates = mapStudentToDb(updates);
-
-      try {
-        const { error } = await supabase
-            .from('student_profiles')
-            .update(dbUpdates)
-            .eq('id', id);
-            
-        if (error) {
-            console.error('Supabase update failed:', error.message);
-            throw new Error(error.message);
-        }
-      } catch (err: any) {
-        console.error('Unexpected error updating student:', err);
-        throw err;
-      }
-  },
-
-  async delete(id: string): Promise<void> {
-      if (!supabase) return;
-      try {
-        const { data, error } = await supabase.from('student_profiles').delete().eq('id', id).select();
-        
-        if (error) {
-            console.error('Supabase delete failed:', error.message);
-            throw new Error(error.message);
-        }
-        
-        // Supabase RLS (Row Level Security) kurallarında DELETE izni (Policy) yoksa, hata (error) döndürmek 
-        // yerine 0 satır silip boş bir array döndürür. Bu durumu yakalayalım:
-        if (!data || data.length === 0) {
-             throw new Error("VERİTABANI YETKİ HATASI: Kayıt silinemedi. Lütfen Supabase'de 'student_profiles' tablosu için DELETE RLS Policy (Silme izni) eklediğinizden emin olun.");
-        }
-      } catch (err: any) {
-        console.error('Unexpected error deleting student:', err);
-        throw err;
-      }
-  }
 };
