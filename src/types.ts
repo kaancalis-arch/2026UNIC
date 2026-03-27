@@ -73,6 +73,8 @@ export interface AnalysisReport {
     examDate?: string; // Ne zaman sınava girmeyi planlıyorsun? (Future)
     wantsTutoring?: boolean; // Deneme Sınavına Katılmak ve Özel Ders hakkında bilgi almak ister misin?
     languageNotes?: string; // Bu aşamaya bir not kutucuğu ekle
+    otherLanguages?: Array<{ language: string; level: string }>;
+
   };
   // 2. Akademik Yeterlilik
   academic: {

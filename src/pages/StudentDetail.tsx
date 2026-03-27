@@ -641,7 +641,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         <select 
                             value={editForm.language.estimatedLevel || ''}
                             onChange={(e) => updateEditField('language', 'estimatedLevel', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            className={`w-full px-3 py-2.5 rounded-lg border font-bold focus:outline-none focus:ring-2 transition-all shadow-sm ${getLanguageLevelColor(editForm.language.estimatedLevel)}`}
                         >
                             <option value="">Seçiniz</option>
                             <option value="A1">A1 - Başlangıç</option>
@@ -650,10 +650,85 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             <option value="B2">B2 - İyi</option>
                             <option value="C1">C1 - İleri</option>
                             <option value="C2">C2 - Yetkin</option>
-                            <option value="Unknown">Seviyemi Bilmiyorum</option>
+                            <option value="Bilinmiyor">Seviyemi Bilmiyorum</option>
                         </select>
+
                     </div>
                 )}
+                
+                {/* Other Languages Entry */}
+                <div className="mt-6 p-4 bg-slate-50/50 rounded-xl border border-slate-200/60 shadow-inner overflow-hidden">
+                    <div className="flex items-center justify-between mb-3 px-1">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                            <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg"><Globe className="w-3.5 h-3.5" /></span>
+                            Bildiğin Farklı Diller
+                        </label>
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                const current = editForm.language.otherLanguages || [];
+                                updateEditField('language', 'otherLanguages', [...current, { language: '', level: '' }]);
+                            }}
+                            className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 rounded-lg transition-all hover:bg-indigo-100 active:scale-95"
+                        >
+                            <Plus className="w-3 h-3" /> Dil Ekle
+                        </button>
+                    </div>
+                    <div className="space-y-2.5">
+                        {(editForm.language.otherLanguages || []).map((item, idx) => (
+                            <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm animate-in slide-in-from-top-2 duration-300">
+                                <select 
+                                    value={item.language}
+                                    onChange={(e) => {
+                                        const list = [...(editForm.language.otherLanguages || [])];
+                                        list[idx] = { ...list[idx], language: e.target.value };
+                                        updateEditField('language', 'otherLanguages', list);
+                                    }}
+                                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all font-medium text-slate-700 bg-slate-50/50"
+                                >
+                                    <option value="">Dil Seçiniz</option>
+                                    <option value="Almanca">Almanca</option>
+                                    <option value="Fransızca">Fransızca</option>
+                                    <option value="İtalyanca">İtalyanca</option>
+                                    <option value="İspanyolca">İspanyolca</option>
+                                    <option value="Diğer">Diğer</option>
+                                </select>
+                                <select 
+                                    value={item.level}
+                                    onChange={(e) => {
+                                        const list = [...(editForm.language.otherLanguages || [])];
+                                        list[idx] = { ...list[idx], level: e.target.value };
+                                        updateEditField('language', 'otherLanguages', list);
+                                    }}
+                                    className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 text-[10px] focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all font-bold text-indigo-600 bg-indigo-50/10"
+                                >
+                                    <option value="">Seviye</option>
+                                    <option value="A1">A1</option>
+                                    <option value="A2">A2</option>
+                                    <option value="B1">B1</option>
+                                    <option value="B2">B2</option>
+                                    <option value="C1">C1</option>
+                                    <option value="C2">C2</option>
+                                </select>
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        const list = (editForm.language.otherLanguages || []).filter((_, i) => i !== idx);
+                                        updateEditField('language', 'otherLanguages', list);
+                                    }}
+                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                        {(!editForm.language.otherLanguages || editForm.language.otherLanguages.length === 0) && (
+                            <div className="flex flex-col items-center justify-center py-4 px-4 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                                <p className="text-[10px] font-medium text-slate-400 italic">Farklı bir dil biliyorsan ekleyebilirsin.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -685,23 +760,27 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                      <div className="grid grid-cols-2 gap-4">
                          <div>
                             <label className="block text-sm text-slate-600 mb-1">Hedeflenen Sınav</label>
-                            <input 
-                                type="text"
+                            <select 
                                 value={editForm.language.targetExam || ''}
                                 onChange={(e) => updateEditField('language', 'targetExam', e.target.value)}
                                 className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                placeholder="Örn: IELTS UKVI"
+                            >
+                                <option value="">Seçiniz</option>
+                                <option value="IELTS">IELTS</option>
+                                <option value="TOEFL">TOEFL</option>
+                                <option value="Diğer">Diğer</option>
+                            </select>
+                         </div>
+                         <div className="col-span-2">
+                            <label className="block text-sm text-slate-600 mb-1">Hazırlık Notları</label>
+                            <textarea 
+                                value={editForm.language.preparationNotes || ''}
+                                onChange={(e) => updateEditField('language', 'preparationNotes', e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]"
+                                placeholder="Hazırlık süreci ile ilgili notlar..."
                             />
                          </div>
-                         <div>
-                            <label className="block text-sm text-slate-600 mb-1">Planlanan Tarih</label>
-                            <input 
-                                type="date"
-                                value={editForm.language.examDate || ''}
-                                onChange={(e) => updateEditField('language', 'examDate', e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                            />
-                         </div>
+
                      </div>
                  )}
              </div>
@@ -1696,7 +1775,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
-  const handleAskAI = async () => {
+  const handleAskUNIC = async () => {
     if(!chatQuery) return;
     setChatResponse("Thinking...");
     const res = await askUNIC(chatQuery, JSON.stringify(student));
@@ -1709,6 +1788,22 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         <p className="text-sm font-medium text-slate-800 break-words">{value || '-'}</p>
     </div>
   );
+
+  const getLanguageLevelColor = (level?: string) => {
+      if (!level || level === '-') return 'bg-slate-100 text-slate-600 border-slate-200';
+      const warningLevels = ['A1', 'A2', 'B1'];
+      const successLevels = ['B2', 'C1', 'C2', 'C2+'];
+      
+      const baseLevel = level.split(' ')[0]; 
+      
+      if (warningLevels.includes(baseLevel)) {
+          return 'bg-amber-50 text-amber-700 border-amber-200 ring-1 ring-amber-100/50';
+      }
+      if (successLevels.includes(baseLevel)) {
+          return 'bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-100/50';
+      }
+      return 'bg-slate-100 text-slate-600 border-slate-200';
+  };
 
   return (
     <div className="space-y-6 h-full flex flex-col student-detail-container">
@@ -1769,13 +1864,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           <div className="min-w-0">
             <div className="flex items-center flex-wrap gap-4">
               <h2 className="text-2xl font-bold text-slate-800 truncate">{student.firstName} {student.lastName}</h2>
-              <button 
-                  onClick={() => openEditModal('contact')}
-                  className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-xs font-semibold"
-              >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  Düzenle
-              </button>
+                  <button 
+                      onClick={() => openEditModal('contact')}
+                      className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all flex items-center justify-center shrink-0"
+                      title="Düzenle"
+                  >
+                      <Edit2 className="w-4 h-4" />
+                  </button>
+
 
               <div className="flex items-center gap-3 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
                   <div className="flex items-center gap-1.5">
@@ -1929,11 +2025,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('academic')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
+
                     </div>
 
                     <div className="flex flex-col gap-5">
@@ -1973,11 +2070,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('academic')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
+
                     </div>
 
                     {student.analysis?.academic?.exams && Object.keys(student.analysis.academic.exams).length > 0 ? (
@@ -2080,10 +2178,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('preferences')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2201,14 +2299,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('language')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
                     </div>
 
                     <div className="space-y-4">
+
                         {student.analysis?.language?.hasTakenExam ? (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
@@ -2233,21 +2332,74 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             </div>
                         ) : (
                              <div>
-                                <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
-                                <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-md print:border print:border-slate-200">
-                                    {student.analysis?.language?.estimatedLevel || '-'}
-                                </span>
+                                 <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
+                                 <span className={`inline-block px-3 py-1.5 font-bold rounded-lg border shadow-sm transition-all ${getLanguageLevelColor(student.analysis?.language?.estimatedLevel)}`}>
+                                     {student.analysis?.language?.estimatedLevel || '-'}
+                                 </span>
                              </div>
                         )}
 
+                        {student.analysis?.language?.otherLanguages && student.analysis.language.otherLanguages.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-4 pb-2">
+                                {student.analysis.language.otherLanguages.map((lang, i) => (
+                                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
+                                        <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
+                                            <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">DİL</span>
+                                            <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
+                                        </div>
+                                        <div className="w-px h-6 bg-slate-100 mx-1" />
+                                        <div className="flex flex-col text-right">
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">SEVİYE</span>
+                                            <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {student.analysis?.language?.isPreparingForExam && (
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mt-2">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 text-indigo-600">Sınav Hazırlığı</p>
+                                <div className="flex flex-wrap gap-4">
+                                    {student.analysis.language.targetExam && (
+                                        <div>
+                                            <p className="text-[10px] text-slate-500 uppercase">Hedeflenen Sınav</p>
+                                            <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                {student.analysis.language.preparationNotes && (
+                                    <div className="mt-2 pt-2 border-t border-slate-200/60">
+                                        <p className="text-[10px] text-slate-500 uppercase">Hazırlık Notları</p>
+                                        <p className="text-xs text-slate-700 leading-relaxed italic">{student.analysis.language.preparationNotes}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {student.analysis?.language?.languageNotes && (
+                            <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 mt-2">
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Dil Yeterliliği Notları</p>
+                                <p className="text-xs text-indigo-900 leading-relaxed">{student.analysis.language.languageNotes}</p>
+                            </div>
+                        )}
+
                         {student.analysis?.language?.wantsTutoring && (
-                            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start gap-2 print:bg-white print:border-slate-300">
-                                <CheckCircle className="w-4 h-4 text-indigo-600 mt-0.5 print:text-slate-800 shrink-0" />
-                                <p className="text-sm text-indigo-800 font-medium print:text-slate-700">Öğrenci deneme sınavına katılmak ve özel ders hakkında bilgi almak istiyor.</p>
+                            <div className="p-4 bg-violet-50 border border-violet-100 rounded-xl flex items-start gap-3 print:bg-white print:border-slate-300 shadow-sm ring-1 ring-violet-500/10">
+                                <div className="p-1.5 bg-white rounded-lg shadow-sm text-violet-600">
+                                    <Sparkles className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                     <p className="text-sm text-violet-900 font-bold leading-tight">Deneme Sınavına Katılmak ve Özel Ders istiyor</p>
+                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
+
 
 
 
@@ -2259,11 +2411,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('budget')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
+
                     </div>
                     <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
                 </div>
@@ -2277,11 +2430,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('social')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
+
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                         <DisplayField label="Spor" value={student.analysis?.social?.sports} />
@@ -2300,11 +2454,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <button 
                             onClick={() => openEditModal('citizenship')}
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors print:hidden"
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
                         >
-                            <Edit2 className="w-3 h-3" />
-                            Düzenle
+                            <Edit2 className="w-4 h-4" />
                         </button>
+
                     </div>
                     <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">

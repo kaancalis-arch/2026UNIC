@@ -21,6 +21,22 @@ interface StudentListProps {
 // Options will be loaded from services
 
 
+const getLanguageLevelColor = (level?: string) => {
+    if (!level || level === '-') return 'bg-slate-100 text-slate-600 border-slate-200';
+    const warningLevels = ['A1', 'A2', 'B1'];
+    const successLevels = ['B2', 'C1', 'C2', 'C2+'];
+
+    const baseLevel = level.split(' ')[0];
+
+    if (warningLevels.includes(baseLevel)) {
+        return 'bg-amber-50 text-amber-700 border-amber-200 ring-1 ring-amber-100/50';
+    }
+    if (successLevels.includes(baseLevel)) {
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-100/50';
+    }
+    return 'bg-slate-100 text-slate-600 border-slate-200';
+};
+
 const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
@@ -794,7 +810,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                             <select
                                 value={analysisForm.language.estimatedLevel || ''}
                                 onChange={(e) => updateAnalysisField('language', 'estimatedLevel', e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                className={`w-full px-3 py-2.5 rounded-lg border font-bold focus:outline-none focus:ring-2 transition-all shadow-sm ${getLanguageLevelColor(analysisForm.language.estimatedLevel)}`}
                             >
                                 <option value="">Seçiniz</option>
                                 <option value="A1">A1 - Başlangıç</option>
@@ -803,10 +819,85 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                                 <option value="B2">B2 - İyi</option>
                                 <option value="C1">C1 - İleri</option>
                                 <option value="C2">C2 - Yetkin</option>
-                                <option value="Unknown">Seviyemi Bilmiyorum</option>
+                                <option value="Bilinmiyor">Seviyemi Bilmiyorum</option>
+
                             </select>
                         </div>
                     )}
+                </div>
+
+                {/* Other Languages Entry */}
+                <div className="mt-6 p-4 bg-slate-50/50 rounded-xl border border-slate-200/60 shadow-inner">
+                    <div className="flex items-center justify-between mb-3 px-1">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                            <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg"><Globe className="w-3.5 h-3.5" /></span>
+                            Bildiğin Farklı Diller
+                        </label>
+                        <button 
+                            onClick={() => {
+                                const current = analysisForm.language.otherLanguages || [];
+                                updateAnalysisField('language', 'otherLanguages', [...current, { language: '', level: '' }]);
+                            }}
+                            className="text-xs font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 rounded-lg transition-all hover:bg-indigo-100 active:scale-95"
+                        >
+                            <Plus className="w-3.5 h-3.5" /> Farklı Dil Ekle
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        {(analysisForm.language.otherLanguages || []).map((item, idx) => (
+                            <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm animate-in slide-in-from-top-2 duration-300">
+                                <select 
+                                    value={item.language}
+                                    onChange={(e) => {
+                                        const list = [...(analysisForm.language.otherLanguages || [])];
+                                        list[idx] = { ...list[idx], language: e.target.value };
+                                        updateAnalysisField('language', 'otherLanguages', list);
+                                    }}
+                                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all font-medium text-slate-700 bg-slate-50/50"
+                                >
+                                    <option value="">Dil Seçiniz</option>
+                                    <option value="Almanca">Almanca</option>
+                                    <option value="Fransızca">Fransızca</option>
+                                    <option value="İtalyanca">İtalyanca</option>
+                                    <option value="İspanyolca">İspanyolca</option>
+                                    <option value="Diğer">Diğer</option>
+                                </select>
+                                <select 
+                                    value={item.level}
+                                    onChange={(e) => {
+                                        const list = [...(analysisForm.language.otherLanguages || [])];
+                                        list[idx] = { ...list[idx], level: e.target.value };
+                                        updateAnalysisField('language', 'otherLanguages', list);
+                                    }}
+                                    className="w-32 px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all font-bold text-indigo-600 bg-indigo-50/10"
+                                >
+                                    <option value="">Seviye</option>
+                                    <option value="A1">A1</option>
+                                    <option value="A2">A2</option>
+                                    <option value="B1">B1</option>
+                                    <option value="B2">B2</option>
+                                    <option value="C1">C1</option>
+                                    <option value="C2">C2</option>
+                                </select>
+                                <button 
+                                    onClick={() => {
+                                        const list = (analysisForm.language.otherLanguages || []).filter((_, i) => i !== idx);
+                                        updateAnalysisField('language', 'otherLanguages', list);
+                                    }}
+                                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                    title="Sil"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                        {(!analysisForm.language.otherLanguages || analysisForm.language.otherLanguages.length === 0) && (
+                            <div className="flex flex-col items-center justify-center py-6 px-4 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                                <div className="text-slate-300 mb-1"><Globe className="w-6 h-6 opacity-30" /></div>
+                                <p className="text-[11px] font-medium text-slate-400">Herhangi bir farklı dil eklenmedi.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -838,25 +929,29 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm text-slate-600 mb-1">Hedeflenen Sınav</label>
-                                <input
-                                    type="text"
+                                <select 
                                     value={analysisForm.language.targetExam || ''}
                                     onChange={(e) => updateAnalysisField('language', 'targetExam', e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    placeholder="Örn: IELTS UKVI"
-                                />
+                                >
+                                    <option value="">Seçiniz</option>
+                                    <option value="IELTS">IELTS</option>
+                                    <option value="TOEFL">TOEFL</option>
+                                    <option value="Diğer">Diğer</option>
+                                </select>
                             </div>
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">Planlanan Tarih</label>
-                                <input
-                                    type="date"
-                                    value={analysisForm.language.examDate || ''}
-                                    onChange={(e) => updateAnalysisField('language', 'examDate', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            <div className="col-span-2">
+                                <label className="block text-sm text-slate-600 mb-1">Hazırlık Notları</label>
+                                <textarea 
+                                    value={analysisForm.language.preparationNotes || ''}
+                                    onChange={(e) => updateAnalysisField('language', 'preparationNotes', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]"
+                                    placeholder="Hazırlık süreci ile ilgili notlar..."
                                 />
                             </div>
                         </div>
                     )}
+
                 </div>
             </div>
 
