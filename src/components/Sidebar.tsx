@@ -1,22 +1,19 @@
-
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  GraduationCap, 
-  Map, 
-  FileText, 
+import {
+  LayoutDashboard,
+  Users,
+  GraduationCap,
+  Map,
   Settings as SettingsIcon,
-  Bot,
   LogOut,
   User,
-  Shield,
-  Briefcase,
   ChevronRight,
   ChevronDown as ChevronDownIcon,
   ShieldCheck,
   ClipboardCheck,
-  Award
+  Award,
+  CalendarDays,
+  ChartPie,
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
 
@@ -36,88 +33,82 @@ interface NavItem {
   subItems?: NavItem[];
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ 
-  currentPage, 
-  setPage, 
-  currentUser, 
+const Sidebar: React.FC<SidebarProps> = ({
+  currentPage,
+  setPage,
+  currentUser,
   onSwitchUser,
   isCollapsed,
   onToggle
 }) => {
-  
-  // Define nav items based on role
   const getNavItems = (): NavItem[] => {
     const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ];
 
     if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.CONSULTANT || currentUser.role === UserRole.REPRESENTATIVE) {
-        baseItems.push({ id: 'students', label: 'CRM', icon: Users });
+      baseItems.push({ id: 'students', label: 'CRM', icon: Users });
     }
 
     if (currentUser.role === UserRole.STUDENT) {
-        baseItems.push({ id: 'my-profile', label: 'My Profile', icon: User });
-        baseItems.push({ id: 'my-roadmap', label: 'My Roadmap', icon: Map });
+      baseItems.push({ id: 'my-profile', label: 'My Profile', icon: User });
+      baseItems.push({ id: 'my-roadmap', label: 'My Roadmap', icon: Map });
     } else {
-        baseItems.push({ id: 'universities', label: 'University Search', icon: GraduationCap });
-        baseItems.push({ id: 'roadmap', label: 'Roadmaps', icon: Map });
+      baseItems.push({ id: 'statistics', label: 'Statistics', icon: ChartPie });
+      baseItems.push({ id: 'universities', label: 'University Search', icon: GraduationCap });
+      baseItems.push({ id: 'calendar', label: 'Calendar', icon: CalendarDays });
+      baseItems.push({ id: 'roadmap', label: 'Roadmaps', icon: Map });
     }
-    
-    // Visa Section
-    baseItems.push({ 
-      id: 'visa', 
-      label: 'Visa', 
+
+    baseItems.push({
+      id: 'visa',
+      label: 'Visa',
       icon: ShieldCheck,
       subItems: [
         { id: 'visa-results', label: 'Results', icon: Award },
         { id: 'visa-checklist', label: 'Checklist', icon: ClipboardCheck },
       ]
     });
-    
+
     return baseItems;
   };
 
   const navItems = getNavItems();
-
   const [expandedItems, setExpandedItems] = React.useState<string[]>(['visa']);
 
   const toggleExpand = (id: string) => {
-    setExpandedItems(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+    setExpandedItems((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
   };
 
   return (
-    <div className={`h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 shadow-xl z-50 transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-      {/* Brand */}
-      <div className={`p-6 flex items-center border-b border-slate-800 transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'gap-3'}`}>
-        <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 shrink-0">
-          <Bot className="text-white w-6 h-6" />
-        </div>
+    <div className={`fixed left-0 top-0 z-50 flex h-screen flex-col bg-slate-900 text-white shadow-xl transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
+      <div className={`flex items-center border-b border-slate-800 p-6 transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'gap-3'}`}>
+        <img
+          src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBMb2dvLnBuZyIsImlhdCI6MTc3NDgxMTc3MCwiZXhwIjoyNjM4ODExNzcwfQ.NQe5m-iu8IF5TZDclVPaXJ8vElwWtm_xiy6ua_gXuV4"
+          alt="UNIC logo"
+          className="h-10 w-10 shrink-0 rounded-lg object-contain bg-white p-1"
+        />
         {!isCollapsed && (
           <div className="animate-fade-in">
-            <h1 className="font-bold text-xl tracking-tight">UNIC</h1>
-            <p className="text-xs text-slate-400">Powered by Gemini</p>
+            <h1 className="text-sm font-semibold tracking-tight text-white">My University Counsellor</h1>
           </div>
         )}
       </div>
 
-      {/* Toggle Button */}
-      <button 
+      <button
         onClick={onToggle}
-        className="absolute -right-3 top-20 bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg hover:bg-indigo-500 transition-colors z-50"
+        className="absolute -right-3 top-20 z-50 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-colors hover:bg-indigo-500"
       >
-        {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 rotate-180" />}
+        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronRight className="h-4 w-4 rotate-180" />}
       </button>
 
-      {/* Navigation */}
-      <div className="flex-1 py-6 px-3 space-y-1 overflow-y-auto overflow-x-hidden">
-        {navItems.map((item: any) => {
+      <div className="flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-3 py-6">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
           const hasSubItems = item.subItems && item.subItems.length > 0;
           const isExpanded = expandedItems.includes(item.id);
-          
+
           return (
             <div key={item.id} className="space-y-1">
               <button
@@ -129,40 +120,31 @@ const Sidebar: React.FC<SidebarProps> = ({
                   }
                 }}
                 title={isCollapsed ? item.label : ''}
-                className={`w-full flex items-center rounded-xl transition-all duration-200 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'} ${
-                  isActive 
-                    ? 'bg-indigo-600 text-white shadow-md' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
+                className={`w-full rounded-xl transition-all duration-200 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'} flex items-center ${isActive ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
-                <Icon className="w-5 h-5 shrink-0" />
+                <Icon className="h-5 w-5 shrink-0" />
                 {!isCollapsed && (
                   <>
-                    <span className="font-medium text-sm flex-1 text-left truncate">{item.label}</span>
-                    {hasSubItems && (
-                      isExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
-                    )}
+                    <span className="flex-1 truncate text-left text-sm font-medium">{item.label}</span>
+                    {hasSubItems && (isExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)}
                   </>
                 )}
               </button>
-              
+
               {hasSubItems && isExpanded && !isCollapsed && (
                 <div className="ml-9 space-y-1 animate-fade-in">
-                  {item.subItems.map((subItem: any) => {
+                  {item.subItems.map((subItem) => {
                     const SubIcon = subItem.icon;
                     const isSubActive = currentPage === subItem.id;
+
                     return (
                       <button
                         key={subItem.id}
                         onClick={() => setPage(subItem.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
-                          isSubActive 
-                            ? 'text-white bg-slate-800' 
-                            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
-                        }`}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all duration-200 ${isSubActive ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300'}`}
                       >
-                        <SubIcon className="w-4 h-4 shrink-0" />
-                        <span className="text-sm truncate">{subItem.label}</span>
+                        <SubIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate text-sm">{subItem.label}</span>
                       </button>
                     );
                   })}
@@ -173,55 +155,47 @@ const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Bottom Section */}
-      <div className={`p-4 border-t border-slate-800 space-y-2 transition-all duration-300 ${isCollapsed ? 'px-2' : ''}`}>
-        
-        {/* Admin Settings Link */}
+      <div className={`space-y-2 border-t border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'px-2' : ''}`}>
         {currentUser.role === UserRole.ADMIN && (
-             <button 
-                onClick={() => setPage('settings')}
-                title={isCollapsed ? 'System Settings' : ''}
-                className={`w-full flex items-center rounded-xl transition-colors ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'} ${
-                    currentPage === 'settings' 
-                    ? 'bg-slate-800 text-white' 
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-            >
-                <SettingsIcon className="w-5 h-5 shrink-0" />
-                {!isCollapsed && <span className="font-medium text-sm">System Settings</span>}
-            </button>
+          <button
+            onClick={() => setPage('settings')}
+            title={isCollapsed ? 'System Settings' : ''}
+            className={`w-full rounded-xl transition-colors ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'} flex items-center ${currentPage === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+          >
+            <SettingsIcon className="h-5 w-5 shrink-0" />
+            {!isCollapsed && <span className="text-sm font-medium">System Settings</span>}
+          </button>
         )}
 
-        {/* User Profile / Role Switcher Demo */}
-        <div 
-            onClick={onSwitchUser}
-            className={`w-full flex items-center bg-slate-800/50 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors border border-slate-800 hover:border-slate-700 ${isCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-3'}`}
-            title={isCollapsed ? `${currentUser.firstName} (${currentUser.role})` : "Click to switch simulated role (Demo)"}
+        <div
+          onClick={onSwitchUser}
+          className={`w-full cursor-pointer rounded-xl border border-slate-800 bg-slate-800/50 transition-colors hover:border-slate-700 hover:bg-slate-800 ${isCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-3'} flex items-center`}
+          title={isCollapsed ? `${currentUser.firstName} (${currentUser.role})` : 'Click to switch simulated role (Demo)'}
         >
-            <div className="relative shrink-0">
-                <img src={currentUser.avatarUrl} className="w-8 h-8 rounded-full bg-slate-700" />
-                <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 ${
-                    currentUser.role === UserRole.ADMIN ? 'bg-purple-500' :
-                    currentUser.role === UserRole.CONSULTANT ? 'bg-indigo-500' :
-                    'bg-amber-500'
-                }`}></div>
-            </div>
-            {!isCollapsed && (
-              <>
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{currentUser.firstName}</p>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">{currentUser.role}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-500" />
-              </>
-            )}
+          <div className="relative shrink-0">
+            <img src={currentUser.avatarUrl} className="h-8 w-8 rounded-full bg-slate-700" />
+            <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${
+              currentUser.role === UserRole.ADMIN ? 'bg-purple-500' :
+              currentUser.role === UserRole.CONSULTANT ? 'bg-indigo-500' :
+              'bg-amber-500'
+            }`} />
+          </div>
+          {!isCollapsed && (
+            <>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-white">{currentUser.firstName}</p>
+                <p className="text-[10px] uppercase tracking-wider text-slate-400">{currentUser.role}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-slate-500" />
+            </>
+          )}
         </div>
 
-        <button 
+        <button
           title={isCollapsed ? 'Sign Out' : ''}
-          className={`w-full flex items-center text-rose-400 hover:text-rose-300 hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'}`}
+          className={`w-full rounded-xl text-xs font-medium text-rose-400 transition-colors hover:bg-slate-800 hover:text-rose-300 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'} flex items-center`}
         >
-          <LogOut className="w-4 h-4 shrink-0" />
+          <LogOut className="h-4 w-4 shrink-0" />
           {!isCollapsed && <span>Sign Out</span>}
         </button>
       </div>

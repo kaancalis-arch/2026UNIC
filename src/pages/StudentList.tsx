@@ -16,6 +16,7 @@ import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
+    initialStageFilter?: string | null;
 }
 
 // Options will be loaded from services
@@ -37,7 +38,7 @@ const getLanguageLevelColor = (level?: string) => {
     return 'bg-slate-100 text-slate-600 border-slate-200';
 };
 
-const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
+const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
 
@@ -92,10 +93,26 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent }) => {
     const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
     const [allCountries, setAllCountries] = useState<string[]>([]);
     const todayIso = new Date().toISOString().split('T')[0];
-    const [activeStageTab, setActiveStageTab] = useState<PipelineStage>(PipelineStage.FOLLOW);
+    const getInitialStage = () => {
+        const validStages = Object.values(PipelineStage) as string[];
+        if (initialStageFilter && validStages.includes(initialStageFilter)) {
+            return initialStageFilter as PipelineStage;
+        }
+
+        return PipelineStage.FOLLOW;
+    };
+
+    const [activeStageTab, setActiveStageTab] = useState<PipelineStage>(getInitialStage);
     const [searchQuery, setSearchQuery] = useState('');
     const [showFutureReminderFilter, setShowFutureReminderFilter] = useState(false);
     const [futureReminderUntil, setFutureReminderUntil] = useState(todayIso);
+
+    useEffect(() => {
+        const validStages = Object.values(PipelineStage) as string[];
+        if (initialStageFilter && validStages.includes(initialStageFilter)) {
+            setActiveStageTab(initialStageFilter as PipelineStage);
+        }
+    }, [initialStageFilter]);
 
     // Form State for New Student
     const [formData, setFormData] = useState<Partial<Student>>({

@@ -9,13 +9,32 @@ import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
 import Roadmaps from './pages/Roadmaps';
 import UniversitySearch from './pages/UniversitySearch';
+import CalendarPage from './pages/CalendarPage';
+import Statistics from './pages/Statistics';
 import { Student, SystemUser, UserRole } from './types';
 import { MOCK_USERS } from './services/mockData';
+
+const getStageFromHash = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const hash = window.location.hash.replace(/^#/, '');
+  const [path, queryString] = hash.split('?');
+
+  if (path !== 'students' || !queryString) {
+    return null;
+  }
+
+  const params = new URLSearchParams(queryString);
+  return params.get('stage');
+};
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
   
   // Auth Simulation
   const [currentUser, setCurrentUser] = useState<SystemUser>(MOCK_USERS[0]); // Default to Admin
@@ -29,6 +48,30 @@ const App: React.FC = () => {
     setSelectedStudent(null);
     setCurrentPage('students');
   };
+
+  useEffect(() => {
+    const applyHashRoute = () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      const hash = window.location.hash.replace(/^#/, '');
+      const [path] = hash.split('?');
+      if (!path) {
+        return;
+      }
+
+      setCurrentPage(path);
+      setStudentStageFilter(getStageFromHash());
+    };
+
+    applyHashRoute();
+    window.addEventListener('hashchange', applyHashRoute);
+
+    return () => {
+      window.removeEventListener('hashchange', applyHashRoute);
+    };
+  }, []);
 
   // Demo: Switch between Admin, Consultant, Rep, Student
   const rotateUser = () => {
@@ -45,13 +88,13 @@ const App: React.FC = () => {
         return <Dashboard />;
       case 'students':
         if (currentUser.role === UserRole.STUDENT) return <div className="p-10 text-slate-500">Access Denied. Students cannot view the CRM list.</div>;
-        return <StudentList onSelectStudent={handleStudentSelect} />;
+        return <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} />;
       case 'student-detail':
         return selectedStudent ? (
           <StudentDetail student={selectedStudent} onBack={handleBackToStudents} />
         ) : (
-           currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} /> : <Dashboard />
-        );
+           currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} /> : <Dashboard />
+         );
       case 'settings':
         if (currentUser.role !== UserRole.ADMIN) return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
         return <Settings />;
@@ -68,6 +111,10 @@ const App: React.FC = () => {
         return <VisaResults />;
       case 'visa-checklist':
         return <VisaChecklist />;
+      case 'calendar':
+        return <CalendarPage />;
+      case 'statistics':
+        return <Statistics />;
       default:
         return <Dashboard />;
     }
