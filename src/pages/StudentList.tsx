@@ -86,7 +86,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     const [calculatedAge, setCalculatedAge] = useState<string>('');
     const [duplicateWarning, setDuplicateWarning] = useState<string>('');
     const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
-    const [formErrors, setFormErrors] = useState<{ email?: string; phone?: string }>({});
+    const [formErrors, setFormErrors] = useState<{ email?: string; phone?: string; targetPrograms?: string }>({});
 
     // Dynamic Options
     const [allPrograms, setAllPrograms] = useState<string[]>([]);
@@ -463,13 +463,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     const validateRequiredFields = () => {
         const emailError = validateEmail(formData.email);
         const phoneError = validatePhone(formData.phone);
+        const targetProgramsError = !formData.targetPrograms || formData.targetPrograms.length === 0
+            ? 'En az bir program seçmelisiniz.'
+            : '';
 
         setFormErrors({
             email: emailError || undefined,
-            phone: phoneError || undefined
+            phone: phoneError || undefined,
+            targetPrograms: targetProgramsError || undefined
         });
 
-        return !emailError && !phoneError;
+        return !emailError && !phoneError && !targetProgramsError;
     };
 
     const checkDuplicateContact = async () => {
@@ -2101,10 +2105,19 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                                     checked={formData.targetPrograms?.includes(program)}
                                                     onChange={(e) => {
                                                         const current = formData.targetPrograms || [];
+                                                        const updatedPrograms = e.target.checked
+                                                            ? [...current, program]
+                                                            : current.filter(p => p !== program);
+
+                                                        setFormErrors(prev => ({
+                                                            ...prev,
+                                                            targetPrograms: updatedPrograms.length === 0 ? 'En az bir program seçmelisiniz.' : undefined
+                                                        }));
+
                                                         if (e.target.checked) {
-                                                            setFormData({ ...formData, targetPrograms: [...current, program] });
+                                                            setFormData({ ...formData, targetPrograms: updatedPrograms });
                                                         } else {
-                                                            setFormData({ ...formData, targetPrograms: current.filter(p => p !== program) });
+                                                            setFormData({ ...formData, targetPrograms: updatedPrograms });
                                                         }
                                                     }}
                                                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
@@ -2113,6 +2126,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                             </label>
                                         ))}
                                     </div>
+                                    {formErrors.targetPrograms && (
+                                        <p className="mt-3 text-sm text-rose-600 font-medium">{formErrors.targetPrograms}</p>
+                                    )}
                                 </div>
                             </div>
 

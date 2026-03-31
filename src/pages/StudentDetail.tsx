@@ -161,6 +161,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [allUniversities, setAllUniversities] = useState<any[]>([]);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
 
+  const normalizedTargetDegree = student.targetDegree || '';
+  const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
+  const showsAcademicPreference = normalizedTargetDegree === 'Master' || normalizedTargetDegree === 'Undergraduate';
+  const showsHighSchoolProgramPreference = normalizedTargetDegree === 'High School';
+
   useEffect(() => {
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
@@ -420,6 +425,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const openEditModal = (tab?: string) => {
       if (tab) setActiveEditTab(tab);
 
+      if (tab === 'preferences' && !showsAcademicPreference) {
+          if (showsLanguageProgramPreference) {
+              setActiveEditTab('languageProgramPreference');
+          } else if (showsHighSchoolProgramPreference) {
+              setActiveEditTab('highSchoolProgramPreference');
+          }
+      }
+
       // Determine initial GPA scale
       const currentGpa = student.analysis?.academic?.gpa;
       if (currentGpa) {
@@ -439,6 +452,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           academic: student.analysis?.academic || { exams: {} },
           social: student.analysis?.social || {},
           preferences: student.analysis?.preferences || {},
+          languageProgramPreference: student.analysis?.languageProgramPreference || {},
+          highSchoolProgramPreference: student.analysis?.highSchoolProgramPreference || {},
           budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
       });
       setEditAcademicInfo({
@@ -1359,7 +1374,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     </div>
   )};
 
-   const renderEditPreferences = () => (
+  const renderEditPreferences = () => (
       <div className="space-y-6 animate-fade-in">
 
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -1459,6 +1474,131 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                   placeholder="Tercihlere dair ek notlar..."
                />
            </div>
+      </div>
+   );
+
+   const renderEditLanguageProgramPreference = () => (
+      <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Dil Programı Tercihi</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Program Türü</label>
+                      <select
+                          value={editForm.languageProgramPreference?.preferredProgramType || ''}
+                          onChange={(e) => updateEditField('languageProgramPreference', 'preferredProgramType', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          <option value="Dil Okulu">Dil Okulu</option>
+                          <option value="Yaz Okulu">Yaz Okulu</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Tercih Edilen Ülke</label>
+                      <select
+                          value={editForm.languageProgramPreference?.preferredCountry || ''}
+                          onChange={(e) => updateEditField('languageProgramPreference', 'preferredCountry', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Program Süresi</label>
+                      <select
+                          value={editForm.languageProgramPreference?.duration || ''}
+                          onChange={(e) => updateEditField('languageProgramPreference', 'duration', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          <option value="2-4 Hafta">2-4 Hafta</option>
+                          <option value="1-3 Ay">1-3 Ay</option>
+                          <option value="3-6 Ay">3-6 Ay</option>
+                          <option value="6+ Ay">6+ Ay</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Program Notları</h4>
+              <textarea
+                  value={editForm.languageProgramPreference?.notes || ''}
+                  onChange={(e) => updateEditField('languageProgramPreference', 'notes', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]"
+                  placeholder="Dil programı tercihi ile ilgili ek notlar..."
+              />
+          </div>
+      </div>
+   );
+
+   const renderEditHighSchoolProgramPreference = () => (
+      <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Lise Programı Tercihi</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Program Türü</label>
+                      <select
+                          value={editForm.highSchoolProgramPreference?.preferredProgramType || ''}
+                          onChange={(e) => updateEditField('highSchoolProgramPreference', 'preferredProgramType', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          <option value="Lise Değişimi">Lise Değişimi</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Tercih Edilen Ülke</label>
+                      <select
+                          value={editForm.highSchoolProgramPreference?.preferredCountry || ''}
+                          onChange={(e) => updateEditField('highSchoolProgramPreference', 'preferredCountry', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Okul Türü</label>
+                      <select
+                          value={editForm.highSchoolProgramPreference?.schoolType || ''}
+                          onChange={(e) => updateEditField('highSchoolProgramPreference', 'schoolType', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          <option value="Devlet Lisesi">Devlet Lisesi</option>
+                          <option value="Özel Lise">Özel Lise</option>
+                          <option value="Yatılı Lise">Yatılı Lise</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Program Süresi</label>
+                      <select
+                          value={editForm.highSchoolProgramPreference?.duration || ''}
+                          onChange={(e) => updateEditField('highSchoolProgramPreference', 'duration', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                      >
+                          <option value="">Seçiniz</option>
+                          <option value="1 Dönem">1 Dönem</option>
+                          <option value="1 Yıl">1 Yıl</option>
+                          <option value="2+ Yıl">2+ Yıl</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Program Notları</h4>
+              <textarea
+                  value={editForm.highSchoolProgramPreference?.notes || ''}
+                  onChange={(e) => updateEditField('highSchoolProgramPreference', 'notes', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]"
+                  placeholder="Lise programı tercihi ile ilgili ek notlar..."
+              />
+          </div>
       </div>
    );
 
@@ -2984,10 +3124,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             { id: 'language', label: 'Dil Yeterliliği', icon: Globe },
                             { id: 'academic', label: 'Akademik Durum', icon: GraduationCap },
                             { id: 'citizenship', label: 'Vatandaşlık', icon: Flag },
-                            { id: 'preferences', label: 'Tercihler', icon: BookOpen },
+                            { id: 'preferences', label: 'Akademik Tercih', icon: BookOpen, visible: showsAcademicPreference },
+                            { id: 'languageProgramPreference', label: 'Dil Programı Tercihi', icon: BookOpen, visible: showsLanguageProgramPreference },
+                            { id: 'highSchoolProgramPreference', label: 'Lise Programı Tercihi', icon: School, visible: showsHighSchoolProgramPreference },
                             { id: 'social', label: 'Sosyal & Spor', icon: Activity },
                             { id: 'budget', label: 'Eğitim Bütçesi', icon: Coins },
-                        ].map(tab => (
+                        ].filter(tab => tab.visible !== false).map(tab => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveEditTab(tab.id)}
@@ -3009,6 +3151,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         {activeEditTab === 'academic' && renderEditAcademic()}
                         {activeEditTab === 'citizenship' && renderEditCitizenship()}
                         {activeEditTab === 'preferences' && renderEditPreferences()}
+                        {activeEditTab === 'languageProgramPreference' && renderEditLanguageProgramPreference()}
+                        {activeEditTab === 'highSchoolProgramPreference' && renderEditHighSchoolProgramPreference()}
                         {activeEditTab === 'social' && renderEditSocial()}
                         {activeEditTab === 'budget' && renderEditBudget()}
                     </div>
