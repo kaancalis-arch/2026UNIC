@@ -193,6 +193,10 @@ export const studentService = {
     },
 
     async create(student: Partial<Student>): Promise<Student> {
+        if (!student.targetPrograms || student.targetPrograms.length === 0) {
+            throw new Error('En az bir program seçilmelidir.');
+        }
+
         if (!supabase) {
             return { ...student, id: `local-${Date.now()}` } as Student;
         }

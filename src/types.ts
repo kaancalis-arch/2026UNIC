@@ -105,6 +105,19 @@ export interface AnalysisReport {
     notes?: string;
     wantsCoaching?: boolean;
   };
+  languageProgramPreference?: {
+    preferredProgramType?: string;
+    preferredCountry?: string;
+    duration?: string;
+    notes?: string;
+  };
+  highSchoolProgramPreference?: {
+    preferredProgramType?: string;
+    preferredCountry?: string;
+    schoolType?: string;
+    duration?: string;
+    notes?: string;
+  };
   // 6. Bütçe Aralığı
   budget: {
     range?: string; // 0-6000, 6000-12000 etc.
