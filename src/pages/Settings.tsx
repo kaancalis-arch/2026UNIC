@@ -2778,18 +2778,73 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
                         </h3>
                         
-                        {/* Compact 6-Desk Office */}
-                        <div className="relative rounded-2xl overflow-hidden" style={{
-                            height: '300px',
-                            background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)'
-                        }}>
-                            {/* Wall */}
-                            <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-slate-100 to-slate-200">
-                                <div className="flex justify-around pt-1">
-                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
-                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
-                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
+{/* AI Office with Background Image */}
+                        <div className="relative rounded-2xl overflow-hidden" style={{ height: '500px' }}>
+                            {/* Background Image */}
+                            <img 
+                                src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/AI%20Ofis/Unic%20AI%20Ofisi.jpg" 
+                                alt="AI Office"
+                                className="absolute inset-0 w-full h-full object-cover"
+                            />
+                            
+                            {/* Draggable AI Agents */}
+                            {aiAgents.slice(0, 4).map((agent, idx) => (
+                                <div
+                                    key={agent.id}
+                                    draggable
+                                    onDragEnd={(e) => {
+                                        const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                                        if (rect) {
+                                            const x = ((e.clientX - rect.left) / rect.width) * 100;
+                                            const y = ((e.clientY - rect.top) / rect.height) * 100;
+                                            // Update agent position - you can save this to state
+                                            console.log(`Agent ${agent.id} at: ${x.toFixed(1)}%, ${y.toFixed(1)}%`);
+                                        }
+                                    }}
+                                    onClick={() => handleEditAgent(agent.id)}
+                                    className="absolute cursor-move group"
+                                    style={{
+                                        top: `${20 + idx * 20}%`,
+                                        left: `${15 + idx * 20}%`
+                                    }}
+                                >
+                                    <div className="w-16 h-16 rounded-full border-4 border-white shadow-2xl overflow-hidden bg-slate-200 hover:scale-110 transition-transform">
+                                        {agent.avatar ? (
+                                            <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full bg-indigo-500 flex items-center justify-center">
+                                                <Users className="w-8 h-8 text-white" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Status indicator */}
+                                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${agent.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                    {/* Name tag */}
+                                    <div className="absolute -bottom-8 -left-8 w-32 text-center">
+                                        <div className="text-sm font-bold text-white drop-shadow-lg">{agent.name}</div>
+                                        <div className={`text-xs ${agent.apiKey ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                            {agent.apiKey ? '● Aktif' : '● Pasif'}
+                                        </div>
+                                    </div>
                                 </div>
+                            ))}
+                            
+                            {/* Add Agent Button */}
+                            {aiAgents.length < 4 && (
+                                <div
+                                    onClick={handleAddAgent}
+                                    className="absolute cursor-pointer group"
+                                    style={{ top: '80%', left: '50%' }}
+                                >
+                                    <div className="w-16 h-16 rounded-full border-4 border-dashed border-white/50 bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors">
+                                        <Plus className="w-8 h-8 text-white" />
+                                    </div>
+                                    <div className="absolute -bottom-6 -left-8 w-32 text-center">
+                                        <div className="text-sm font-bold text-white drop-shadow-lg">Yeni Agent</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                             </div>
                             
                             {/* Floor */}
@@ -2925,7 +2980,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 </div>
                         
                         <p className="text-xs text-slate-500 mt-2 text-center">
-                            Yeşil = Aktif | Kırmızı = Pasif | Boş masaya tıklayarak yeni agent ekleyin
+                            AI Agent'ları sürükleyerek istediğiniz yere taşıyabilirsiniz. Yeşil = Aktif | Kırmızı = Pasif
                         </p>
                     </div>
                  </div>
