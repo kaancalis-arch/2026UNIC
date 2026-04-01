@@ -2778,13 +2778,16 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
                         </h3>
                         
-{/* AI Office with Background Image */}
+                        {/* AI Office with Background Image */}
                         <div className="relative rounded-2xl overflow-hidden" style={{ height: '500px' }}>
                             {/* Background Image */}
                             <img 
                                 src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/AI%20Ofis/Unic%20AI%20Ofisi.jpg" 
                                 alt="AI Office"
                                 className="absolute inset-0 w-full h-full object-cover"
+                                onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                }}
                             />
                             
                             {/* Draggable AI Agents */}
