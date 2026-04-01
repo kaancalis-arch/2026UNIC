@@ -2778,155 +2778,140 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
                         </h3>
                         
-                        {/* Realistic Office Room */}
+                        {/* Compact 6-Desk Office */}
                         <div className="relative rounded-2xl overflow-hidden" style={{
-                            background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)',
-                            height: '480px',
-                            boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.1)'
+                            height: '300px',
+                            background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)'
                         }}>
-                            {/* Wall with window effect */}
-                            <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-slate-100 to-slate-200">
-                                <div className="flex justify-around pt-4">
-                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
-                                        <div className="w-full h-full flex flex-col">
-                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
-                                            <div className="h-1/2 bg-blue-50"></div>
-                                        </div>
-                                    </div>
-                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
-                                        <div className="w-full h-full flex flex-col">
-                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
-                                            <div className="h-1/2 bg-blue-50"></div>
-                                        </div>
-                                    </div>
-                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
-                                        <div className="w-full h-full flex flex-col">
-                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
-                                            <div className="h-1/2 bg-blue-50"></div>
-                                        </div>
-                                    </div>
+                            {/* Wall */}
+                            <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-slate-100 to-slate-200">
+                                <div className="flex justify-around pt-1">
+                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
+                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
+                                    <div className="w-8 h-5 bg-blue-200 rounded-t border border-slate-300"></div>
                                 </div>
                             </div>
                             
                             {/* Floor */}
-                            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-amber-100 to-amber-200" style={{
-                                backgroundImage: `repeating-linear-gradient(90deg, transparent, transparent 29px, rgba(0,0,0,0.03) 29px, rgba(0,0,0,0.03) 30px)`
-                            }}></div>
+                            <div className="absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-b from-amber-100 to-amber-200"></div>
                             
-                            {/* Desk 1 - with Worker IN FRONT of desk */}
-                            <div 
-                                onClick={() => handleEditAgent('agent-1')}
-                                className="absolute top-32 left-12 cursor-pointer group"
-                            >
-                                {/* Wide Desk */}
-                                <div className="w-56 h-8 bg-amber-600 rounded-lg shadow-xl flex items-center justify-center relative">
-                                    {/* Laptop on desk - centered */}
-                                    <div className="w-16 h-10 bg-slate-800 rounded shadow-lg flex flex-col items-center justify-center -mt-2">
-                                        <div className="w-14 h-8 bg-slate-700 rounded-sm border-t-2 border-slate-600"></div>
-                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                            {/* === TOP ROW - 3 DESKS === */}
+                            {/* Top Left */}
+                            <div onClick={() => handleEditAgent('agent-1')} className="absolute top-12 left-3 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-amber-600 rounded shadow flex items-center justify-center">
+                                    <div className="w-5 h-3 bg-slate-800 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-700 rounded-sm"></div>
                                     </div>
                                 </div>
-                                {/* Worker in FRONT of desk */}
-                                <div className="absolute top-16 left-20 flex flex-col items-center">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-white overflow-hidden bg-slate-200">
-                                        {aiAgents[0]?.avatar ? (
-                                            <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-indigo-400 flex items-center justify-center">
-                                                <Users className="w-6 h-6 text-white" />
-                                            </div>
-                                        )}
+                                <div className="absolute top-1 left-3 flex flex-col items-center">
+                                    <div className="w-4 h-4 rounded-full shadow border border-white overflow-hidden">
+                                        {aiAgents[0]?.avatar ? <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-indigo-400"></div>}
                                     </div>
-                                    {/* Status indicator */}
-                                    <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full border-2 border-white ${aiAgents[0]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                                    {/* Name & Title below */}
-                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-800">{aiAgents[0]?.name || 'Bos'}</div>
-                                        <div className="text-[9px] text-slate-500">{aiAgents[0]?.jobTitle || ''}</div>
-                                        <div className={`text-[8px] ${aiAgents[0]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {aiAgents[0]?.apiKey ? '● Aktif' : '● Pasif'}
-                                        </div>
+                                    <div className={`w-1.5 h-1.5 rounded-full border border-white ${aiAgents[0]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] font-bold text-slate-800">{aiAgents[0]?.name?.slice(0,6) || '-'}</div>
+                                        <div className={`text-[3px] ${aiAgents[0]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>{aiAgents[0]?.apiKey ? '●A' : '●P'}</div>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Desk 2 - Worker IN FRONT */}
-                            <div 
-                                onClick={() => handleEditAgent('agent-2')}
-                                className="absolute top-32 right-12 cursor-pointer group"
-                            >
-                                <div className="w-56 h-8 bg-amber-600 rounded-lg shadow-xl flex items-center justify-center relative">
-                                    <div className="w-16 h-10 bg-slate-800 rounded shadow-lg flex flex-col items-center justify-center -mt-2">
-                                        <div className="w-14 h-8 bg-slate-700 rounded-sm border-t-2 border-slate-600"></div>
-                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                            {/* Top Center */}
+                            <div onClick={() => handleEditAgent('agent-2')} className="absolute top-12 left-1/2 -translate-x-1/2 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-amber-600 rounded shadow flex items-center justify-center">
+                                    <div className="w-5 h-3 bg-slate-800 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-700 rounded-sm"></div>
                                     </div>
                                 </div>
-                                <div className="absolute top-16 left-20 flex flex-col items-center">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-white overflow-hidden bg-slate-200">
-                                        {aiAgents[1]?.avatar ? (
-                                            <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-emerald-400 flex items-center justify-center">
-                                                <Users className="w-6 h-6 text-white" />
-                                            </div>
-                                        )}
+                                <div className="absolute top-1 left-3 flex flex-col items-center">
+                                    <div className="w-4 h-4 rounded-full shadow border border-white overflow-hidden">
+                                        {aiAgents[1]?.avatar ? <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-emerald-400"></div>}
                                     </div>
-                                    <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full border-2 border-white ${aiAgents[1]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-800">{aiAgents[1]?.name || 'Bos'}</div>
-                                        <div className="text-[9px] text-slate-500">{aiAgents[1]?.jobTitle || ''}</div>
-                                        <div className={`text-[8px] ${aiAgents[1]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {aiAgents[1]?.apiKey ? '● Aktif' : '● Pasif'}
-                                        </div>
+                                    <div className={`w-1.5 h-1.5 rounded-full border border-white ${aiAgents[1]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] font-bold text-slate-800">{aiAgents[1]?.name?.slice(0,6) || '-'}</div>
+                                        <div className={`text-[3px] ${aiAgents[1]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>{aiAgents[1]?.apiKey ? '●A' : '●P'}</div>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Empty Desk 3 */}
-                            <div 
-                                onClick={() => handleAddAgent()}
-                                className="absolute bottom-20 left-12 cursor-pointer group"
-                            >
-                                <div className="w-56 h-8 bg-slate-300 rounded-lg shadow-lg border-2 border-dashed border-slate-400 flex items-center justify-center">
-                                    <div className="w-16 h-10 bg-slate-400 rounded shadow flex flex-col items-center justify-center -mt-2">
-                                        <div className="w-14 h-8 bg-slate-500 rounded-sm"></div>
-                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                            {/* Top Right */}
+                            <div onClick={() => handleAddAgent()} className="absolute top-12 right-3 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-slate-300 rounded shadow border border-dashed border-slate-400">
+                                    <div className="w-5 h-3 bg-slate-400 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-500 rounded-sm"></div>
                                     </div>
                                 </div>
-                                <div className="absolute top-16 left-20 flex flex-col items-center opacity-60">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
-                                        <Plus className="w-6 h-6 text-slate-400" />
+                                <div className="absolute top-1 left-3 flex flex-col items-center opacity-60">
+                                    <div className="w-4 h-4 rounded-full shadow border border-dashed border-slate-400 flex items-center justify-center">
+                                        <Plus className="w-2 h-2 text-slate-400" />
                                     </div>
-                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
-                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] text-slate-500">Boş</div>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Empty Desk 4 */}
-                            <div 
-                                onClick={() => handleAddAgent()}
-                                className="absolute bottom-20 right-12 cursor-pointer group"
-                            >
-                                <div className="w-56 h-8 bg-slate-300 rounded-lg shadow-lg border-2 border-dashed border-slate-400 flex items-center justify-center">
-                                    <div className="w-16 h-10 bg-slate-400 rounded shadow flex flex-col items-center justify-center -mt-2">
-                                        <div className="w-14 h-8 bg-slate-500 rounded-sm"></div>
-                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                            {/* === BOTTOM ROW - 3 DESKS === */}
+                            {/* Bottom Left */}
+                            <div onClick={() => handleAddAgent()} className="absolute bottom-3 left-3 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-slate-300 rounded shadow border border-dashed border-slate-400">
+                                    <div className="w-5 h-3 bg-slate-400 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-500 rounded-sm"></div>
                                     </div>
                                 </div>
-                                <div className="absolute top-16 left-20 flex flex-col items-center opacity-60">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
-                                        <Plus className="w-6 h-6 text-slate-400" />
+                                <div className="absolute top-1 left-3 flex flex-col items-center opacity-60">
+                                    <div className="w-4 h-4 rounded-full shadow border border-dashed border-slate-400 flex items-center justify-center">
+                                        <Plus className="w-2 h-2 text-slate-400" />
                                     </div>
-                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
-                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] text-slate-500">Boş</div>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* UNIC Sign on wall */}
+                            {/* Bottom Center */}
+                            <div onClick={() => handleAddAgent()} className="absolute bottom-3 left-1/2 -translate-x-1/2 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-slate-300 rounded shadow border border-dashed border-slate-400">
+                                    <div className="w-5 h-3 bg-slate-400 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-500 rounded-sm"></div>
+                                    </div>
+                                </div>
+                                <div className="absolute top-1 left-3 flex flex-col items-center opacity-60">
+                                    <div className="w-4 h-4 rounded-full shadow border border-dashed border-slate-400 flex items-center justify-center">
+                                        <Plus className="w-2 h-2 text-slate-400" />
+                                    </div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] text-slate-500">Boş</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Bottom Right */}
+                            <div onClick={() => handleAddAgent()} className="absolute bottom-3 right-3 cursor-pointer">
+                                <div className="w-20 h-2.5 bg-slate-300 rounded shadow border border-dashed border-slate-400">
+                                    <div className="w-5 h-3 bg-slate-400 rounded -mt-2.5">
+                                        <div className="w-3.5 h-2 bg-slate-500 rounded-sm"></div>
+                                    </div>
+                                </div>
+                                <div className="absolute top-1 left-3 flex flex-col items-center opacity-60">
+                                    <div className="w-4 h-4 rounded-full shadow border border-dashed border-slate-400 flex items-center justify-center">
+                                        <Plus className="w-2 h-2 text-slate-400" />
+                                    </div>
+                                    <div className="absolute -bottom-4 -left-2 w-14 text-center">
+                                        <div className="text-[5px] text-slate-500">Boş</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* UNIC Sign */}
+                            <div className="absolute top-1 left-1/2 -translate-x-1/2">
+                                <div className="bg-indigo-900 px-3 py-0.5 rounded">
+                                    <span className="text-white text-[8px] font-bold">UNIC</span>
+                                </div>
+                            </div>
+                            
+                            {/* Floor line */}
+                            <div className="absolute bottom-14 left-0 right-0 h-0.5 bg-amber-300"></div>
                             <div className="absolute top-6 left-1/2 -translate-x-1/2">
                                 <div className="bg-indigo-900 px-8 py-2 rounded-lg shadow-lg">
                                     <span className="text-white font-bold text-xl tracking-widest">UNIC</span>
@@ -2937,20 +2922,10 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             {/* Decor - Plant */}
                             <div className="absolute bottom-4 left-4">
                                 <div className="w-8 h-10 bg-green-600 rounded-t-full"></div>
-                                <div className="w-10 h-6 bg-amber-700 rounded"></div>
-                            </div>
-                            
-                            {/* Decor - Clock */}
-                            <div className="absolute top-6 right-4">
-                                <div className="w-12 h-12 rounded-full bg-white border-4 border-slate-300 shadow flex items-center justify-center">
-                                    <div className="w-1 h-4 bg-slate-800 absolute top-1" style={{transform: 'rotate(0deg)', transformOrigin: 'bottom'}}></div>
-                                    <div className="w-1 h-3 bg-slate-800 absolute top-1" style={{transform: 'rotate(90deg)', transformOrigin: 'bottom'}}></div>
                                 </div>
-                            </div>
-                        </div>
                         
-                        <p className="text-sm text-slate-500 mt-16 text-center">
-                            AI Agent eklemek için boş masaya veya mevcut agentlere tıklayın. Yeşil = Aktif, Kırmızı = Pasif
+                        <p className="text-xs text-slate-500 mt-2 text-center">
+                            Yeşil = Aktif | Kırmızı = Pasif | Boş masaya tıklayarak yeni agent ekleyin
                         </p>
                     </div>
                  </div>
