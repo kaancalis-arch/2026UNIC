@@ -349,3 +349,22 @@ export interface AIAgent {
   permissions: string[];
   avatar?: string;
 }
+
+export const AVATAR_OPTIONS = [
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16',
+];

@@ -2775,65 +2775,109 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                  <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                         <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
+                            <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Toplantı Odası
                         </h3>
                         
-                        {/* Office Grid */}
-                        <div className="relative bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl p-8 min-h-[500px]" style={{
-                            backgroundImage: `url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23cbd5e1" fill-opacity="0.4"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')`,
+                        {/* Meeting Room */}
+                        <div className="relative bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl p-12 min-h-[450px] overflow-hidden" style={{
+                            backgroundImage: `linear-gradient(to bottom, rgba(251,191,36,0.1), rgba(249,115,22,0.1))`,
                         }}>
-                            {/* Desk 1 */}
+                            {/* Floor pattern */}
+                            <div className="absolute inset-0 opacity-30" style={{
+                                backgroundImage: `url('data:image/svg+xml,%3Csvg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"%3E%3Cpath d="M20 20.5V40M20 0v20.5M0 20h40" stroke="%23874a3d" stroke-width="1" fill="none" opacity="0.2"/%3E%3C/svg%3E')`,
+                            }}></div>
+                            
+                            {/* Meeting Table - Center */}
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                {/* Table surface */}
+                                <div className="w-72 h-20 bg-gradient-to-b from-amber-600 to-amber-700 rounded-2xl shadow-2xl flex items-center justify-center relative">
+                                    {/* UNIC Sign */}
+                                    <div className="bg-amber-800 px-6 py-2 rounded-lg shadow-inner">
+                                        <span className="text-white font-bold text-lg tracking-widest">UNIC</span>
+                                    </div>
+                                    
+                                    {/* Phone on table */}
+                                    <div className="absolute -top-3 -left-8 w-8 h-12 bg-slate-800 rounded-lg shadow-lg rotate-12 flex items-center justify-center">
+                                        <div className="w-6 h-8 bg-slate-700 rounded flex"></div>
+                                    </div>
+                                    
+                                    {/* Coffee cup */}
+                                    <div className="absolute -top-2 -right-6 w-6 h-6 bg-white rounded-full shadow flex items-center justify-center">
+                                        <div className="w-4 h-4 bg-amber-800 rounded-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Chair 1 - Left */}
                             <div 
                                 onClick={() => handleEditAgent('agent-1')}
-                                className="absolute top-8 left-8 cursor-pointer hover:scale-105 transition-transform"
+                                className="absolute top-1/2 left-8 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform group"
                             >
-                                <div className="w-24 h-16 bg-amber-700 rounded-lg shadow-lg flex flex-col items-center justify-center relative">
-                                    <div className="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                                <div className="flex flex-col items-center">
+                                    {/* Chair */}
+                                    <div className="w-16 h-16 bg-indigo-600 rounded-full shadow-xl flex items-center justify-center border-4 border-white">
                                         {aiAgents[0]?.avatar ? (
-                                            <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" />
+                                            <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover rounded-full" />
                                         ) : (
-                                            <Users className="w-6 h-6" />
+                                            <Users className="w-8 h-8 text-white" />
                                         )}
                                     </div>
-                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-700 whitespace-nowrap bg-white px-2 py-1 rounded shadow">
-                                        {aiAgents[0]?.name || 'Masa 1'}
+                                    {/* Name tag */}
+                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-700 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                        {aiAgents[0]?.name || 'Bos'}
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Desk 2 */}
+                            {/* Chair 2 - Right */}
                             <div 
                                 onClick={() => handleEditAgent('agent-2')}
-                                className="absolute top-8 right-8 cursor-pointer hover:scale-105 transition-transform"
+                                className="absolute top-1/2 right-8 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform group"
                             >
-                                <div className="w-24 h-16 bg-amber-700 rounded-lg shadow-lg flex flex-col items-center justify-center relative">
-                                    <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-16 h-16 bg-emerald-600 rounded-full shadow-xl flex items-center justify-center border-4 border-white">
                                         {aiAgents[1]?.avatar ? (
-                                            <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" />
+                                            <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover rounded-full" />
                                         ) : (
-                                            <Users className="w-6 h-6" />
+                                            <Users className="w-8 h-8 text-white" />
                                         )}
                                     </div>
-                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-700 whitespace-nowrap bg-white px-2 py-1 rounded shadow">
-                                        {aiAgents[1]?.name || 'Masa 2'}
+                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                                        {aiAgents[1]?.name || 'Bos'}
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Desk 3 */}
+                            {/* Chair 3 - Top */}
                             <div 
                                 onClick={() => handleAddAgent()}
-                                className="absolute bottom-8 left-1/2 -translate-x-1/2 cursor-pointer hover:scale-105 transition-transform"
+                                className="absolute top-8 left-1/2 -translate-x-1/2 cursor-pointer hover:scale-110 transition-transform group"
                             >
-                                <div className="w-24 h-16 bg-slate-300 rounded-lg shadow-lg flex flex-col items-center justify-center border-2 border-dashed border-slate-400">
-                                    <Plus className="w-8 h-8 text-slate-500" />
-                                    <span className="text-xs text-slate-500 mt-1">Yeni Ekle</span>
+                                <div className="flex flex-col items-center">
+                                    <div className="w-16 h-16 bg-slate-200 rounded-full shadow-xl flex items-center justify-center border-4 border-dashed border-slate-400">
+                                        <Plus className="w-8 h-8 text-slate-400" />
+                                    </div>
+                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-500">
+                                        Yeni
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Chair 4 - Bottom */}
+                            <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
+                                <div className="flex flex-col items-center opacity-50">
+                                    <div className="w-16 h-16 bg-slate-300 rounded-full shadow-xl flex items-center justify-center border-4 border-slate-400">
+                                        <Users className="w-8 h-8 text-slate-500" />
+                                    </div>
+                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-500">
+                                        Boş
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <p className="text-sm text-slate-500 mt-16 text-center">
-                            AI Agent eklemek için masalardan birine tıklayın veya yeni masa ekleyin.
+                        <p className="text-sm text-slate-500 mt-6 text-center">
+                            AI Agent eklemek için boş koltuklara veya mevcut agentlere tıklayın.
                         </p>
                     </div>
                  </div>
@@ -3419,8 +3463,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             {/* AI Agent Modal */}
             {isAgentModalOpen && (
                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-fade-in overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-fade-in overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="font-bold text-lg text-slate-800">
                                 {editingAgentId ? 'AI Agent Düzenle' : 'Yeni AI Agent Ekle'}
                             </h3>
@@ -3428,66 +3472,62 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 <XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" />
                             </button>
                         </div>
-                        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }} className="p-6 space-y-4">
-                            {/* Avatar Selection */}
-                            <div className="flex justify-center mb-4">
-                                <div className="relative">
-                                    <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-indigo-200 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-400 transition-colors">
-                                        {agentForm.avatar ? (
-                                            <img src={agentForm.avatar} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <Users className="w-12 h-12 text-slate-400" />
-                                        )}
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={agentForm.avatar || ''}
-                                        onChange={(e) => setAgentForm({...agentForm, avatar: e.target.value})}
-                                        className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                        placeholder="Avatar URL (opsiyonel)"
-                                    />
+                        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }} className="p-4 space-y-3">
+                            {/* Avatar Bucket Selection */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Avatar Seç</label>
+                                <div className="grid grid-cols-8 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
+                                    {['https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16'].map((avatar, idx) => (
+                                        <div 
+                                            key={idx}
+                                            onClick={() => setAgentForm({...agentForm, avatar})}
+                                            className={`w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 ${agentForm.avatar === avatar ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-transparent'}`}
+                                        >
+                                            <img src={avatar} alt="" className="w-full h-full object-cover" />
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Name</label>
                                 <input
                                     required
                                     value={agentForm.name}
                                     onChange={(e) => setAgentForm({...agentForm, name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
                                     placeholder="örn: Danışman Asistanı"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Job Title</label>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
                                 <input
                                     required
                                     value={agentForm.jobTitle}
                                     onChange={(e) => setAgentForm({...agentForm, jobTitle: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
                                     placeholder="örn: Senior Advisor"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Work Description</label>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Work Description</label>
                                 <textarea
                                     required
                                     value={agentForm.workDescription}
                                     onChange={(e) => setAgentForm({...agentForm, workDescription: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none min-h-[80px]"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
                                     placeholder="Agentin görevlerini açıklayın..."
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">AI Model</label>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">AI Model</label>
                                 <select
                                     value={agentForm.aiModel}
                                     onChange={(e) => setAgentForm({...agentForm, aiModel: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
                                 >
                                     <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                                     <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
@@ -3497,7 +3537,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">API Key</label>
                                 <input
                                     type="password"
                                     value={agentForm.apiKey}
@@ -3508,10 +3548,10 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Yetki Alanları</label>
-                                <div className="grid grid-cols-2 gap-2">
+                                <label className="block text-xs font-medium text-slate-700 mb-2">Yetki Alanları</label>
+                                <div className="grid grid-cols-2 gap-1">
                                     {['students.read', 'students.write', 'universities.read', 'universities.write', 'documents.read', 'documents.write', 'applications.read', 'applications.write'].map(perm => (
-                                        <label key={perm} className="flex items-center gap-2 p-2 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                        <label key={perm} className="flex items-center gap-1 p-1.5 border border-slate-200 rounded hover:bg-slate-50 cursor-pointer">
                                             <input
                                                 type="checkbox"
                                                 checked={agentForm.permissions?.includes(perm) || false}
@@ -3524,27 +3564,27 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                                             : (prev.permissions || []).filter(p => p !== perm)
                                                     }));
                                                 }}
-                                                className="w-4 h-4 text-indigo-600 rounded border-slate-300"
+                                                className="w-3 h-3 text-indigo-600 rounded border-slate-300"
                                             />
-                                            <span className="text-xs text-slate-700">{perm}</span>
+                                            <span className="text-[10px] text-slate-700">{perm}</span>
                                         </label>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="pt-4 flex justify-between">
+                            <div className="pt-3 flex justify-between">
                                 {editingAgentId && (
                                     <button
                                         type="button"
                                         onClick={() => { handleDeleteAgent(editingAgentId); setIsAgentModalOpen(false); }}
-                                        className="px-4 py-2 text-rose-600 font-medium hover:bg-rose-50 rounded-lg"
+                                        className="px-3 py-1.5 text-rose-600 font-medium hover:bg-rose-50 rounded-lg text-sm"
                                     >
                                         Sil
                                     </button>
                                 )}
                                 <div className="flex gap-2 ml-auto">
-                                    <button type="button" onClick={() => setIsAgentModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">İptal</button>
-                                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Kaydet</button>
+                                    <button type="button" onClick={() => setIsAgentModalOpen(false)} className="px-3 py-1.5 text-slate-600 font-medium text-sm">İptal</button>
+                                    <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 text-sm">Kaydet</button>
                                 </div>
                             </div>
                         </form>
