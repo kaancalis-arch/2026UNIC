@@ -2772,112 +2772,161 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 </>
             )}
             {activeTab === 'career' && !selectedDefinitionType && (
-                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                 <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                         <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Toplantı Odası
+                            <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
                         </h3>
                         
-                        {/* Meeting Room */}
-                        <div className="relative bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl p-12 min-h-[450px] overflow-hidden" style={{
-                            backgroundImage: `linear-gradient(to bottom, rgba(251,191,36,0.1), rgba(249,115,22,0.1))`,
+                        {/* Realistic Office Room */}
+                        <div className="relative rounded-2xl overflow-hidden" style={{
+                            background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)',
+                            height: '400px',
+                            boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.1)'
                         }}>
-                            {/* Floor pattern */}
-                            <div className="absolute inset-0 opacity-30" style={{
-                                backgroundImage: `url('data:image/svg+xml,%3Csvg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"%3E%3Cpath d="M20 20.5V40M20 0v20.5M0 20h40" stroke="%23874a3d" stroke-width="1" fill="none" opacity="0.2"/%3E%3C/svg%3E')`,
+                            {/* Wall with window effect */}
+                            <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-slate-100 to-slate-200">
+                                {/* Window frames */}
+                                <div className="flex justify-around pt-4">
+                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
+                                        <div className="w-full h-full flex flex-col">
+                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
+                                            <div className="h-1/2 bg-blue-50"></div>
+                                        </div>
+                                    </div>
+                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
+                                        <div className="w-full h-full flex flex-col">
+                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
+                                            <div className="h-1/2 bg-blue-50"></div>
+                                        </div>
+                                    </div>
+                                    <div className="w-20 h-16 bg-blue-200 rounded-t-lg border-4 border-slate-300">
+                                        <div className="w-full h-full flex flex-col">
+                                            <div className="h-1/2 border-b border-slate-400 bg-blue-100"></div>
+                                            <div className="h-1/2 bg-blue-50"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Floor */}
+                            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-amber-100 to-amber-200" style={{
+                                backgroundImage: `repeating-linear-gradient(90deg, transparent, transparent 29px, rgba(0,0,0,0.03) 29px, rgba(0,0,0,0.03) 30px)`
                             }}></div>
                             
-                            {/* Meeting Table - Center */}
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                                {/* Table surface */}
-                                <div className="w-72 h-20 bg-gradient-to-b from-amber-600 to-amber-700 rounded-2xl shadow-2xl flex items-center justify-center relative">
-                                    {/* UNIC Sign */}
-                                    <div className="bg-amber-800 px-6 py-2 rounded-lg shadow-inner">
-                                        <span className="text-white font-bold text-lg tracking-widest">UNIC</span>
-                                    </div>
-                                    
-                                    {/* Phone on table */}
-                                    <div className="absolute -top-3 -left-8 w-8 h-12 bg-slate-800 rounded-lg shadow-lg rotate-12 flex items-center justify-center">
-                                        <div className="w-6 h-8 bg-slate-700 rounded flex"></div>
-                                    </div>
-                                    
-                                    {/* Coffee cup */}
-                                    <div className="absolute -top-2 -right-6 w-6 h-6 bg-white rounded-full shadow flex items-center justify-center">
-                                        <div className="w-4 h-4 bg-amber-800 rounded-full"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* Chair 1 - Left */}
+                            {/* Desk 1 - Worker 1 */}
                             <div 
                                 onClick={() => handleEditAgent('agent-1')}
-                                className="absolute top-1/2 left-8 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform group"
+                                className="absolute top-36 left-16 cursor-pointer group"
                             >
-                                <div className="flex flex-col items-center">
-                                    {/* Chair */}
-                                    <div className="w-16 h-16 bg-indigo-600 rounded-full shadow-xl flex items-center justify-center border-4 border-white">
-                                        {aiAgents[0]?.avatar ? (
-                                            <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover rounded-full" />
-                                        ) : (
-                                            <Users className="w-8 h-8 text-white" />
-                                        )}
+                                {/* Worker Avatar & Desk */}
+                                <div className="flex items-end">
+                                    {/* Desk */}
+                                    <div className="w-28 h-4 bg-amber-700 rounded shadow-lg"></div>
+                                    {/* Worker */}
+                                    <div className="absolute -bottom-4 -left-2 flex flex-col items-center">
+                                        <div className="w-12 h-12 rounded-full shadow-lg border-2 border-white overflow-hidden">
+                                            {aiAgents[0]?.avatar ? (
+                                                <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full bg-indigo-400"></div>
+                                            )}
+                                        </div>
+                                        {/* Status indicator */}
+                                        <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${aiAgents[0]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                                     </div>
-                                    {/* Name tag */}
-                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-700 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                        {aiAgents[0]?.name || 'Bos'}
+                                </div>
+                                {/* Laptop on desk */}
+                                <div className="absolute -top-6 -right-2 w-10 h-7 bg-slate-800 rounded shadow-lg flex items-center justify-center">
+                                    <div className="w-8 h-5 bg-slate-700 rounded-sm"></div>
+                                </div>
+                                {/* Name & Title */}
+                                <div className="absolute -bottom-14 -left-8 w-40 text-center">
+                                    <div className="text-xs font-bold text-slate-800">{aiAgents[0]?.name || 'Bos'}</div>
+                                    <div className="text-[10px] text-slate-500">{aiAgents[0]?.jobTitle || ''}</div>
+                                    <div className={`text-[9px] ${aiAgents[0]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {aiAgents[0]?.apiKey ? '● Aktif' : '● Pasif'}
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Chair 2 - Right */}
+                            {/* Desk 2 - Worker 2 */}
                             <div 
                                 onClick={() => handleEditAgent('agent-2')}
-                                className="absolute top-1/2 right-8 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform group"
+                                className="absolute top-36 right-16 cursor-pointer group"
                             >
-                                <div className="flex flex-col items-center">
-                                    <div className="w-16 h-16 bg-emerald-600 rounded-full shadow-xl flex items-center justify-center border-4 border-white">
-                                        {aiAgents[1]?.avatar ? (
-                                            <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover rounded-full" />
-                                        ) : (
-                                            <Users className="w-8 h-8 text-white" />
-                                        )}
+                                <div className="flex items-end">
+                                    <div className="w-28 h-4 bg-amber-700 rounded shadow-lg"></div>
+                                    <div className="absolute -bottom-4 -left-2 flex flex-col items-center">
+                                        <div className="w-12 h-12 rounded-full shadow-lg border-2 border-white overflow-hidden">
+                                            {aiAgents[1]?.avatar ? (
+                                                <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full bg-emerald-400"></div>
+                                            )}
+                                        </div>
+                                        <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${aiAgents[1]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                                     </div>
-                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                                        {aiAgents[1]?.name || 'Bos'}
+                                </div>
+                                <div className="absolute -top-6 -right-2 w-10 h-7 bg-slate-800 rounded shadow-lg flex items-center justify-center">
+                                    <div className="w-8 h-5 bg-slate-700 rounded-sm"></div>
+                                </div>
+                                <div className="absolute -bottom-14 -left-8 w-40 text-center">
+                                    <div className="text-xs font-bold text-slate-800">{aiAgents[1]?.name || 'Bos'}</div>
+                                    <div className="text-[10px] text-slate-500">{aiAgents[1]?.jobTitle || ''}</div>
+                                    <div className={`text-[9px] ${aiAgents[1]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {aiAgents[1]?.apiKey ? '● Aktif' : '● Pasif'}
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Chair 3 - Top */}
+                            {/* Empty Desk 3 */}
                             <div 
                                 onClick={() => handleAddAgent()}
-                                className="absolute top-8 left-1/2 -translate-x-1/2 cursor-pointer hover:scale-110 transition-transform group"
+                                className="absolute bottom-16 left-1/2 -translate-x-1/2 cursor-pointer group"
                             >
-                                <div className="flex flex-col items-center">
-                                    <div className="w-16 h-16 bg-slate-200 rounded-full shadow-xl flex items-center justify-center border-4 border-dashed border-slate-400">
-                                        <Plus className="w-8 h-8 text-slate-400" />
+                                <div className="flex items-end">
+                                    <div className="w-28 h-4 bg-slate-300 rounded shadow-lg border-2 border-dashed border-slate-400"></div>
+                                    <div className="absolute -bottom-4 -left-2 flex flex-col items-center opacity-50">
+                                        <div className="w-12 h-12 rounded-full shadow-lg border-2 border-dashed border-slate-400 flex items-center justify-center">
+                                            <Plus className="w-6 h-6 text-slate-400" />
+                                        </div>
                                     </div>
-                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-500">
-                                        Yeni
-                                    </div>
+                                </div>
+                                <div className="absolute -top-6 -right-2 w-10 h-7 bg-slate-400 rounded shadow-lg flex items-center justify-center">
+                                    <div className="w-8 h-5 bg-slate-500 rounded-sm"></div>
+                                </div>
+                                <div className="absolute -bottom-14 -left-8 w-40 text-center">
+                                    <div className="text-xs font-bold text-slate-500">Boş Masa</div>
+                                    <div className="text-[9px] text-slate-400">+ Yeni Agent Ekle</div>
                                 </div>
                             </div>
                             
-                            {/* Chair 4 - Bottom */}
-                            <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
-                                <div className="flex flex-col items-center opacity-50">
-                                    <div className="w-16 h-16 bg-slate-300 rounded-full shadow-xl flex items-center justify-center border-4 border-slate-400">
-                                        <Users className="w-8 h-8 text-slate-500" />
-                                    </div>
-                                    <div className="mt-2 bg-white px-3 py-1 rounded-full shadow text-xs font-bold text-slate-500">
-                                        Boş
-                                    </div>
+                            {/* UNIC Sign on wall */}
+                            <div className="absolute top-6 left-1/2 -translate-x-1/2">
+                                <div className="bg-indigo-900 px-8 py-2 rounded-lg shadow-lg">
+                                    <span className="text-white font-bold text-xl tracking-widest">UNIC</span>
+                                    <span className="text-indigo-300 text-xs ml-2">AI OFFICE</span>
+                                </div>
+                            </div>
+                            
+                            {/* Decor - Plant */}
+                            <div className="absolute bottom-4 left-4">
+                                <div className="w-8 h-10 bg-green-600 rounded-t-full"></div>
+                                <div className="w-10 h-6 bg-amber-700 rounded"></div>
+                            </div>
+                            
+                            {/* Decor - Clock */}
+                            <div className="absolute top-6 right-4">
+                                <div className="w-12 h-12 rounded-full bg-white border-4 border-slate-300 shadow flex items-center justify-center">
+                                    <div className="w-1 h-4 bg-slate-800 absolute top-1" style={{transform: 'rotate(0deg)', transformOrigin: 'bottom'}}></div>
+                                    <div className="w-1 h-3 bg-slate-800 absolute top-1" style={{transform: 'rotate(90deg)', transformOrigin: 'bottom'}}></div>
                                 </div>
                             </div>
                         </div>
                         
-                        <p className="text-sm text-slate-500 mt-6 text-center">
-                            AI Agent eklemek için boş koltuklara veya mevcut agentlere tıklayın.
+                        <p className="text-sm text-slate-500 mt-16 text-center">
+                            AI Agent eklemek için boş masaya veya mevcut agentlere tıklayın. Yeşil = Aktif, Kırmızı = Pasif
                         </p>
                     </div>
                  </div>
