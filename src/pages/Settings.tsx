@@ -2787,7 +2787,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 height: '500px',
                                 backgroundColor: '#e2e8f0',
                                 backgroundImage: 'url("https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/AI%20Ofis/AI%20Ofis.png")',
-                                backgroundSize: 'cover',
+                                backgroundSize: '60%',
                                 backgroundPosition: 'center'
                             }}
                         >                            
