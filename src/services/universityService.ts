@@ -28,8 +28,9 @@ export const universityService = {
           rankingUrl: row.ranking_url || '',
           websiteUrl: row.website_url,
           departmentsUrl: row.departments_url,
-          consultingType: row.consulting_type, // Added mapping
-          sharedInstitutionId: row.shared_institution_id, // Added mapping
+          consultingType: row.consulting_type,
+          universityTypes: row.university_types || [],
+          sharedInstitutionId: row.shared_institution_id,
           programs: row.programs || []
         }));
     } catch (err) {
@@ -39,7 +40,11 @@ export const universityService = {
   },
 
   async upsert(university: UniversityData): Promise<UniversityData> {
-    if (!supabase) return university;
+    // Supabase bağlantısı yoksa mock data kullan
+    if (!supabase) {
+      console.warn('Supabase not configured, using local mock data');
+      return university;
+    }
 
     const isLocalId = university.id.startsWith('uni-');
 
@@ -50,48 +55,57 @@ export const universityService = {
         ranking_url: university.rankingUrl,
         website_url: university.websiteUrl,
         departments_url: university.departmentsUrl,
-        consulting_type: university.consultingType, // Added mapping
-        shared_institution_id: university.sharedInstitutionId, // Added mapping
+        consulting_type: university.consultingType,
+        university_types: university.universityTypes || [],
+        shared_institution_id: university.sharedInstitutionId,
         programs: university.programs || []
     };
 
-    if (!isLocalId) {
-        dbPayload.id = university.id;
-    }
+    // Yeni kayıt için ID oluştur, güncelleme için mevcut ID'yi kullan
+    if (isLocalId) {
+      // Önce insert deneme
+      const { data, error } = await supabase
+        .from('universities')
+        .insert({ ...dbPayload, id: university.id })
+        .select()
+        .single();
 
-    try {
-        const { data, error } = await supabase
+      if (error) {
+        // 23505 = unique_violation (duplicate key), upsert'e geç
+        if (error.code !== '23505') {
+          console.error('Insert failed:', error);
+          throw new Error(error.message);
+        }
+        // Upsert dene
+        const { data: upsertData, error: upsertError } = await supabase
           .from('universities')
-          .upsert(dbPayload)
+          .upsert({ ...dbPayload, id: university.id })
           .select()
           .single();
-
-        if (error) {
-            console.error('Supabase upsert failed:', error.message, 'Code:', error.code);
-            if (error.code === '42501') {
-                throw new Error("VERİTABANI YETKİ HATASI: Kayıt yapılamadı. Lütfen Supabase'de 'universities' tablosu için INSERT/UPDATE RLS Policy (İzinleri) eklediğinizden emin olun.");
-            }
-            throw new Error(error.message);
-        }
         
-        return {
-            id: data.id,
-            name: data.name,
-            logo: data.logo,
-            countries: data.countries || [],
-            rankingUrl: data.ranking_url || '',
-            websiteUrl: data.website_url,
-            departmentsUrl: data.departments_url,
-            consultingType: data.consulting_type, // Added mapping
-            sharedInstitutionId: data.shared_institution_id, // Added mapping
-            programs: data.programs || []
-        };
-    } catch (err: any) {
-        console.error('Error in universityService.upsert:', err);
-        throw err;
+        if (upsertError) {
+          console.error('Upsert failed:', upsertError);
+          throw new Error(upsertError.message);
+        }
+        return upsertData;
+      }
+      return data;
+    } else {
+      // Mevcut ID ile güncelleme
+      const { data, error } = await supabase
+        .from('universities')
+        .upsert(dbPayload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Upsert failed:', error);
+        throw new Error(error.message);
+      }
+      return data;
     }
   },
-  
+
   async uploadLogo(file: File): Promise<string> {
       if (!supabase) throw new Error("Supabase is not configured.");
       

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
 import { interestedProgramService } from '../services/interestedProgramService';
@@ -1738,6 +1739,36 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
+            {/* Header Section */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8"
+            >
+                {/* Background decorations */}
+                <div className="absolute inset-0">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-teal-500/10 rounded-full blur-3xl" />
+                </div>
+
+                <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                            CRM
+                        </h1>
+                        <p className="text-indigo-300/70 mt-1 text-sm">Öğrenci Yönetim Sistemi</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10">
+                            <Users className="w-4 h-4 text-indigo-400" />
+                            <span className="text-sm font-semibold text-white">{students.length}</span>
+                            <span className="text-xs font-medium text-white/50">Toplam Öğrenci</span>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+
             {/* Header Controls */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex-1 w-full space-y-3 max-w-3xl">

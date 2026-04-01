@@ -1,47 +1,126 @@
 
-import { Student, PipelineStage, SystemUser, UserRole, CountryData, UniversityData, MainDegreeData, InterestedProgramData } from "../types";
+import { Student, PipelineStage, SystemUser, UserRole, CountryData, UniversityData, MainDegreeData, InterestedProgramData, Branch } from "../types";
 
+
+export const MOCK_BRANCHES: Branch[] = [
+  {
+    id: "branch-1",
+    name: "İstanbul Şubesi",
+    country: "Türkiye",
+    city: "İstanbul",
+    address: "Kadıköy, İstanbul",
+    phone: "+90 216 123 4567",
+    email: "istanbul@unic.com",
+    status: "active",
+    manager_id: "branch-manager-1",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
+  },
+  {
+    id: "branch-2",
+    name: "Ankara Şubesi",
+    country: "Türkiye",
+    city: "Ankara",
+    address: "Çankaya, Ankara",
+    phone: "+90 312 123 4567",
+    email: "ankara@unic.com",
+    status: "active",
+    manager_id: "branch-manager-2",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
+  }
+];
 
 export const MOCK_USERS: SystemUser[] = [
   {
+    id: "super-admin-1",
+    full_name: "System Super Admin",
+    email: "superadmin@unic.com",
+    phone: "+90 216 123 4567",
+    role: UserRole.SUPER_ADMIN,
+    branch_id: "branch-1", // Super admin can access all, but assign to one
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=SuperAdmin",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
+  },
+  {
     id: "admin-1",
-    firstName: "System",
-    lastName: "Admin",
+    full_name: "System Admin",
     email: "admin@unic.com",
+    phone: "+90 216 123 4568",
     role: UserRole.ADMIN,
-    isActive: true,
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
+    branch_id: "branch-1",
+    parent_user_id: "super-admin-1",
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
+  },
+  {
+    id: "branch-manager-1",
+    full_name: "Ahmet Yılmaz",
+    email: "ahmet@unic.com",
+    phone: "+90 216 123 4569",
+    role: UserRole.BRANCH_MANAGER,
+    branch_id: "branch-1",
+    parent_user_id: "admin-1",
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=BranchManager",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
   },
   {
     id: "consultant-1",
-    firstName: "Jane",
-    lastName: "Cooper",
+    full_name: "Jane Cooper",
     email: "jane@unic.com",
+    phone: "+90 216 123 4570",
     role: UserRole.CONSULTANT,
-    isActive: true,
-    parentId: "admin-1",
-    phone: "+1 555 0123",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jane"
+    branch_id: "branch-1",
+    parent_user_id: "branch-manager-1",
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jane",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
   },
   {
     id: "rep-1",
-    firstName: "Robert",
-    lastName: "Fox",
+    full_name: "Robert Fox",
     email: "robert@agency.com",
+    phone: "+90 216 123 4571",
     role: UserRole.REPRESENTATIVE,
-    isActive: true,
-    parentId: "consultant-1",
-    phone: "+1 555 0199",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Robert"
+    branch_id: "branch-1",
+    parent_user_id: "consultant-1",
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Robert",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
+  },
+  {
+    id: "student-rep-1",
+    full_name: "Mehmet Kaya",
+    email: "mehmet@unic.com",
+    phone: "+90 216 123 4572",
+    role: UserRole.STUDENT_REPRESENTATIVE,
+    branch_id: "branch-1",
+    parent_user_id: "rep-1",
+    status: "active",
+    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=StudentRep",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
   },
   {
     id: "student-user-1",
-    firstName: "Alex",
-    lastName: "Mercer",
+    full_name: "Alex Mercer",
     email: "alex.m@example.com",
+    phone: "+90 216 123 4573",
     role: UserRole.STUDENT,
-    isActive: true,
-    avatarUrl: "https://picsum.photos/200/200?random=1"
+    branch_id: "branch-1",
+    parent_user_id: "student-rep-1",
+    status: "active",
+    avatarUrl: "https://picsum.photos/200/200?random=1",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2023-01-01T00:00:00Z"
   }
 ];
 

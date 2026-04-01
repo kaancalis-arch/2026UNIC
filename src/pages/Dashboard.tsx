@@ -273,11 +273,8 @@ const Dashboard: React.FC = () => {
         <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
           <div>
             <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-              UNIC Dashboard
+              Dashboard
             </h1>
-            <p className="text-slate-300 mt-2 text-sm md:text-base max-w-2xl">
-              Bugun ve takip eden gunler icin gorev yogunlugu, tercih edilen ulkeler ve durum bazli takip ozeti.
-            </p>
           </div>
 
           <div className="flex items-center gap-3">

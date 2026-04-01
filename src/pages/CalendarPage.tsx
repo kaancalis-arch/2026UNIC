@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, CalendarEntry, CalendarEvent, EVENT_TYPES, formatEventTime } from '../components/Calendar';
-import { Student, SystemUser } from '../types';
+import { Student, SystemUser, UserRole } from '../types';
 import { studentService } from '../services/studentService';
 import { calendarService } from '../services/calendarService';
 import { MOCK_USERS } from '../services/mockData';
@@ -278,17 +278,17 @@ const CalendarPage: React.FC = () => {
                             handleUpdateCalendarEvent({
                               ...event,
                               assignedUserId: e.target.value || undefined,
-                              assignedUserName: selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}` : undefined,
+                              assignedUserName: selectedUser ? selectedUser.full_name : undefined,
                             });
                           }}
                           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                           <option value="">Atanan kullanıcı seçin</option>
                           {users
-                            .filter((user) => user.isActive && user.role !== 'Student')
+                            .filter((user) => user.isActive && user.role !== UserRole.STUDENT)
                             .map((user) => (
                               <option key={user.id} value={user.id}>
-                                {`${user.firstName} ${user.lastName} - ${user.role}`}
+                                {`${user.full_name} - ${user.role}`}
                               </option>
                             ))}
                         </select>

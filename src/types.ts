@@ -10,6 +10,20 @@ export enum PipelineStage {
 
 export type AnalyseStatus = 'Mid' | 'Hot' | 'Super Hot';
 
+export interface Branch {
+  id: string;
+  name: string;
+  country: string;
+  city: string;
+  address: string;
+  phone: string;
+  email: string;
+  status: 'active' | 'passive';
+  manager_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ApplicationStatus = 'Başvuru Aşamasında' | 'Sonuç Bekleniyor' | 'Şartlı Kabul' | 'Kabul' | 'Red';
 
 export interface UniversityApplication {
@@ -21,22 +35,27 @@ export interface UniversityApplication {
 }
 
 export enum UserRole {
+  SUPER_ADMIN = 'Super Admin',
   ADMIN = 'Admin',
-  CONSULTANT = 'Consultant',
-  REPRESENTATIVE = 'Representative',
-  STUDENT = 'Student'
+  BRANCH_MANAGER = 'Şube Müdürü',
+  CONSULTANT = 'Danışman',
+  REPRESENTATIVE = 'Temsilci',
+  STUDENT_REPRESENTATIVE = 'Öğrenci Temsilci',
+  STUDENT = 'Öğrenci'
 }
 
 export interface SystemUser {
   id: string;
-  firstName: string;
-  lastName: string;
+  full_name: string;
   email: string;
+  phone: string;
   role: UserRole;
-  isActive: boolean;
+  branch_id: string;
+  parent_user_id?: string;
+  status: 'active' | 'passive';
   avatarUrl?: string;
-  parentId?: string; // ID of the consultant (if Representative) or Admin (if Consultant)
-  phone?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ParentInfo {
@@ -291,8 +310,9 @@ export interface UniversityData {
   websiteUrl: string;
   departmentsUrl: string;
   tuitionRange?: string;
-  consultingType?: string; // e.g. "Depozito", "Danışmanlık", "Kabul Sonrası Danışmanlık", "Depozito - Paylaşımlı"
-  sharedInstitutionId?: string; // Ref to SharedInstitutionData setup if "Depozito - Paylaşımlı"
+  consultingType?: string;
+  universityTypes?: string[];
+  sharedInstitutionId?: string;
   programs?: UniversityProgram[];
 }
 export interface MainCategoryData {

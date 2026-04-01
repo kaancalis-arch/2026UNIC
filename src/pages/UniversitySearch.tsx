@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { 
     Search, Filter, Globe, GraduationCap, MapPin, 
     Share2, FileDown, CheckCircle2, Building, 
@@ -236,56 +237,57 @@ const UniversitySearch: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
-            {/* Header */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            {/* Header Section */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-red-950 via-rose-900 to-slate-900 p-6 md:p-8"
+            >
+                {/* Background decorations */}
+                <div className="absolute inset-0">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-red-500/10 rounded-full blur-3xl" />
+                </div>
+
+                <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
                     <div>
-                        <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight">University Search</h2>
-                        <p className="text-slate-500 mt-1">Discover programs and partner universities worldwide.</p>
+                        <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                            University Search
+                        </h1>
+                        <p className="text-rose-300/70 mt-1 text-sm">Discover programs and partner universities worldwide.</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
                         {selectedUnis.length > 0 && (
-                            <div className="mt-3 flex items-center gap-2">
-                                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 uppercase tracking-wider">
-                                    {selectedUnis.length} Üniversite Seçildi
-                                </span>
-                                <button 
-                                    onClick={() => setSelectedUnis([])}
-                                    className="text-[10px] font-bold text-slate-400 hover:text-rose-500 uppercase tracking-wider transition-colors"
-                                >
-                                    Seçimleri Temizle
-                                </button>
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10">
+                                <CheckCircle2 className="w-4 h-4 text-rose-400" />
+                                <span className="text-sm font-semibold text-white">{selectedUnis.length}</span>
+                                <span className="text-xs font-medium text-white/50">Üniversite Seçildi</span>
                             </div>
                         )}
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
                         <button 
                             onClick={handleExportPDF}
                             disabled={selectedUnis.length === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 font-bold rounded-lg border border-slate-200 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-[10px] uppercase"
+                            className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-xl hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
-                            <FileDown className="w-3.5 h-3.5 text-indigo-600" />
-                            PDF
+                            <FileDown className="w-4 h-4 text-rose-400" />
+                            <span className="text-sm font-semibold">PDF</span>
                         </button>
                         <button 
                             onClick={handleShareWhatsApp}
                             disabled={selectedUnis.length === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-[10px] uppercase"
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
-                            <Phone className="w-3.5 h-3.5" />
-                            WhatsApp
-                        </button>
-                        <button 
-                            onClick={handleCopyToClipboard}
-                            disabled={selectedUnis.length === 0}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 font-bold rounded-lg border border-slate-200 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-[10px] uppercase"
-                        >
-                            <ClipboardCopy className="w-3.5 h-3.5 text-indigo-600" />
-                            Kopyala
+                            <Phone className="w-4 h-4" />
+                            <span className="text-sm font-semibold">WhatsApp</span>
                         </button>
                     </div>
                 </div>
+            </motion.div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-8">
+            {/* Search and Filters */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input 
@@ -398,18 +400,41 @@ const UniversitySearch: React.FC = () => {
                 </div>
             ) : (
                 <>
-                    <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-slate-500">
-                            <span className="text-slate-800 font-bold">{filteredUniversities.length}</span> üniversite listeleniyor
-                        </p>
-                        {selectedUnis.length > 0 && (
-                            <button 
-                                onClick={() => setSelectedUnis([])}
-                                className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
-                            >
-                                Seçimleri Temizle ({selectedUnis.length})
-                            </button>
-                        )}
+                    {/* Results Header */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Bulunan Üniversiteler</h3>
+                                <p className="text-sm font-medium text-slate-500 mt-1">
+                                    <span className="text-slate-800 font-bold">{filteredUniversities.length}</span> üniversite bulundu
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                {selectedUnis.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                        <span className="text-sm font-semibold text-slate-700">{selectedUnis.length} üniversite seçildi</span>
+                                    </div>
+                                )}
+                                {selectedUnis.length > 0 && (
+                                    <button
+                                        onClick={() => setSelectedUnis([])}
+                                        className="px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors"
+                                    >
+                                        Seçimleri Temizle
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* University Grid Header */}
+                    <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-base font-semibold text-slate-700">Üniversite Listesi</h4>
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <Building className="w-4 h-4" />
+                            <span>Detay için tıklayın</span>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -427,7 +452,7 @@ const UniversitySearch: React.FC = () => {
                                 >
                                     {/* Selection Badge */}
                                     <div className="flex items-center justify-between mb-4">
-                                        <div className="w-20 h-20 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden p-2 group-hover:scale-110 transition-transform">
+                                        <div className="w-40 h-40 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden p-2 group-hover:scale-110 transition-transform">
                                             {uni.logo ? (
                                                 <img src={uni.logo} alt="" className="w-full h-full object-contain" />
                                             ) : (

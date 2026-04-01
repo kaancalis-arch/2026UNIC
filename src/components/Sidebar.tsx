@@ -46,7 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ];
 
-    if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.CONSULTANT || currentUser.role === UserRole.REPRESENTATIVE) {
+    if (currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.BRANCH_MANAGER || currentUser.role === UserRole.CONSULTANT || currentUser.role === UserRole.REPRESENTATIVE || currentUser.role === UserRole.STUDENT_REPRESENTATIVE) {
       baseItems.push({ id: 'students', label: 'CRM', icon: Users });
     }
 
@@ -81,18 +81,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div className={`fixed left-0 top-0 z-50 flex h-screen flex-col bg-slate-900 text-white shadow-xl transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-      <div className={`flex items-center border-b border-slate-800 p-6 transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'gap-3'}`}>
+    <div className={`fixed left-0 top-0 z-50 flex h-screen flex-col bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 text-white shadow-xl transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
+      <div className={`flex items-center border-b border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'justify-center'}`}>
         <img
-          src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBMb2dvLnBuZyIsImlhdCI6MTc3NDgxMTc3MCwiZXhwIjoyNjM4ODExNzcwfQ.NQe5m-iu8IF5TZDclVPaXJ8vElwWtm_xiy6ua_gXuV4"
+          src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20Dark%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBEYXJrIExvZ28ucG5nIiwiaWF0IjoxNzc0OTc5NDE5LCJleHAiOjI2Mzg5Nzk0MTl9.8gNdL0DIenvyeJ9eopJ0Qfm_5m_ggT-FB-KhVUpnzg0"
           alt="UNIC logo"
-          className="h-10 w-10 shrink-0 rounded-lg object-contain bg-white p-1"
+          className={`${isCollapsed ? 'h-14 w-14' : 'h-28 w-auto max-w-[260px]'} shrink-0 rounded-2xl bg-transparent object-contain`}
         />
-        {!isCollapsed && (
-          <div className="animate-fade-in">
-            <h1 className="text-sm font-semibold tracking-tight text-white">My University Counsellor</h1>
-          </div>
-        )}
       </div>
 
       <button
@@ -156,7 +151,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className={`space-y-2 border-t border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'px-2' : ''}`}>
-        {currentUser.role === UserRole.ADMIN && (
+        {(currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.ADMIN) && (
           <button
             onClick={() => setPage('settings')}
             title={isCollapsed ? 'System Settings' : ''}
@@ -170,20 +165,24 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div
           onClick={onSwitchUser}
           className={`w-full cursor-pointer rounded-xl border border-slate-800 bg-slate-800/50 transition-colors hover:border-slate-700 hover:bg-slate-800 ${isCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-3'} flex items-center`}
-          title={isCollapsed ? `${currentUser.firstName} (${currentUser.role})` : 'Click to switch simulated role (Demo)'}
+          title={isCollapsed ? `${currentUser.full_name} (${currentUser.role})` : 'Click to switch simulated role (Demo)'}
         >
           <div className="relative shrink-0">
             <img src={currentUser.avatarUrl} className="h-8 w-8 rounded-full bg-slate-700" />
             <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${
+              currentUser.role === UserRole.SUPER_ADMIN ? 'bg-red-500' :
               currentUser.role === UserRole.ADMIN ? 'bg-purple-500' :
+              currentUser.role === UserRole.BRANCH_MANAGER ? 'bg-blue-500' :
               currentUser.role === UserRole.CONSULTANT ? 'bg-indigo-500' :
+              currentUser.role === UserRole.REPRESENTATIVE ? 'bg-green-500' :
+              currentUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'bg-yellow-500' :
               'bg-amber-500'
             }`} />
           </div>
           {!isCollapsed && (
             <>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">{currentUser.firstName}</p>
+                <p className="truncate text-sm font-medium text-white">{currentUser.full_name}</p>
                 <p className="text-[10px] uppercase tracking-wider text-slate-400">{currentUser.role}</p>
               </div>
               <ChevronRight className="h-4 w-4 text-slate-500" />

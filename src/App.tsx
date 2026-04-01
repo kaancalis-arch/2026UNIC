@@ -9,9 +9,10 @@ import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
 import Roadmaps from './pages/Roadmaps';
 import UniversitySearch from './pages/UniversitySearch';
+import UniversityDetail from './pages/UniversityDetail';
 import CalendarPage from './pages/CalendarPage';
 import Statistics from './pages/Statistics';
-import { Student, SystemUser, UserRole } from './types';
+import { Student, SystemUser, UserRole, UniversityData } from './types';
 import { MOCK_USERS } from './services/mockData';
 
 const getStageFromHash = () => {
@@ -33,6 +34,7 @@ const getStageFromHash = () => {
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
   
@@ -47,6 +49,16 @@ const App: React.FC = () => {
   const handleBackToStudents = () => {
     setSelectedStudent(null);
     setCurrentPage('students');
+  };
+
+  const handleUniversitySelect = (university: UniversityData) => {
+    setSelectedUniversity(university);
+    setCurrentPage('university-detail');
+  };
+
+  const handleBackToUniversities = () => {
+    setSelectedUniversity(null);
+    setCurrentPage('settings');
   };
 
   useEffect(() => {
@@ -96,10 +108,16 @@ const App: React.FC = () => {
            currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} /> : <Dashboard />
          );
       case 'settings':
-        if (currentUser.role !== UserRole.ADMIN) return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
-        return <Settings />;
+        if (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN) return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
+        return <Settings onUniversitySelect={handleUniversitySelect} />;
       case 'universities':
         return <UniversitySearch />;
+      case 'university-detail':
+        return selectedUniversity ? (
+          <UniversityDetail university={selectedUniversity} onBack={handleBackToUniversities} />
+        ) : (
+          <Settings />
+        );
       case 'roadmap':
         return <Roadmaps />;
       case 'files':

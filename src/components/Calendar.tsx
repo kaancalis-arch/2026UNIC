@@ -283,7 +283,7 @@ const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, o
       type: eventType,
       link: eventLink.trim() || undefined,
       assignedUserId: assignedUser?.id,
-      assignedUserName: assignedUser ? `${assignedUser.firstName} ${assignedUser.lastName}` : undefined,
+      assignedUserName: assignedUser ? assignedUser.full_name : undefined,
     };
     
     onAddEvent(newEvent);
@@ -532,7 +532,7 @@ const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, o
                   <option value="">Kullanıcı seçin</option>
                   {availableUsers.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {`${user.firstName} ${user.lastName} - ${user.role}`}
+                      {`${user.full_name} - ${user.role}`}
                     </option>
                   ))}
                 </select>
@@ -606,7 +606,7 @@ const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, o
                         type: eventType,
                         link: normalizedLink,
                         assignedUserId: assignedUser?.id,
-                        assignedUserName: assignedUser ? `${assignedUser.firstName} ${assignedUser.lastName}` : undefined,
+      assignedUserName: assignedUser ? assignedUser.full_name : undefined,
                       };
                     onAddEvent(newEvent);
                     setErrors({});

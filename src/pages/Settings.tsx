@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData } from '../types';
-import { MOCK_USERS, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
+import { MOCK_USERS, MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
+import { universityTypeService } from '../services/universityTypeService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { mainCategoryService } from '../services/mainCategoryService';
 import { interestedProgramService } from '../services/interestedProgramService';
@@ -14,9 +16,26 @@ import {
     Shield, CheckCircle, XCircle, Plus, MoreVertical, Edit2, Trash2, 
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2,
-    Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download
+    Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
+
+// University Types with Descriptions (default values)
+const DEFAULT_UNIVERSITY_TYPES = [
+    { id: 'ut-001', name: "Araştırma Üniversitesi", description: "Yoğun araştırma faaliyetleri yürüten, güçlü akademik kadroya sahip üniversiteler", link: "" },
+    { id: 'ut-002', name: "Russell Group", description: "Birleşik Krallık'ın önde gelen 24 araştırma üniversitesinin birliği", link: "https://russellgroup.ac.uk/" },
+    { id: 'ut-003', name: "Ivy League", description: "ABD'nin sekiz en prestijli üniversitesinin oluşturduğu lig", link: "https://www.ivyleague.com/" },
+    { id: 'ut-004', name: "TU9", description: "Almanya'nın dokuz lider teknik üniversitesinin birliği", link: "https://www.tu9.de/" },
+    { id: 'ut-005', name: "Uygulamalı Bilimler", description: "Pratik ve uygulamaya yönelik eğitim veren üniversiteler (Fachhochschule)", link: "" },
+    { id: 'ut-006', name: "Tasarım Üniversiteleri", description: "Görsel sanatlar, tasarım ve mimarlık alanında uzmanlaşmış üniversiteler", link: "" },
+    { id: 'ut-007', name: "Top 100", description: "Dünya genelinde en iyi 100 üniversite arasında yer alanlar", link: "" },
+    { id: 'ut-008', name: "Top 200", description: "Dünya genelinde en iyi 200 üniversite arasında yer alanlar", link: "" },
+    { id: 'ut-009', name: "Top 500", description: "Dünya genelinde en iyi 500 üniversite arasında yer alanlar", link: "" },
+    { id: 'ut-010', name: "Devlet Üniversitesi", description: "Devlet tarafından finanse edilen üniversiteler", link: "" },
+    { id: 'ut-011', name: "Özel Üniversite", description: "Özel sektör tarafından finanse edilen üniversiteler", link: "" },
+    { name: "Community College", description: "2 yıllık ön lisans programları sunan kolejler", link: "" }
+];
 
 // Standard list for Dropdown
 const STANDARD_EDUCATION_TYPES = [
@@ -55,9 +74,10 @@ const DefinitionCard = ({ id, title, icon: Icon, count, onClick }: any) => (
     </div>
 );
 
-const Settings: React.FC = () => {
+const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => void }> = ({ onUniversitySelect }) => {
     const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data'>('users');
     const [users, setUsers] = useState<SystemUser[]>(MOCK_USERS);
+    const [branches] = useState(MOCK_BRANCHES);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     
     // Definitions State
@@ -79,9 +99,23 @@ const Settings: React.FC = () => {
         websiteUrl: '',
         departmentsUrl: '',
         consultingType: '',
+        universityTypes: [],
         sharedInstitutionId: '',
         programs: []
     });
+    
+    // University Filter State
+    const [universitySearchTerm, setUniversitySearchTerm] = useState('');
+    const [expandedUniversityId, setExpandedUniversityId] = useState<string | null>(null);
+    const [isImportingUniversities, setIsImportingUniversities] = useState(false);
+    const [showLogoUpload, setShowLogoUpload] = useState(false);
+    
+    // University Types State
+    const [universityTypesList, setUniversityTypesList] = useState<typeof DEFAULT_UNIVERSITY_TYPES>([]);
+    const [isUniversityTypeModalOpen, setIsUniversityTypeModalOpen] = useState(false);
+    const [universityTypeForm, setUniversityTypeForm] = useState({ id: '', name: '', description: '', link: '' });
+    const [editingUniversityTypeIndex, setEditingUniversityTypeIndex] = useState<number | null>(null);
+    const [isLoadingUniversityTypes, setIsLoadingUniversityTypes] = useState(false);
 
     // Main Degree / Category State
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
@@ -145,12 +179,13 @@ const Settings: React.FC = () => {
 
     // User Form State
     const [newUser, setNewUser] = useState<Partial<SystemUser>>({
-        firstName: '',
-        lastName: '',
+        full_name: '',
         email: '',
+        phone: '',
         role: UserRole.CONSULTANT,
-        isActive: true,
-        parentId: ''
+        branch_id: '',
+        status: 'active',
+        parent_user_id: ''
     });
 
     // Load definitions
@@ -175,6 +210,8 @@ const Settings: React.FC = () => {
             loadMainDegrees();
         } else if (selectedDefinitionType === 'budget') {
             loadBudgetRangesList();
+        } else if (selectedDefinitionType === 'university_types') {
+            loadUniversityTypes();
         }
     }, [selectedDefinitionType]);
 
@@ -202,6 +239,18 @@ const Settings: React.FC = () => {
             console.error('Failed to load universities', error);
         } finally {
             setIsLoadingUniversities(false);
+        }
+    };
+
+    const loadUniversityTypes = async () => {
+        setIsLoadingUniversityTypes(true);
+        try {
+            const data = await universityTypeService.getAll();
+            setUniversityTypesList(data);
+        } catch (error) {
+            console.error('Failed to load university types', error);
+        } finally {
+            setIsLoadingUniversityTypes(false);
         }
     };
 
@@ -281,22 +330,26 @@ const Settings: React.FC = () => {
         e.preventDefault();
         const createdUser: SystemUser = {
             id: `user-${Date.now()}`,
-            firstName: newUser.firstName || '',
-            lastName: newUser.lastName || '',
+            full_name: newUser.full_name || '',
             email: newUser.email || '',
+            phone: newUser.phone || '',
             role: newUser.role || UserRole.CONSULTANT,
-            isActive: newUser.isActive || false,
-            parentId: newUser.parentId,
-            avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.firstName}`
+            branch_id: newUser.branch_id || '',
+            parent_user_id: newUser.parent_user_id,
+            status: newUser.status || 'active',
+            avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
         setUsers([...users, createdUser]);
         setIsUserModalOpen(false);
         setNewUser({
-            firstName: '',
-            lastName: '',
+            full_name: '',
             email: '',
+            phone: '',
             role: UserRole.CONSULTANT,
-            isActive: true,
+            branch_id: '',
+            status: 'active',
             parentId: ''
         });
     };
@@ -313,33 +366,43 @@ const Settings: React.FC = () => {
 
     const getAvailableParents = (role?: UserRole) => {
         switch (role) {
-            case UserRole.REPRESENTATIVE:
-                return users.filter(u => u.role === UserRole.CONSULTANT);
-            case UserRole.CONSULTANT:
+            case UserRole.ADMIN:
+                return users.filter(u => u.role === UserRole.SUPER_ADMIN);
+            case UserRole.BRANCH_MANAGER:
                 return users.filter(u => u.role === UserRole.ADMIN);
+            case UserRole.CONSULTANT:
+                return users.filter(u => u.role === UserRole.BRANCH_MANAGER);
+            case UserRole.REPRESENTATIVE:
+                return users.filter(u => u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
+            case UserRole.STUDENT_REPRESENTATIVE:
+                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
             case UserRole.STUDENT:
-                return users.filter(u => u.role === UserRole.CONSULTANT || u.role === UserRole.REPRESENTATIVE);
+                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
             default:
                 return [];
         }
     };
 
     // --- UNIVERSITY LOGIC ---
-    const handleAddUniversity = () => {
+    const handleAddUniversity = async () => {
+        await loadUniversityTypes();
         setUniversityForm({
             id: `uni-${Date.now()}`,
             name: '',
-            logo: '',
+            logo: 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8',
             countries: [],
             rankingUrl: '',
             websiteUrl: '',
             departmentsUrl: '',
+            consultingType: '',
+            universityTypes: [],
             programs: []
         });
         setIsUniversityModalOpen(true);
     };
 
-    const handleEditUniversity = (uni: UniversityData) => {
+    const handleEditUniversity = async (uni: UniversityData) => {
+        await loadUniversityTypes();
         setUniversityForm({
             ...uni,
             programs: uni.programs || []
@@ -375,6 +438,121 @@ const Settings: React.FC = () => {
         } catch (error) {
             console.error("Failed to delete", error);
         }
+    };
+
+    // --- EXCEL IMPORT/EXPORT LOGIC ---
+    const filteredUniversities = universities.filter(uni => 
+        !universitySearchTerm || 
+        uni.name?.toLowerCase().includes(universitySearchTerm.toLowerCase()) ||
+        uni.countries?.some(c => c.toLowerCase().includes(universitySearchTerm.toLowerCase()))
+    );
+
+    const handleExportUniversities = () => {
+        const exportData = filteredUniversities.map(uni => ({
+            'ID': uni.id,
+            'Üniversite Adı': uni.name,
+            'Logo URL': uni.logo || '',
+            'Website': uni.websiteUrl || '',
+            'Departments URL': uni.departmentsUrl || '',
+            'Ranking URL': uni.rankingUrl || '',
+            'Ülkeler': uni.countries?.join(', ') || '',
+            'Üniversite Tipleri': uni.universityTypes?.join(', ') || '',
+            'Danışmanlık Türü': uni.consultingType || '',
+            'Paylaşımlı Kurum': uni.sharedInstitutionId || '',
+            'Bölüm Sayısı': uni.programs?.length || 0
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Üniversiteler');
+        XLSX.writeFile(wb, `UNIC_Universiteler_${Date.now()}.xlsx`);
+    };
+
+    const handleExportPrograms = () => {
+        const allPrograms: any[] = [];
+        filteredUniversities.forEach(uni => {
+            (uni.programs || []).forEach(prog => {
+                allPrograms.push({
+                    'Üniversite ID': uni.id,
+                    'Üniversite': uni.name,
+                    'Ülke': uni.countries?.join(', ') || '',
+                    'Üniversite Tipi': uni.universityTypes?.join(', ') || '',
+                    'Bölüm Adı': prog.name,
+                    'Bölüm Türü': prog.type,
+                    'Bütçe': prog.tuitionRange || '',
+                    'Eğitim Türü': prog.educationType || '',
+                    'Link': prog.link || '',
+                    'Kampüs': prog.campusLocation || '',
+                    'Başvuru Kriterleri': prog.applicationCriteria || '',
+                    'Dil Skoru': prog.languageScore || '',
+                    'Alt Başlıklar': prog.groupNames?.join(', ') || '',
+                    'Notlar': prog.notes || ''
+                });
+            });
+        });
+
+        const ws = XLSX.utils.json_to_sheet(allPrograms);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Bölümler');
+        XLSX.writeFile(wb, `UNIC_Bolumler_${Date.now()}.xlsx`);
+    };
+
+    const handleImportUniversities = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsImportingUniversities(true);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet) as any[];
+
+                let importedCount = 0;
+                const defaultLogo = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8';
+                for (const row of jsonData) {
+                    const newUni: UniversityData = {
+                        id: row['ID'] || `uni-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        name: row['Üniversite Adı'] || row['University Name'] || 'Unknown',
+                        logo: row['Logo URL'] || row['Logo'] || defaultLogo,
+                        websiteUrl: row['Website'] || row['Website URL'] || '',
+                        departmentsUrl: row['Departments URL'] || row['Departments'] || '',
+                        rankingUrl: row['Ranking URL'] || row['Ranking'] || '',
+                        countries: row['Ülkeler'] ? String(row['Ülkeler']).split(',').map((s: string) => s.trim()) : [],
+                        universityTypes: row['Üniversite Tipleri'] ? String(row['Üniversite Tipleri']).split(',').map((s: string) => s.trim()) : [],
+                        consultingType: row['Danışmanlık Türü'] || row['Consulting Type'] || '',
+                        sharedInstitutionId: row['Paylaşımlı Kurum'] || row['Shared Institution'] || '',
+                        programs: []
+                    };
+
+                    try {
+                        await universityService.upsert(newUni);
+                        setUniversities(prev => {
+                            const exists = prev.find(u => u.id === newUni.id);
+                            if (exists) {
+                                return prev.map(u => u.id === newUni.id ? newUni : u);
+                            }
+                            return [newUni, ...prev];
+                        });
+                        importedCount++;
+                    } catch (err) {
+                        console.error('Failed to import university:', newUni.name, err);
+                    }
+                }
+
+                alert(`${importedCount} üniversite başarıyla içe aktarıldı!`);
+            } catch (error) {
+                console.error('Failed to parse Excel file', error);
+                alert('Excel dosyası okunurken bir hata oluştu.');
+            } finally {
+                setIsImportingUniversities(false);
+                e.target.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
     };
 
     // --- UNIVERSITY PROGRAM LOGIC ---
@@ -815,7 +993,7 @@ const Settings: React.FC = () => {
                                         <div className="flex items-center gap-3">
                                             <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full bg-slate-100" />
                                             <div>
-                                                <p className="font-bold text-slate-800">{user.firstName} {user.lastName}</p>
+                                                <p className="font-bold text-slate-800">{user.full_name}</p>
                                                 <p className="text-xs text-slate-500">{user.email}</p>
                                             </div>
                                         </div>
@@ -834,7 +1012,7 @@ const Settings: React.FC = () => {
                                         {parent ? (
                                             <div className="flex items-center gap-2">
                                                 <img src={parent.avatarUrl} className="w-5 h-5 rounded-full" />
-                                                <span className="font-medium text-slate-700">{parent.firstName} {parent.lastName}</span>
+                                                <span className="font-medium text-slate-700">{parent.full_name}</span>
                                             </div>
                                         ) : (
                                             <span className="text-slate-400 italic">-</span>
@@ -874,114 +1052,258 @@ const Settings: React.FC = () => {
         </div>
     );
 
-    const renderUniversityManager = () => (
-        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
-             {/* Header */}
-             <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                    <button 
-                        onClick={() => setSelectedDefinitionType(null)}
-                        className="p-2 rounded-full hover:bg-slate-100 transition-colors"
-                    >
-                        <ArrowLeft className="w-5 h-5 text-slate-600" />
-                    </button>
-                    <div>
-                        <h3 className="text-xl font-bold text-slate-800">University Management</h3>
-                        <p className="text-sm text-slate-500">Add, edit or remove partner universities.</p>
+    const renderUniversityManager = () => {
+        return (
+            <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+                 {/* Header */}
+                 <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => {
+                                setSelectedDefinitionType(null);
+                                setUniversitySearchTerm('');
+                                setExpandedUniversityId(null);
+                            }}
+                            className="p-2 rounded-full hover:bg-slate-100 transition-colors"
+                        >
+                            <ArrowLeft className="w-5 h-5 text-slate-600" />
+                        </button>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">University Management</h3>
+                            <p className="text-sm text-slate-500">Add, edit or remove partner universities.</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer">
+                            {isImportingUniversities ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                            Excel Yükle
+                            <input 
+                                type="file" 
+                                accept=".xlsx,.xls" 
+                                onChange={handleImportUniversities}
+                                className="hidden"
+                            />
+                        </label>
+                        <button 
+                            onClick={handleExportUniversities}
+                            className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-xl hover:bg-amber-700 transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            Excel İndir
+                        </button>
+                        <button 
+                            onClick={handleExportPrograms}
+                            className="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white text-sm font-medium rounded-xl hover:bg-orange-700 transition-colors"
+                        >
+                            <FileText className="w-4 h-4" />
+                            Bölümleri İndir
+                        </button>
+                        <button 
+                            onClick={handleAddUniversity}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                        >
+                            <Plus className="w-4 h-4" />
+                            New University
+                        </button>
                     </div>
                 </div>
-                <button 
-                    onClick={handleAddUniversity}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
-                >
-                    <Plus className="w-4 h-4" />
-                    New University
-                </button>
-            </div>
 
-            {/* Table */}
-            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                                <th className="px-6 py-4 font-semibold">University</th>
-                                <th className="px-6 py-4 font-semibold">Countries</th>
-                                <th className="px-6 py-4 font-semibold">Links & Ranking</th>
-                                <th className="px-6 py-4 font-semibold">Programs</th>
-                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {isLoadingUniversities ? (
-                                <tr>
-                                    <td colSpan={5} className="p-10 text-center text-slate-500">Loading universities...</td>
+                {/* Filter */}
+                <div className="mb-4">
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Üniversite ara..." 
+                            value={universitySearchTerm}
+                            onChange={(e) => setUniversitySearchTerm(e.target.value)}
+                            className="w-full sm:w-80 pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all text-sm"
+                        />
+                    </div>
+                </div>
+
+                {/* Results Count */}
+                <div className="mb-4">
+                    <p className="text-sm font-medium text-slate-500">
+                        <span className="text-slate-800 font-bold">{filteredUniversities.length}</span> üniversite bulundu
+                    </p>
+                </div>
+
+                {/* Table */}
+                <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                    <th className="px-6 py-4 font-semibold">University</th>
+                                    <th className="px-6 py-4 font-semibold">Countries</th>
+                                    <th className="px-6 py-4 font-semibold">Type</th>
+                                    <th className="px-6 py-4 font-semibold">Links & Ranking</th>
+                                    <th className="px-6 py-4 font-semibold">Programs</th>
+                                    <th className="px-6 py-4 font-semibold text-right">Actions</th>
                                 </tr>
-                            ) : universities.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="p-10 text-center text-slate-500">No universities found. Add one to get started.</td>
-                                </tr>
-                            ) : (
-                                universities.map(uni => (
-                                    <tr key={uni.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                                                    {uni.logo ? (
-                                                        <img src={uni.logo} alt={uni.name} className="w-full h-full object-contain" />
-                                                    ) : (
-                                                        <img 
-                                                            src={`https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(uni.name)}&backgroundColor=f1f5f9`} 
-                                                            alt="" 
-                                                            className="w-full h-full object-cover opacity-60" 
-                                                        />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-slate-800 leading-tight">{uni.name}</div>
-                                                    <div className="text-[10px] text-slate-400 mt-0.5">{uni.id}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-wrap gap-1">
-                                                {(uni.countries || []).map(c => (
-                                                    <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">{c}</span>
-                                                ))}
-                                                {(uni.countries || []).length === 0 && <span className="text-slate-400 italic text-[10px]">No country</span>}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col gap-1.5">
-                                                <div className="flex items-center gap-3">
-                                                    {uni.websiteUrl && <a href={uni.websiteUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Website"><Globe className="w-4 h-4" /></a>}
-                                                    {uni.departmentsUrl && <a href={uni.departmentsUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Departments"><BookOpen className="w-4 h-4" /></a>}
-                                                    {uni.rankingUrl && <a href={uni.rankingUrl} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Ranking"><Star className="w-4 h-4" /></a>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <div className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-100">
-                                                    {(uni.programs || []).length} Programs
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button onClick={() => handleEditUniversity(uni)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteUniversity(uni.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
-                                            </div>
-                                        </td>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {isLoadingUniversities ? (
+                                    <tr>
+                                        <td colSpan={6} className="p-10 text-center text-slate-500">Loading universities...</td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : filteredUniversities.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="p-10 text-center text-slate-500">No universities found. Add one to get started.</td>
+                                    </tr>
+                                ) : (
+                                    filteredUniversities.map(uni => (
+                                        <React.Fragment key={uni.id}>
+                                            <tr 
+                                                onClick={() => {
+                                                    if (onUniversitySelect) {
+                                                        onUniversitySelect(uni);
+                                                    } else {
+                                                        setExpandedUniversityId(expandedUniversityId === uni.id ? null : uni.id);
+                                                    }
+                                                }}
+                                                className={`hover:bg-slate-50/50 transition-colors cursor-pointer ${expandedUniversityId === uni.id ? 'bg-indigo-50/30' : ''}`}
+                                            >
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-24 h-24 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                            {uni.logo ? (
+                                                                <img src={uni.logo} alt={uni.name} className="w-full h-full object-contain" />
+                                                            ) : (
+                                                                <img 
+                                                                    src={`https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(uni.name)}&backgroundColor=f1f5f9`} 
+                                                                    alt="" 
+                                                                    className="w-full h-full object-cover opacity-60" 
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold text-slate-800 leading-tight">{uni.name}</div>
+                                                            <div className="text-[10px] text-slate-400 mt-0.5">{uni.id}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(uni.countries || []).map(c => (
+                                                            <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">{c}</span>
+                                                        ))}
+                                                        {(uni.countries || []).length === 0 && <span className="text-slate-400 italic text-[10px]">No country</span>}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(uni.universityTypes || []).map(t => (
+                                                            <span key={t} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-medium border border-indigo-200">{t}</span>
+                                                        ))}
+                                                        {(uni.universityTypes || []).length === 0 && <span className="text-slate-400 italic text-[10px]">-</span>}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-3">
+                                                            {uni.websiteUrl && <a href={uni.websiteUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Website"><Globe className="w-4 h-4" /></a>}
+                                                            {uni.departmentsUrl && <a href={uni.departmentsUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Departments"><BookOpen className="w-4 h-4" /></a>}
+                                                            {uni.rankingUrl && <a href={uni.rankingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Ranking"><Star className="w-4 h-4" /></a>}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-100">
+                                                            {(uni.programs || []).length} Programs
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEditUniversity(uni); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteUniversity(uni.id); }} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {/* Expanded Department View */}
+                                            {expandedUniversityId === uni.id && (
+                                                <tr key={`${uni.id}-expanded`}>
+                                                    <td colSpan={5} className="px-6 py-4 bg-indigo-50/30 border-b border-indigo-100">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                                                                <BookOpen className="w-4 h-4 text-indigo-600" />
+                                                                Bölümler ({uni.programs?.length || 0})
+                                                            </h4>
+                                                            <button 
+                                                                onClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    handleEditUniversity(uni);
+                                                                }}
+                                                                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                                                            >
+                                                                <Plus className="w-3 h-3" />
+                                                                Bölüm Ekle
+                                                            </button>
+                                                        </div>
+                                                        {(uni.programs && uni.programs.length > 0) ? (
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                                {uni.programs.map(prog => (
+                                                                    <div key={prog.id} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                                                                        <div className="flex items-start justify-between mb-2">
+                                                                            <div className="flex-1">
+                                                                                <h5 className="font-bold text-slate-800 text-sm">{prog.name}</h5>
+                                                                                <div className="flex items-center gap-2 mt-1">
+                                                                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${prog.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                                                        {prog.type}
+                                                                                    </span>
+                                                                                    {prog.tuitionRange && (
+                                                                                        <span className="text-[9px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                                                                            {prog.tuitionRange}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                            {prog.link && (
+                                                                                <a href={prog.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                                                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                                                </a>
+                                                                            )}
+                                                                        </div>
+                                                                        {prog.groupNames && prog.groupNames.length > 0 && (
+                                                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                                                {prog.groupNames.map((gn: string) => (
+                                                                                    <span key={gn} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-medium">
+                                                                                        {gn}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-8 text-slate-500">
+                                                                <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                                                <p className="text-sm">Bu üniversite için henüz bölüm tanımlanmamış.</p>
+                                                                <button 
+                                                                    onClick={() => handleEditUniversity(uni)}
+                                                                    className="mt-2 text-indigo-600 text-sm font-medium hover:underline"
+                                                                >
+                                                                    Bölüm eklemek için tıklayın
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderMainDegreeManager = () => (
         <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
@@ -1988,27 +2310,185 @@ const Settings: React.FC = () => {
                             </div>
                             <form onSubmit={handleSaveBudget} className="p-5 space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Açıklama (Label)</label>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Bütçe Aralığı</label>
                                     <input 
-                                        required
                                         value={budgetForm.label}
-                                        onChange={(e) => setBudgetForm({...budgetForm, label: e.target.value})}
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                        onChange={e => setBudgetForm({...budgetForm, label: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        placeholder="örn: €5.000 - €10.000"
+                                        required
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button type="button" onClick={() => setIsBudgetModalOpen(false)} className="px-3 py-1.5 text-slate-500 text-sm font-medium hover:text-slate-700">İptal</button>
+                                    <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">Kaydet</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    const renderUniversityTypesManager = () => {
+        return (
+            <div className="space-y-6 animate-fade-in max-w-2xl mx-auto">
+                <div className="flex items-center gap-4 mb-2">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500">
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Üniversite Tipleri</h3>
+                        <p className="text-sm text-slate-500">Üniversitelerin sınıflandırma tiplerini yönetin.</p>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <h4 className="font-bold text-slate-700 uppercase tracking-wider text-xs flex items-center gap-2">
+                            <GraduationCap className="w-4 h-4 text-indigo-600" /> Mevcut Tipler
+                        </h4>
+                        <button 
+                            onClick={() => {
+                                setUniversityTypeForm({ id: '', name: '', description: '', link: '' });
+                                setEditingUniversityTypeIndex(null);
+                                setIsUniversityTypeModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all flex items-center gap-1"
+                        >
+                             <Plus className="w-3 h-3" /> Yeni Tip Ekle
+                        </button>
+                    </div>
+                    <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                        {isLoadingUniversityTypes ? (
+                            <div className="p-10 text-center text-slate-500 flex items-center justify-center gap-2">
+                                <Loader2 className="w-5 h-5 animate-spin" /> Yükleniyor...
+                            </div>
+                        ) : universityTypesList.length === 0 ? (
+                            <div className="p-10 text-center text-slate-500">
+                                Henüz üniversite tipi eklenmemiş.
+                            </div>
+                        ) : universityTypesList.map((type, idx) => (
+                            <div key={type.id || idx} className="p-4 hover:bg-slate-50 transition-colors flex items-start justify-between group">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-800">{type.name}</span>
+                                        {type.link && (
+                                            <a href={type.link} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                                                <ExternalLink className="w-3.5 h-3.5" />
+                                            </a>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-1">{type.description}</p>
+                                    {type.link && <p className="text-xs text-indigo-500 mt-1 truncate">{type.link}</p>}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onClick={() => {
+                                            setUniversityTypeForm({ id: type.id, name: type.name, description: type.description, link: type.link || '' });
+                                            setEditingUniversityTypeIndex(idx);
+                                            setIsUniversityTypeModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded border border-transparent hover:border-slate-200"
+                                    >
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        onClick={async () => {
+                                            if (window.confirm('Bu tipi silmek istediğinize emin misiniz?')) {
+                                                try {
+                                                    if (type.id) {
+                                                        await universityTypeService.delete(type.id);
+                                                    }
+                                                    setUniversityTypesList(prev => prev.filter((_, i) => i !== idx));
+                                                } catch (error) {
+                                                    console.error('Failed to delete university type', error);
+                                                    alert('Silme işlemi başarısız oldu.');
+                                                }
+                                            }
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded border border-transparent hover:border-slate-200"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {isUniversityTypeModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-sm animate-fade-in overflow-hidden shadow-2xl">
+                            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <h3 className="font-bold text-slate-800">
+                                    {editingUniversityTypeIndex !== null ? 'Üniversite Tipi Düzenle' : 'Yeni Üniversite Tipi'}
+                                </h3>
+                                <button onClick={() => setIsUniversityTypeModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                                    <X className="w-5 h-5"/>
+                                </button>
+                            </div>
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (universityTypeForm.name.trim()) {
+                                    try {
+                                        const typeData = {
+                                            id: universityTypeForm.id || `ut-${Date.now()}`,
+                                            name: universityTypeForm.name,
+                                            description: universityTypeForm.description,
+                                            link: universityTypeForm.link || ''
+                                        };
+                                        
+                                        await universityTypeService.upsert(typeData);
+                                        
+                                        if (editingUniversityTypeIndex !== null) {
+                                            setUniversityTypesList(prev => prev.map((t, i) => i === editingUniversityTypeIndex ? typeData : t));
+                                        } else {
+                                            setUniversityTypesList(prev => [...prev, typeData]);
+                                        }
+                                        
+                                        setIsUniversityTypeModalOpen(false);
+                                        setUniversityTypeForm({ id: '', name: '', description: '', link: '' });
+                                        setEditingUniversityTypeIndex(null);
+                                    } catch (error) {
+                                        console.error('Failed to save university type', error);
+                                        alert('Kaydetme işlemi başarısız oldu.');
+                                    }
+                                }
+                            }} className="p-5 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tip Adı</label>
+                                    <input 
+                                        value={universityTypeForm.name}
+                                        onChange={e => setUniversityTypeForm({...universityTypeForm, name: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        placeholder="örn: Ivy League"
+                                        required
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Sıra (Sort Order)</label>
-                                    <input 
-                                        type="number"
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Açıklama</label>
+                                    <textarea 
+                                        value={universityTypeForm.description}
+                                        onChange={e => setUniversityTypeForm({...universityTypeForm, description: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[80px]"
+                                        placeholder="Bu tipin açıklamasını yazın..."
                                         required
-                                        value={budgetForm.sort_order}
-                                        onChange={(e) => setBudgetForm({...budgetForm, sort_order: Number(e.target.value)})}
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20"
                                     />
                                 </div>
-                                <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
-                                    <button type="button" onClick={() => setIsBudgetModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">İptal</button>
-                                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-lg shadow-sm">Kaydet</button>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Link</label>
+                                    <input 
+                                        value={universityTypeForm.link}
+                                        onChange={e => setUniversityTypeForm({...universityTypeForm, link: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button type="button" onClick={() => setIsUniversityTypeModalOpen(false)} className="px-3 py-1.5 text-slate-500 text-sm font-medium hover:text-slate-700">İptal</button>
+                                    <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">Kaydet</button>
                                 </div>
                             </form>
                         </div>
@@ -2131,14 +2611,29 @@ const Settings: React.FC = () => {
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 pb-20 h-full">
-            {/* Show Header only if not in sub-view */}
+            {/* Header Section */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 p-6 md:p-8"
+            >
+                {/* Background decorations */}
+                <div className="absolute inset-0">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
+                </div>
+
+                <div className="relative z-10">
+                    <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                        System Settings
+                    </h1>
+                    <p className="text-purple-300/70 mt-1 text-sm">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
+                </div>
+            </motion.div>
+
+            {/* Show Tabs only if not in sub-view */}
             {!selectedDefinitionType && (
                 <>
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800">Sistem Ayarları</h2>
-                        <p className="text-slate-500">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
-                    </div>
-
                     <div className="flex gap-6 border-b border-slate-200">
                         {[
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
@@ -2192,6 +2687,13 @@ const Settings: React.FC = () => {
                                 onClick={(id: string) => setSelectedDefinitionType(id)}
                             />
                             <DefinitionCard 
+                                id="university_types"
+                                title="Üniversite Tipleri" 
+                                icon={GraduationCap} 
+                                count={universityTypesList.length || 0} 
+                                onClick={(id: string) => setSelectedDefinitionType(id)}
+                            />
+                            <DefinitionCard 
                                 id="docs"
                                 title="Evrak Türleri" 
                                 icon={Shield} 
@@ -2204,6 +2706,7 @@ const Settings: React.FC = () => {
                     {/* Sub Views for Definitions Tab */}
                     {selectedDefinitionType === 'interested_programs' && renderInterestedProgramManager()}
                     {selectedDefinitionType === 'budget' && renderBudgetManager()}
+                    {selectedDefinitionType === 'university_types' && renderUniversityTypesManager()}
                 </>
             )}
 
@@ -2299,25 +2802,14 @@ const Settings: React.FC = () => {
                             <button onClick={() => setIsUserModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleAddUser} className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Ad</label>
-                                    <input 
-                                        required
-                                        value={newUser.firstName} 
-                                        onChange={e => setNewUser({...newUser, firstName: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Soyad</label>
-                                    <input 
-                                        required
-                                        value={newUser.lastName} 
-                                        onChange={e => setNewUser({...newUser, lastName: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Ad Soyad</label>
+                                <input
+                                    required
+                                    value={newUser.full_name}
+                                    onChange={e => setNewUser({...newUser, full_name: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
@@ -2330,48 +2822,77 @@ const Settings: React.FC = () => {
                                 />
                             </div>
                             <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
+                                <input
+                                    value={newUser.phone}
+                                    onChange={e => setNewUser({...newUser, phone: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
+                                <select
+                                    value={newUser.branch_id}
+                                    onChange={e => setNewUser({...newUser, branch_id: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                >
+                                    <option value="">Şube Seçin</option>
+                                    {branches.map(branch => (
+                                        <option key={branch.id} value={branch.id}>
+                                            {branch.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                                <select 
-                                    value={newUser.role} 
+                                <select
+                                    value={newUser.role}
                                     onChange={e => {
                                         const newRole = e.target.value as UserRole;
                                         setNewUser({
-                                            ...newUser, 
-                                            role: newRole, 
-                                            parentId: '' // Reset parent when role changes to ensure validity
+                                            ...newUser,
+                                            role: newRole,
+                                            parent_user_id: '' // Reset parent when role changes to ensure validity
                                         });
                                     }}
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                 >
+                                    <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
                                     <option value={UserRole.ADMIN}>Admin</option>
-                                    <option value={UserRole.CONSULTANT}>Consultant</option>
-                                    <option value={UserRole.REPRESENTATIVE}>Representative</option>
-                                    <option value={UserRole.STUDENT}>Student</option>
+                                    <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
+                                    <option value={UserRole.CONSULTANT}>Danışman</option>
+                                    <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
+                                    <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilci</option>
+                                    <option value={UserRole.STUDENT}>Öğrenci</option>
                                 </select>
                             </div>
                             
                             {/* Reports To Selection */}
-                            {(newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
+                            {(newUser.role === UserRole.ADMIN || newUser.role === UserRole.BRANCH_MANAGER || newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT_REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
                                         Reports To (Manager)
                                     </label>
-                                    <select 
-                                        value={newUser.parentId || ''}
-                                        onChange={e => setNewUser({...newUser, parentId: e.target.value})}
+                                    <select
+                                        value={newUser.parent_user_id || ''}
+                                        onChange={e => setNewUser({...newUser, parent_user_id: e.target.value})}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                     >
                                         <option value="">Select Manager</option>
                                         {availableParents.map(parent => (
                                             <option key={parent.id} value={parent.id}>
-                                                {parent.firstName} {parent.lastName} ({parent.role})
+                                                {parent.full_name} ({parent.role})
                                             </option>
                                         ))}
                                     </select>
                                     <p className="text-xs text-slate-400 mt-1">
-                                        {newUser.role === UserRole.REPRESENTATIVE ? 'Representatives must report to a Consultant.' : 
-                                         newUser.role === UserRole.CONSULTANT ? 'Consultants must report to an Admin.' :
-                                         'Students are assigned to a Consultant or Representative.'}
+                                        {newUser.role === UserRole.ADMIN ? 'Admins report to Super Admin.' :
+                                         newUser.role === UserRole.BRANCH_MANAGER ? 'Branch Managers report to Admin.' :
+                                         newUser.role === UserRole.CONSULTANT ? 'Consultants report to Branch Manager.' :
+                                         newUser.role === UserRole.REPRESENTATIVE ? 'Representatives report to Consultant or Branch Manager.' :
+                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Student Representatives report to Representative, Consultant, or Branch Manager.' :
+                                         'Students are assigned to Representative, Consultant, or Branch Manager.'}
                                     </p>
                                 </div>
                             )}
@@ -2388,118 +2909,134 @@ const Settings: React.FC = () => {
             {/* University Add/Edit Modal */}
             {isUniversityModalOpen && (
                  <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                {universityForm.id.startsWith('uni-') && !universities.find(u => u.id === universityForm.id) ? 'Yeni Üniversite Ekle' : 'Üniversite Düzenle'}
-                            </h3>
+                            <h3 className="font-bold text-lg text-slate-800">Yeni Üniversite Ekle</h3>
                             <button onClick={() => setIsUniversityModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleSaveUniversity} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Üniversite Adı</label>
-                                <input 
-                                    required
-                                    value={universityForm.name} 
-                                    onChange={e => setUniversityForm({...universityForm, name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                    placeholder="Örn: Technical University of Munich"
-                                />
+                            <div className="flex items-start gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Üniversite Adı</label>
+                                    <input 
+                                        required
+                                        value={universityForm.name} 
+                                        onChange={e => setUniversityForm({...universityForm, name: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                        placeholder="Örn: Technical University of Munich"
+                                    />
+                                </div>
+                                <div className="shrink-0">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Logo</label>
+                                    {showLogoUpload ? (
+                                        <div className="w-40 rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50 p-3">
+                                            <input 
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        try {
+                                                            const url = await universityService.uploadLogo(file);
+                                                            setUniversityForm({...universityForm, logo: url});
+                                                            setShowLogoUpload(false);
+                                                        } catch (err: any) {
+                                                            alert("Logo yüklenirken bir hata oluştu: " + err.message);
+                                                        }
+                                                    }
+                                                }}
+                                                className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowLogoUpload(false)}
+                                                className="mt-2 w-full text-xs text-slate-500 hover:text-slate-700"
+                                            >
+                                                İptal
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div 
+                                            onClick={() => setShowLogoUpload(true)}
+                                            className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                                        >
+                                            {universityForm.logo ? (
+                                                <img src={universityForm.logo} alt="" className="w-full h-full object-contain" />
+                                            ) : (
+                                                <Building className="w-8 h-8 text-slate-300" />
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Ülkeler (Birden fazla seçilebilir)</label>
-                                <select 
-                                    multiple
-                                    required
-                                    value={universityForm.countries} 
-                                    onChange={e => {
-                                        const select = e.target as HTMLSelectElement;
-                                        const values = Array.from(select.selectedOptions, (option: HTMLOptionElement) => option.value);
-                                        setUniversityForm({...universityForm, countries: values});
-                                    }}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none min-h-[100px]" 
-                                >
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Ülkeler</label>
+                                <div className="grid grid-cols-5 gap-2 max-h-48 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
                                     {countries.map(c => (
-                                        <option key={c.id} value={c.name}>{c.name}</option>
+                                        <label key={c.id} className="flex items-center gap-1 p-1.5 hover:bg-white rounded cursor-pointer transition-colors">
+                                            <input 
+                                                type="checkbox"
+                                                checked={universityForm.countries?.includes(c.name) || false}
+                                                onChange={e => {
+                                                    const isChecked = e.target.checked;
+                                                    setUniversityForm(prev => ({
+                                                        ...prev,
+                                                        countries: isChecked 
+                                                            ? [...(prev.countries || []), c.name]
+                                                            : (prev.countries || []).filter(name => name !== c.name)
+                                                    }));
+                                                }}
+                                                className="w-3 h-3 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-xs text-slate-700">{c.flag}</span>
+                                            <span className="text-xs text-slate-700 truncate">{c.name}</span>
+                                        </label>
                                     ))}
-                                </select>
-                                <p className="text-[10px] text-slate-400 mt-1 italic">Birden fazla seçim için Ctrl tuşuna basılı tutun.</p>
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Üniversite Logosu</label>
-                                <div className="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
-                                    <div className="w-16 h-16 rounded-xl bg-white border border-slate-100 flex items-center justify-center overflow-hidden p-2 shadow-sm shrink-0">
-                                        {universityForm.logo ? (
-                                            <img src={universityForm.logo} alt="" className="w-full h-full object-contain" />
-                                        ) : (
-                                            <Building className="w-8 h-8 text-slate-300" />
-                                        )}
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="text-xs text-slate-500 mb-2">Önerilen: Kare, şeffaf arka planlı PNG.</p>
-                                        <input 
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                    try {
-                                                        const url = await universityService.uploadLogo(file);
-                                                        setUniversityForm({...universityForm, logo: url});
-                                                    } catch (err: any) {
-                                                        alert("Logo yüklenirken bir hata oluştu: " + err.message);
-                                                    }
-                                                }
-                                            }}
-                                            className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 transition-all cursor-pointer"
-                                        />
-                                    </div>
                                 </div>
                             </div>
+
+<div>
+                                <label className="block text-xs font-medium text-slate-600 mb-2">Danışmanlık Tipi</label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {['Depozito', 'Danışmanlık', 'Kabul Sonrası Danışmanlık', 'Depozito - Paylaşımlı'].map(type => (
+                                        <label key={type} className="flex items-center gap-1 p-2 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                                            <input 
+                                                type="radio"
+                                                name="consultingType"
+                                                checked={universityForm.consultingType === type}
+                                                onChange={e => {
+                                                    setUniversityForm({
+                                                        ...universityForm, 
+                                                        consultingType: type,
+                                                        sharedInstitutionId: type === 'Depozito - Paylaşımlı' ? universityForm.sharedInstitutionId : ''
+                                                    });
+                                                }}
+                                                className="w-3 h-3 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-xs text-slate-700">{type}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            {universityForm.consultingType === 'Depozito - Paylaşımlı' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Paylaşımlı Kurum Seçimi</label>
+                                    <select 
+                                        value={universityForm.sharedInstitutionId || ''} 
+                                        onChange={e => setUniversityForm({...universityForm, sharedInstitutionId: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    >
+                                        <option value="">Kurum Seçiniz...</option>
+                                        {sharedInstitutions.map(inst => (
+                                            <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Danışmanlık Tipi</label>
-                                    <select 
-                                        value={universityForm.consultingType || ''} 
-                                        onChange={e => {
-                                            const type = e.target.value;
-                                            setUniversityForm({
-                                                ...universityForm, 
-                                                consultingType: type,
-                                                sharedInstitutionId: type === 'Depozito - Paylaşımlı' ? universityForm.sharedInstitutionId : ''
-                                            });
-                                        }}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                    >
-                                        <option value="">Seçiniz...</option>
-                                        <option value="Depozito">Depozito</option>
-                                        <option value="Danışmanlık">Danışmanlık</option>
-                                        <option value="Kabul Sonrası Danışmanlık">Kabul Sonrası Danışmanlık</option>
-                                        <option value="Depozito - Paylaşımlı">Depozito - Paylaşımlı</option>
-                                    </select>
-                                </div>
-                                {universityForm.consultingType === 'Depozito - Paylaşımlı' && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Paylaşımlı Kurum Seçimi</label>
-                                        <select 
-                                            value={universityForm.sharedInstitutionId || ''} 
-                                            onChange={e => setUniversityForm({...universityForm, sharedInstitutionId: e.target.value})}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                        >
-                                            <option value="">Kurum Seçiniz...</option>
-                                            {sharedInstitutions.map(inst => (
-                                                <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Sıralama Linki (Ranking)</label>
                                     <input 
                                         value={universityForm.rankingUrl} 
@@ -2517,14 +3054,30 @@ const Settings: React.FC = () => {
                                         placeholder="https://..."
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Bölümler Sayfası (Link)</label>
-                                    <input 
-                                        value={universityForm.departmentsUrl} 
-                                        onChange={e => setUniversityForm({...universityForm, departmentsUrl: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                        placeholder="https://..."
-                                    />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-2">Üniversite Tipi</label>
+                                <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
+                                    {universityTypesList.map((type) => (
+                                        <label key={type.name} className="flex items-center gap-1 p-1.5 hover:bg-white rounded cursor-pointer transition-colors">
+                                            <input 
+                                                type="checkbox"
+                                                checked={universityForm.universityTypes?.includes(type.name) || false}
+                                                onChange={e => {
+                                                    const isChecked = e.target.checked;
+                                                    setUniversityForm(prev => ({
+                                                        ...prev,
+                                                        universityTypes: isChecked 
+                                                            ? [...(prev.universityTypes || []), type.name]
+                                                            : (prev.universityTypes || []).filter(t => t !== type.name)
+                                                    }));
+                                                }}
+                                                className="w-3 h-3 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-xs text-slate-700 truncate" title={type.description}>{type.name}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
 
