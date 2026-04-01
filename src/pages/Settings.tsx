@@ -2781,7 +2781,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         {/* Realistic Office Room */}
                         <div className="relative rounded-2xl overflow-hidden" style={{
                             background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)',
-                            height: '400px',
+                            height: '480px',
                             boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.1)'
                         }}>
                             {/* Wall with window effect */}
