@@ -2779,17 +2779,16 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         </h3>
                         
                         {/* AI Office with Background Image */}
-                        <div className="relative rounded-2xl overflow-hidden" style={{ height: '500px' }}>
-                            {/* Background Image */}
-                            <img 
-                                src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/AI%20Ofis/Unic%20AI%20Ofisi.jpg" 
-                                alt="AI Office"
-                                className="absolute inset-0 w-full h-full object-cover"
-                                onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                }}
-                            />
-                            
+                        <div 
+                            className="relative rounded-2xl overflow-hidden" 
+                            style={{ 
+                                height: '500px',
+                                backgroundColor: '#e2e8f0',
+                                backgroundImage: 'url("https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/AI%20Ofis/Unic%20AI%20Ofisi.jpg")',
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center'
+                            }}
+                        >                            
                             {/* Draggable AI Agents */}
                             {aiAgents.slice(0, 4).map((agent, idx) => (
                                 <div
