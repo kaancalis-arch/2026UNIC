@@ -338,3 +338,14 @@ export interface InterestedProgramData {
   name: string;
   description: string;
 }
+
+export interface AIAgent {
+  id: string;
+  name: string;
+  jobTitle: string;
+  workDescription: string;
+  aiModel: string;
+  apiKey: string;
+  permissions: string[];
+  avatar?: string;
+}

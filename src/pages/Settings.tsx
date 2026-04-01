@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent } from '../types';
 import { MOCK_USERS, MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
@@ -119,6 +119,17 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
 
     // Main Degree / Category State
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
+    
+    // AI Agents State
+    const [aiAgents, setAiAgents] = useState<AIAgent[]>([
+        { id: 'agent-1', name: 'Danışman Asistanı', jobTitle: 'Senior Advisor', workDescription: 'Öğrencilere üniversite başvuru süreçlerinde rehberlik eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'universities.read'] },
+        { id: 'agent-2', name: 'Belge Analisti', jobTitle: 'Document Analyst', workDescription: 'Başvuru belgelerini analiz eder ve değerlendirir.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['documents.read', 'documents.write'] }
+    ]);
+    const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+    const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+    const [agentForm, setAgentForm] = useState<AIAgent>({
+        id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: []
+    });
     const [mainCategories, setMainCategories] = useState<MainCategoryData[]>([]);
     const [degreeSubTab, setDegreeSubTab] = useState<'main' | 'sub'>('sub');
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
@@ -437,6 +448,47 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             setUniversities(prev => prev.filter(u => u.id !== id));
         } catch (error) {
             console.error("Failed to delete", error);
+        }
+    };
+
+    // --- AI AGENT LOGIC ---
+    const handleAddAgent = () => {
+        setAgentForm({
+            id: `agent-${Date.now()}`,
+            name: '',
+            jobTitle: '',
+            workDescription: '',
+            aiModel: 'gemini-2.5-flash',
+            apiKey: '',
+            permissions: []
+        });
+        setEditingAgentId(null);
+        setIsAgentModalOpen(true);
+    };
+
+    const handleEditAgent = (agentId: string) => {
+        const agent = aiAgents.find(a => a.id === agentId);
+        if (agent) {
+            setAgentForm(agent);
+            setEditingAgentId(agentId);
+            setIsAgentModalOpen(true);
+        }
+    };
+
+    const handleSaveAgent = () => {
+        if (editingAgentId) {
+            setAiAgents(prev => prev.map(a => a.id === editingAgentId ? agentForm : a));
+        } else {
+            setAiAgents(prev => [...prev, agentForm]);
+        }
+        setIsAgentModalOpen(false);
+        setAgentForm({ id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: [] });
+        setEditingAgentId(null);
+    };
+
+    const handleDeleteAgent = (agentId: string) => {
+        if (window.confirm('Bu agenti silmek istediğinize emin misiniz?')) {
+            setAiAgents(prev => prev.filter(a => a.id !== agentId));
         }
     };
 
@@ -2720,74 +2772,69 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 </>
             )}
             {activeTab === 'career' && !selectedDefinitionType && (
-                 <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-                    <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-8 opacity-5">
-                            <Cpu className="w-32 h-32" />
-                        </div>
+                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <Cpu className="w-5 h-5 text-indigo-600" /> AI Agent Ofisi
+                        </h3>
                         
-                        <div className="relative">
-                            <h3 className="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                <Cpu className="w-5 h-5 text-indigo-600" /> AI Servis Ayarları
-                            </h3>
-                            <p className="text-slate-500 mb-8 border-b border-slate-100 pb-4">
-                                Platform genelinde kullanılan yapay zeka servislerinin API bağlantılarını buradan yönetebilirsiniz.
-                            </p>
-
-                            <div className="space-y-6">
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                            Google Gemini API Key
-                                        </label>
-                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase">Aktif Model: Gemini 2.5 Flash</span>
+                        {/* Office Grid */}
+                        <div className="relative bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl p-8 min-h-[500px]" style={{
+                            backgroundImage: `url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23cbd5e1" fill-opacity="0.4"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')`,
+                        }}>
+                            {/* Desk 1 */}
+                            <div 
+                                onClick={() => handleEditAgent('agent-1')}
+                                className="absolute top-8 left-8 cursor-pointer hover:scale-105 transition-transform"
+                            >
+                                <div className="w-24 h-16 bg-amber-700 rounded-lg shadow-lg flex flex-col items-center justify-center relative">
+                                    <div className="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                                        {aiAgents[0]?.avatar ? (
+                                            <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Users className="w-6 h-6" />
+                                        )}
                                     </div>
-                                    <div className="relative group">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
-                                            <Key className="w-4 h-4" />
-                                        </div>
-                                        <input 
-                                            type="password"
-                                            value={localStorage.getItem('gemini_api_key') || ''}
-                                            onChange={(e) => {
-                                                localStorage.setItem('gemini_api_key', e.target.value);
-                                                // Trigger a re-render if needed or just rely on the next refresh/page change
-                                            }}
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-mono text-sm" 
-                                            placeholder="AI analizleri için API anahtarınızı giriniz..."
-                                        />
+                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-700 whitespace-nowrap bg-white px-2 py-1 rounded shadow">
+                                        {aiAgents[0]?.name || 'Masa 1'}
                                     </div>
-                                    <p className="text-[11px] text-slate-400 leading-relaxed italic">
-                                        * API anahtarı yerel olarak (Local Storage) saklanır ve sadece AI analizleri tetiklendiğinde kullanılır.
-                                    </p>
                                 </div>
-
-                                <div className="pt-4 flex justify-end">
-                                    <button 
-                                        onClick={() => {
-                                            alert('API Ayarları başarıyla güncellendi!');
-                                            window.location.reload();
-                                        }}
-                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2"
-                                    >
-                                        <Save className="w-4 h-4" /> Değişiklikleri Kaydet
-                                    </button>
+                            </div>
+                            
+                            {/* Desk 2 */}
+                            <div 
+                                onClick={() => handleEditAgent('agent-2')}
+                                className="absolute top-8 right-8 cursor-pointer hover:scale-105 transition-transform"
+                            >
+                                <div className="w-24 h-16 bg-amber-700 rounded-lg shadow-lg flex flex-col items-center justify-center relative">
+                                    <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                                        {aiAgents[1]?.avatar ? (
+                                            <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Users className="w-6 h-6" />
+                                        )}
+                                    </div>
+                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-700 whitespace-nowrap bg-white px-2 py-1 rounded shadow">
+                                        {aiAgents[1]?.name || 'Masa 2'}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Desk 3 */}
+                            <div 
+                                onClick={() => handleAddAgent()}
+                                className="absolute bottom-8 left-1/2 -translate-x-1/2 cursor-pointer hover:scale-105 transition-transform"
+                            >
+                                <div className="w-24 h-16 bg-slate-300 rounded-lg shadow-lg flex flex-col items-center justify-center border-2 border-dashed border-slate-400">
+                                    <Plus className="w-8 h-8 text-slate-500" />
+                                    <span className="text-xs text-slate-500 mt-1">Yeni Ekle</span>
                                 </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex gap-4">
-                        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
-                            <Shield className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-amber-900 text-sm mb-1">Güvenlik Notu</h4>
-                            <p className="text-xs text-amber-700 leading-relaxed">
-                                API anahtarlarınızı kimseyle paylaşmayınız. Platform, analizlerinizi otomatize etmek için bu anahtarı kullanır. Gelecekte bu ayarlar merkezi bir "Secret Manager" üzerinden yönetilebilir olacaktır.
-                            </p>
-                        </div>
+                        
+                        <p className="text-sm text-slate-500 mt-16 text-center">
+                            AI Agent eklemek için masalardan birine tıklayın veya yeni masa ekleyin.
+                        </p>
                     </div>
                  </div>
             )}
@@ -3363,6 +3410,142 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
                                 <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Agent Modal */}
+            {isAgentModalOpen && (
+                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-fade-in overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {editingAgentId ? 'AI Agent Düzenle' : 'Yeni AI Agent Ekle'}
+                            </h3>
+                            <button onClick={() => setIsAgentModalOpen(false)}>
+                                <XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" />
+                            </button>
+                        </div>
+                        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }} className="p-6 space-y-4">
+                            {/* Avatar Selection */}
+                            <div className="flex justify-center mb-4">
+                                <div className="relative">
+                                    <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-indigo-200 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-400 transition-colors">
+                                        {agentForm.avatar ? (
+                                            <img src={agentForm.avatar} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Users className="w-12 h-12 text-slate-400" />
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={agentForm.avatar || ''}
+                                        onChange={(e) => setAgentForm({...agentForm, avatar: e.target.value})}
+                                        className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                        placeholder="Avatar URL (opsiyonel)"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                                <input
+                                    required
+                                    value={agentForm.name}
+                                    onChange={(e) => setAgentForm({...agentForm, name: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="örn: Danışman Asistanı"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Job Title</label>
+                                <input
+                                    required
+                                    value={agentForm.jobTitle}
+                                    onChange={(e) => setAgentForm({...agentForm, jobTitle: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="örn: Senior Advisor"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Work Description</label>
+                                <textarea
+                                    required
+                                    value={agentForm.workDescription}
+                                    onChange={(e) => setAgentForm({...agentForm, workDescription: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none min-h-[80px]"
+                                    placeholder="Agentin görevlerini açıklayın..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">AI Model</label>
+                                <select
+                                    value={agentForm.aiModel}
+                                    onChange={(e) => setAgentForm({...agentForm, aiModel: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                >
+                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+                                <input
+                                    type="password"
+                                    value={agentForm.apiKey}
+                                    onChange={(e) => setAgentForm({...agentForm, apiKey: e.target.value})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono text-sm"
+                                    placeholder="API anahtarınızı giriniz..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Yetki Alanları</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['students.read', 'students.write', 'universities.read', 'universities.write', 'documents.read', 'documents.write', 'applications.read', 'applications.write'].map(perm => (
+                                        <label key={perm} className="flex items-center gap-2 p-2 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={agentForm.permissions?.includes(perm) || false}
+                                                onChange={(e) => {
+                                                    const isChecked = e.target.checked;
+                                                    setAgentForm(prev => ({
+                                                        ...prev,
+                                                        permissions: isChecked
+                                                            ? [...(prev.permissions || []), perm]
+                                                            : (prev.permissions || []).filter(p => p !== perm)
+                                                    }));
+                                                }}
+                                                className="w-4 h-4 text-indigo-600 rounded border-slate-300"
+                                            />
+                                            <span className="text-xs text-slate-700">{perm}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex justify-between">
+                                {editingAgentId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { handleDeleteAgent(editingAgentId); setIsAgentModalOpen(false); }}
+                                        className="px-4 py-2 text-rose-600 font-medium hover:bg-rose-50 rounded-lg"
+                                    >
+                                        Sil
+                                    </button>
+                                )}
+                                <div className="flex gap-2 ml-auto">
+                                    <button type="button" onClick={() => setIsAgentModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">İptal</button>
+                                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Kaydet</button>
+                                </div>
                             </div>
                         </form>
                     </div>
