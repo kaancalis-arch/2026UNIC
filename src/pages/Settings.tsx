@@ -2781,7 +2781,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         {/* Realistic Office Room */}
                         <div className="relative rounded-2xl overflow-hidden" style={{
                             background: 'linear-gradient(to bottom, #f1f5f9 0%, #e2e8f0 100%)',
-                            height: '420px',
+                            height: '400px',
                             boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.1)'
                         }}>
                             {/* Wall with window effect */}
@@ -2813,13 +2813,21 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 backgroundImage: `repeating-linear-gradient(90deg, transparent, transparent 29px, rgba(0,0,0,0.03) 29px, rgba(0,0,0,0.03) 30px)`
                             }}></div>
                             
-                            {/* Desk 1 - with Worker UNDER desk */}
+                            {/* Desk 1 - with Worker IN FRONT of desk */}
                             <div 
                                 onClick={() => handleEditAgent('agent-1')}
                                 className="absolute top-32 left-12 cursor-pointer group"
                             >
-                                {/* Worker sitting UNDER desk */}
-                                <div className="absolute -bottom-4 left-8 flex flex-col items-center">
+                                {/* Wide Desk */}
+                                <div className="w-56 h-8 bg-amber-600 rounded-lg shadow-xl flex items-center justify-center relative">
+                                    {/* Laptop on desk - centered */}
+                                    <div className="w-16 h-10 bg-slate-800 rounded shadow-lg flex flex-col items-center justify-center -mt-2">
+                                        <div className="w-14 h-8 bg-slate-700 rounded-sm border-t-2 border-slate-600"></div>
+                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                                    </div>
+                                </div>
+                                {/* Worker in FRONT of desk */}
+                                <div className="absolute top-16 left-20 flex flex-col items-center">
                                     <div className="w-14 h-14 rounded-full shadow-lg border-2 border-white overflow-hidden bg-slate-200">
                                         {aiAgents[0]?.avatar ? (
                                             <img src={aiAgents[0].avatar} alt="" className="w-full h-full object-cover" />
@@ -2832,7 +2840,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     {/* Status indicator */}
                                     <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full border-2 border-white ${aiAgents[0]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                                     {/* Name & Title below */}
-                                    <div className="absolute -bottom-16 -left-6 w-32 text-center">
+                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
                                         <div className="text-xs font-bold text-slate-800">{aiAgents[0]?.name || 'Bos'}</div>
                                         <div className="text-[9px] text-slate-500">{aiAgents[0]?.jobTitle || ''}</div>
                                         <div className={`text-[8px] ${aiAgents[0]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2840,22 +2848,20 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         </div>
                                     </div>
                                 </div>
-                                {/* Wide Desk */}
+                            </div>
+                            
+                            {/* Desk 2 - Worker IN FRONT */}
+                            <div 
+                                onClick={() => handleEditAgent('agent-2')}
+                                className="absolute top-32 right-12 cursor-pointer group"
+                            >
                                 <div className="w-56 h-8 bg-amber-600 rounded-lg shadow-xl flex items-center justify-center relative">
-                                    {/* Laptop on desk - centered */}
                                     <div className="w-16 h-10 bg-slate-800 rounded shadow-lg flex flex-col items-center justify-center -mt-2">
                                         <div className="w-14 h-8 bg-slate-700 rounded-sm border-t-2 border-slate-600"></div>
                                         <div className="w-12 h-1 bg-slate-600 rounded"></div>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            {/* Desk 2 - Worker */}
-                            <div 
-                                onClick={() => handleEditAgent('agent-2')}
-                                className="absolute top-32 right-12 cursor-pointer group"
-                            >
-                                <div className="absolute -bottom-4 left-8 flex flex-col items-center">
+                                <div className="absolute top-16 left-20 flex flex-col items-center">
                                     <div className="w-14 h-14 rounded-full shadow-lg border-2 border-white overflow-hidden bg-slate-200">
                                         {aiAgents[1]?.avatar ? (
                                             <img src={aiAgents[1].avatar} alt="" className="w-full h-full object-cover" />
@@ -2866,18 +2872,12 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         )}
                                     </div>
                                     <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full border-2 border-white ${aiAgents[1]?.apiKey ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                                    <div className="absolute -bottom-16 -left-6 w-32 text-center">
+                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
                                         <div className="text-xs font-bold text-slate-800">{aiAgents[1]?.name || 'Bos'}</div>
                                         <div className="text-[9px] text-slate-500">{aiAgents[1]?.jobTitle || ''}</div>
                                         <div className={`text-[8px] ${aiAgents[1]?.apiKey ? 'text-emerald-600' : 'text-rose-600'}`}>
                                             {aiAgents[1]?.apiKey ? '● Aktif' : '● Pasif'}
                                         </div>
-                                    </div>
-                                </div>
-                                <div className="w-56 h-8 bg-amber-600 rounded-lg shadow-xl flex items-center justify-center relative">
-                                    <div className="w-16 h-10 bg-slate-800 rounded shadow-lg flex flex-col items-center justify-center -mt-2">
-                                        <div className="w-14 h-8 bg-slate-700 rounded-sm border-t-2 border-slate-600"></div>
-                                        <div className="w-12 h-1 bg-slate-600 rounded"></div>
                                     </div>
                                 </div>
                             </div>
@@ -2887,19 +2887,19 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 onClick={() => handleAddAgent()}
                                 className="absolute bottom-20 left-12 cursor-pointer group"
                             >
-                                <div className="absolute -bottom-4 left-8 flex flex-col items-center opacity-60">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
-                                        <Plus className="w-6 h-6 text-slate-400" />
-                                    </div>
-                                    <div className="absolute -bottom-16 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
-                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
-                                    </div>
-                                </div>
                                 <div className="w-56 h-8 bg-slate-300 rounded-lg shadow-lg border-2 border-dashed border-slate-400 flex items-center justify-center">
                                     <div className="w-16 h-10 bg-slate-400 rounded shadow flex flex-col items-center justify-center -mt-2">
                                         <div className="w-14 h-8 bg-slate-500 rounded-sm"></div>
                                         <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                                    </div>
+                                </div>
+                                <div className="absolute top-16 left-20 flex flex-col items-center opacity-60">
+                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
+                                        <Plus className="w-6 h-6 text-slate-400" />
+                                    </div>
+                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
+                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
+                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
                                     </div>
                                 </div>
                             </div>
@@ -2909,19 +2909,19 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 onClick={() => handleAddAgent()}
                                 className="absolute bottom-20 right-12 cursor-pointer group"
                             >
-                                <div className="absolute -bottom-4 left-8 flex flex-col items-center opacity-60">
-                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
-                                        <Plus className="w-6 h-6 text-slate-400" />
-                                    </div>
-                                    <div className="absolute -bottom-16 -left-6 w-32 text-center">
-                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
-                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
-                                    </div>
-                                </div>
                                 <div className="w-56 h-8 bg-slate-300 rounded-lg shadow-lg border-2 border-dashed border-slate-400 flex items-center justify-center">
                                     <div className="w-16 h-10 bg-slate-400 rounded shadow flex flex-col items-center justify-center -mt-2">
                                         <div className="w-14 h-8 bg-slate-500 rounded-sm"></div>
                                         <div className="w-12 h-1 bg-slate-600 rounded"></div>
+                                    </div>
+                                </div>
+                                <div className="absolute top-16 left-20 flex flex-col items-center opacity-60">
+                                    <div className="w-14 h-14 rounded-full shadow-lg border-2 border-dashed border-slate-400 bg-slate-100 flex items-center justify-center">
+                                        <Plus className="w-6 h-6 text-slate-400" />
+                                    </div>
+                                    <div className="absolute -bottom-12 -left-6 w-32 text-center">
+                                        <div className="text-xs font-bold text-slate-500">Boş Masa</div>
+                                        <div className="text-[8px] text-slate-400">+ Agent Ekle</div>
                                     </div>
                                 </div>
                             </div>
