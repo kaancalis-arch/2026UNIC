@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
     ArrowLeft, Globe, BookOpen, Star, ExternalLink, 
     MapPin, Edit2, Trash2, Plus, Save, X, GraduationCap,
-    Link as LinkIcon, Loader2, Info
+    Link as LinkIcon, Loader2, Info, Upload, Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { UniversityData, UniversityProgram } from '../types';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
@@ -23,6 +24,65 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [universityTypes, setUniversityTypes] = useState<UniversityType[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const exportProgramsToExcel = () => {
+        if (!editedUniversity.programs || editedUniversity.programs.length === 0) {
+            alert('Excel\'e aktarılacak bölüm bulunmuyor.');
+            return;
+        }
+        const data = editedUniversity.programs.map(p => ({
+            'Bölüm Adı': p.name || '',
+            'Tür': p.type || '',
+            'Puan Türü': p.groupNames?.join(', ') || '',
+            'Link': p.link || '',
+            'Ücret Aralığı': p.tuitionRange || '',
+            'Kampüs': p.campusLocation || '',
+            'Başvuru Kriterleri': p.applicationCriteria || '',
+            'Dil Puanı': p.languageScore || '',
+            'Notlar': p.notes || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Bölümler');
+        XLSX.writeFile(wb, `${editedUniversity.name}_Bölümler_${Date.now()}.xlsx`);
+    };
+
+    const importProgramsFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet) as any[];
+                const newPrograms: UniversityProgram[] = jsonData.map((row, idx) => ({
+                    id: `prog-${Date.now()}-${idx}`,
+                    type: row['Tür'] || 'Bachelor',
+                    name: row['Bölüm Adı'] || '',
+                    groupNames: row['Puan Türü'] ? row['Puan Türü'].split(',').map((s: string) => s.trim()) : [],
+                    link: row['Link'] || '',
+                    tuitionRange: row['Ücret Aralığı'] || '',
+                    campusLocation: row['Kampüs'] || '',
+                    applicationCriteria: row['Başvuru Kriterleri'] || '',
+                    languageScore: row['Dil Puanı'] || '',
+                    notes: row['Notlar'] || ''
+                }));
+                setEditedUniversity(prev => ({
+                    ...prev,
+                    programs: [...(prev.programs || []), ...newPrograms]
+                }));
+                alert(`${newPrograms.length} bölüm import edildi.`);
+            } catch (error) {
+                console.error('Excel import error', error);
+                alert('Excel dosyası okunurken hata oluştu.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
 
     React.useEffect(() => {
         loadMainDegrees();
@@ -310,15 +370,40 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                         <GraduationCap className="w-5 h-5 text-indigo-600" />
                         Bölümler ({editedUniversity.programs?.length || 0})
                     </h2>
-                    {isEditing && (
+                    <div className="flex items-center gap-2">
+                        {(editedUniversity.programs && editedUniversity.programs.length > 0) && (
+                            <button 
+                                onClick={exportProgramsToExcel}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                            >
+                                <Download className="w-4 h-4" />
+                                Excel İndir
+                            </button>
+                        )}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            accept=".xlsx,.xls"
+                            onChange={importProgramsFromExcel}
+                            className="hidden"
+                        />
                         <button 
-                            onClick={addProgram}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
                         >
-                            <Plus className="w-4 h-4" />
-                            Bölüm Ekle
+                            <Upload className="w-4 h-4" />
+                            Excel Ekle
                         </button>
-                    )}
+                        {isEditing && (
+                            <button 
+                                onClick={addProgram}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Bölüm Ekle
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {(editedUniversity.programs && editedUniversity.programs.length > 0) ? (

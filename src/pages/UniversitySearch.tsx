@@ -1,12 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
     Search, Filter, Globe, GraduationCap, MapPin, 
     Share2, FileDown, CheckCircle2, Building, 
     ExternalLink, BookOpen, Star, Phone,
-    Check, X, Loader2, ChevronRight, ClipboardCopy
+    Check, X, Loader2, ChevronRight, ClipboardCopy, Upload, Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { UniversityData, UniversityProgram, MainDegreeData, MainCategoryData } from '../types';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
@@ -127,6 +128,79 @@ const UniversitySearch: React.FC = () => {
         setSelectedUnis(prev => 
             prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
         );
+    };
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const exportAllProgramsToExcel = () => {
+        const allPrograms: any[] = [];
+        universities.forEach(uni => {
+            (uni.programs || []).forEach(prog => {
+                allPrograms.push({
+                    'Üniversite': uni.name,
+                    'Ülke': uni.countries?.join(', ') || '',
+                    'Bölüm Adı': prog.name || '',
+                    'Tür': prog.type || '',
+                    'Puan Türü': prog.groupNames?.join(', ') || '',
+                    'Link': prog.link || '',
+                    'Ücret Aralığı': prog.tuitionRange || '',
+                    'Kampüs': prog.campusLocation || '',
+                    'Başvuru Kriterleri': prog.applicationCriteria || '',
+                    'Dil Puanı': prog.languageScore || '',
+                    'Notlar': prog.notes || ''
+                });
+            });
+        });
+        if (allPrograms.length === 0) {
+            alert('Excel\'e aktarılacak bölüm bulunmuyor.');
+            return;
+        }
+        const ws = XLSX.utils.json_to_sheet(allPrograms);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Tüm Bölümler');
+        XLSX.writeFile(wb, `UNIC_Tüm_Bölümler_${Date.now()}.xlsx`);
+    };
+
+    const importProgramsFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet) as any[];
+                let importedCount = 0;
+                const updatedUniversities = universities.map(uni => {
+                    const uniPrograms = jsonData.filter(row => row['Üniversite'] === uni.name);
+                    if (uniPrograms.length > 0) {
+                        importedCount += uniPrograms.length;
+                        const newPrograms: UniversityProgram[] = uniPrograms.map((row, idx) => ({
+                            id: `prog-${Date.now()}-${idx}`,
+                            type: row['Tür'] || 'Bachelor',
+                            name: row['Bölüm Adı'] || '',
+                            groupNames: row['Puan Türü'] ? row['Puan Türü'].split(',').map((s: string) => s.trim()) : [],
+                            link: row['Link'] || '',
+                            tuitionRange: row['Ücret Aralığı'] || '',
+                            campusLocation: row['Kampüs'] || '',
+                            applicationCriteria: row['Başvuru Kriterleri'] || '',
+                            languageScore: row['Dil Puanı'] || '',
+                            notes: row['Notlar'] || ''
+                        }));
+                        return { ...uni, programs: [...(uni.programs || []), ...newPrograms] };
+                    }
+                    return uni;
+                });
+                setUniversities(updatedUniversities);
+                alert(`${importedCount} bölüm import edildi.`);
+            } catch (error) {
+                console.error('Excel import error', error);
+                alert('Excel dosyası okunurken hata oluştu.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleExportPDF = () => {
@@ -265,6 +339,27 @@ const UniversitySearch: React.FC = () => {
                                 <span className="text-xs font-medium text-white/50">Üniversite Seçildi</span>
                             </div>
                         )}
+                        <button 
+                            onClick={exportAllProgramsToExcel}
+                            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="text-sm font-semibold">Excel İndir</span>
+                        </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            accept=".xlsx,.xls"
+                            onChange={importProgramsFromExcel}
+                            className="hidden"
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-all shadow-lg shadow-violet-500/20 cursor-pointer"
+                        >
+                            <Upload className="w-4 h-4" />
+                            <span className="text-sm font-semibold">Excel Ekle</span>
+                        </button>
                         <button 
                             onClick={handleExportPDF}
                             disabled={selectedUnis.length === 0}
