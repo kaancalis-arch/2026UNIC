@@ -1,6 +1,7 @@
 import React from 'react';
-import { Student, PipelineStage } from '../types';
+import { Student, PipelineStage, SharedInstitutionData } from '../types';
 import { studentService } from '../services/studentService';
+import { sharedInstitutionService } from '../services/sharedInstitutionService';
 import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react';
 import { getFlagEmoji } from '../utils/countryUtils';
@@ -58,6 +59,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [calendarEntries, setCalendarEntries] = React.useState<CalendarEntry[]>([]);
   const [calendarEvents, setCalendarEvents] = React.useState<CalendarEvent[]>([]);
+  const [sharedInstitutions, setSharedInstitutions] = React.useState<SharedInstitutionData[]>([]);
   const [selectedTimelineDate, setSelectedTimelineDate] = React.useState(() => formatDateKey(new Date()));
 
   const today = React.useMemo(() => {
@@ -122,6 +124,9 @@ const Dashboard: React.FC = () => {
 
         setCalendarEntries(nextEntries);
         setCalendarEvents(nextEvents);
+
+        const insts = await sharedInstitutionService.getAll();
+        setSharedInstitutions(insts);
       } catch (err) {
         console.error('Dashboard failed to load students', err);
       } finally {
@@ -481,6 +486,64 @@ const Dashboard: React.FC = () => {
           </div>
         </motion.div>
       </div>
+
+      <motion.div variants={itemVariants} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                <Link2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Kurum Listesi</h3>
+          </div>
+          <button 
+            onClick={() => window.location.hash = 'settings'}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1"
+          >
+            Tümünü Yönet
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                <th className="px-6 py-4">Kurum Adı</th>
+                <th className="px-6 py-4">Yetkili</th>
+                <th className="px-6 py-4">Telefon</th>
+                <th className="px-6 py-4">E-mail</th>
+                <th className="px-6 py-4">Not</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {sharedInstitutions.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-sm italic">Henüz bir kurum kaydı bulunmuyor.</td>
+                </tr>
+              ) : (
+                sharedInstitutions.map((inst) => (
+                  <tr key={inst.id} className="hover:bg-slate-50/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{inst.name}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-600">{inst.authorizedPerson || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-600">{inst.phone || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-600">{inst.email || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4 max-w-[240px]">
+                      <p className="text-xs text-slate-400 italic truncate" title={inst.notes}>{inst.notes || '-'}</p>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </motion.div>
     </motion.div>
   );
 };

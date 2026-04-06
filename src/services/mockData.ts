@@ -204,30 +204,32 @@ export const MOCK_COUNTRIES: CountryData[] = [
         flag: '🇺🇸',
         capital: 'Washington, D.C.',
         currency: 'USD ($)',
-        population: '331.9 Million',
-        cities: ['New York', 'Los Angeles', 'Chicago', 'Boston', 'San Francisco'],
-        imageUrl: 'https://images.unsplash.com/photo-1485738422979-f5c462d49f74?q=80&w=2000&auto=format&fit=crop',
         educationSystemDescription: 'The US higher education system is known for its flexibility. It typically includes Associate degrees (2 years), Bachelor\'s degrees (4 years), Master\'s degrees (1-2 years), and Doctoral degrees.',
         
         bachelorTypes: [
             {
-                name: 'Community College (Associate Degree)',
-                description: '2 yıllık eğitim. GPA 2.0+ ve TOEFL 60+ genelde yeterlidir. Daha ekonomik bir başlangıç sunar.'
+                duration: '2 Yıl',
+                description: 'Community College (Associate Degree) GPA 2.0+ ve TOEFL 60+ genelde yeterlidir. Daha ekonomik bir başlangıç sunar.'
             },
             {
-                name: 'University (Bachelor\'s Degree)',
-                description: '4 yıllık lisans eğitimi. Yüksek GPA, referans mektupları ve essay gerektirir. Erken başvurular Kasım ayında başlar.'
+                duration: '4 Yıl',
+                description: 'University (Bachelor\'s Degree) Yüksek GPA, referans mektupları ve essay gerektirir. Erken başvurular Kasım ayında başlar.'
             }
         ],
         masterTypes: [
             {
-                name: 'Professional Master (MBA etc.)',
-                description: '1.5 - 2 yıl sürer. İş deneyimi ve yüksek GPA (3.0+) önemlidir.'
+                duration: '1.5 - 2 Yıl',
+                description: 'Professional Master (MBA vb.) İş deneyimi ve yüksek GPA (3.0+) önemlidir.'
             }
         ],
         postGradWorkPermit: 'OPT (Optional Practical Training) ile 1 yıl, STEM bölümleri için +2 yıl (Toplam 3 yıl).',
+        studentWorkPermit: 'Kampüs içi haftada 20 saate kadar çalışma izni.',
         yksRequirement: 'YKS şartı aranmaz. Amerikan üniversiteleri kendi kabul kriterlerine göre öğrenci alır.',
-        popularJobs: ['Computer Science', 'Business Administration', 'Engineering', 'Psychology']
+        population: '331 Milyon',
+        popularSectors: 'Teknoloji, Finans, Sağlık',
+        generalApplicationRequirements: 'Yüksek not ortalaması, niyet mektubu ve referanslar.',
+        examRequirements: 'SAT/ACT, TOEFL/IELTS',
+        foundationRequirements: 'Gerekli değil'
     },
     {
         id: 'germany',
@@ -235,30 +237,32 @@ export const MOCK_COUNTRIES: CountryData[] = [
         flag: '🇩🇪',
         capital: 'Berlin',
         currency: 'EUR (€)',
-        population: '83.2 Million',
-        cities: ['Berlin', 'Munich', 'Hamburg', 'Frankfurt', 'Cologne'],
-        imageUrl: 'https://images.unsplash.com/photo-1467269204594-9661b133dd2b?q=80&w=2000&auto=format&fit=crop',
         educationSystemDescription: 'German universities are mostly public and tuition-free. Distinguished between Universitäten (Research) and Fachhochschulen (Applied Sciences).',
         
         bachelorTypes: [
             {
-                name: 'Universität (Devlet Üniversitesi)',
-                description: '3 yıl sürer. Teorik ağırlıklıdır. Türkiye\'de 4 yıllık bir bölüm kazanmış olmak gerekir. C1 Almanca istenir.'
+                duration: '3 Yıl',
+                description: 'Universität (Devlet Üniversitesi) Teorik ağırlıklıdır. Türkiye\'de 4 yıllık bir bölüm kazanmış olmak gerekir. C1 Almanca istenir.'
             },
             {
-                name: 'Fachhochschule (Uygulamalı Bilimler)',
-                description: '3.5 - 4 yıl sürer (Staj dahil). Pratik ağırlıklıdır. B2/C1 seviyesinde dil yeterliliği beklenir.'
+                duration: '3.5 - 4 Yıl',
+                description: 'Fachhochschule (Uygulamalı Bilimler) Pratik ağırlıklıdır. B2/C1 seviyesinde dil yeterliliği beklenir.'
             }
         ],
         masterTypes: [
             {
-                name: 'Research Master',
-                description: '2 yıl sürer. Akademik ve araştırma odaklıdır. İlgili alanda lisans diploması şarttır.'
+                duration: '2 Yıl',
+                description: 'Research Master Akademik ve araştırma odaklıdır. İlgili alanda lisans diploması şarttır.'
             }
         ],
         postGradWorkPermit: 'Mezuniyet sonrası iş arama vizesi: 18 Ay.',
+        studentWorkPermit: 'Yılda 120 tam gün veya 240 yarım gün yasal çalışma izni.',
         yksRequirement: 'Türkiye\'de 4 yıllık bir lisans programına yerleşmiş olma şartı aranır (ÖSYM Sonuç Belgesi).',
-        popularJobs: ['Engineering (Automotive, Mechanical)', 'Computer Science', 'Business', 'Medicine']
+        population: '83 Milyon',
+        popularSectors: 'Otomotiv, Mühendislik, Bilişim',
+        generalApplicationRequirements: 'Lise diploması ve YKS sonucu.',
+        examRequirements: 'TestDaF, DSH, IELTS',
+        foundationRequirements: 'Studienkolleg gerekebilir'
     }
 ];
 

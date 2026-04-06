@@ -33,9 +33,15 @@ export const universityTypeService = {
   async upsert(type: UniversityType): Promise<UniversityType> {
     if (!supabase) return type;
 
+    const isLocal = type.id.startsWith('ut-');
+    const payload = {
+      ...type,
+      id: isLocal ? crypto.randomUUID() : type.id
+    };
+
     const { data, error } = await supabase
       .from('university_types')
-      .upsert(type)
+      .upsert(payload)
       .select()
       .single();
 

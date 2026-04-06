@@ -20,6 +20,10 @@ export const sharedInstitutionService = {
         return data.map((row: any) => ({
           id: row.id,
           name: row.name,
+          phone: row.phone,
+          email: row.email,
+          notes: row.notes,
+          authorizedPerson: row.authorized_person,
           description: row.description,
           contactName: row.contact_name,
           contactInfo: row.contact_info
@@ -34,17 +38,22 @@ export const sharedInstitutionService = {
 
     const dbPayload = {
         name: institution.name,
+        phone: institution.phone,
+        email: institution.email,
+        notes: institution.notes,
+        authorized_person: institution.authorizedPerson,
         description: institution.description,
         contact_name: institution.contactName,
         contact_info: institution.contactInfo
     };
 
-    // If ID is local, don't send it to let DB generate one
+    // If ID is local, generate a proper UUID
     const isLocal = institution.id.startsWith('shint-');
+    const finalId = isLocal ? crypto.randomUUID() : institution.id;
     
     const { data, error } = await supabase
       .from('shared_institutions')
-      .upsert(isLocal ? dbPayload : { ...dbPayload, id: institution.id })
+      .upsert({ ...dbPayload, id: finalId })
       .select()
       .single();
 
@@ -53,6 +62,10 @@ export const sharedInstitutionService = {
     return {
           id: data.id,
           name: data.name,
+          phone: data.phone,
+          email: data.email,
+          notes: data.notes,
+          authorizedPerson: data.authorized_person,
           description: data.description,
           contactName: data.contact_name,
           contactInfo: data.contact_info

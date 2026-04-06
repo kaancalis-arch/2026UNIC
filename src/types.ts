@@ -256,7 +256,7 @@ export interface AIRoadmapResponse {
 
 // System Definitions Types
 export interface EducationType {
-  name: string;
+  duration: string;
   description: string;
 }
 
@@ -266,9 +266,6 @@ export interface CountryData {
   flag: string;
   capital: string;
   currency: string;
-  population: string;
-  cities: string[];
-  imageUrl: string;
   educationSystemDescription: string;
 
   // Detailed Fields
@@ -276,8 +273,15 @@ export interface CountryData {
   masterTypes: EducationType[];
 
   postGradWorkPermit: string;
+  studentWorkPermit: string;
   yksRequirement: string;
-  popularJobs: string[];
+
+  population: string;
+  popularSectors: string;
+
+  generalApplicationRequirements: string;
+  examRequirements: string;
+  foundationRequirements: string;
 }
 
 export interface UniversityProgram {
@@ -296,6 +300,10 @@ export interface UniversityProgram {
 export interface SharedInstitutionData {
   id: string;
   name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  authorizedPerson?: string;
   description?: string;
   contactName?: string;
   contactInfo?: string;

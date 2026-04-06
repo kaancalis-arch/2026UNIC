@@ -1,106 +1,79 @@
--- ============================================
--- UNIVERSITIES TABLOSU
--- ============================================
-
-DROP TABLE IF EXISTS public.universities;
-
-CREATE TABLE public.universities (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    logo TEXT DEFAULT '',
-    countries TEXT[] DEFAULT '{}',
-    ranking_url TEXT DEFAULT '',
-    website_url TEXT DEFAULT '',
-    departments_url TEXT DEFAULT '',
-    consulting_type TEXT DEFAULT '',
-    university_types TEXT[] DEFAULT '{}',
-    shared_institution_id TEXT DEFAULT '',
-    programs JSONB DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 1. Budget Ranges Table
+CREATE TABLE IF NOT EXISTS public.budget_ranges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    label TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-ALTER TABLE public.universities DISABLE ROW LEVEL SECURITY;
+-- RLS
+ALTER TABLE public.budget_ranges ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read access" ON public.budget_ranges;
+CREATE POLICY "Allow public read access" ON public.budget_ranges FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow authenticated full access" ON public.budget_ranges;
+CREATE POLICY "Allow authenticated full access" ON public.budget_ranges FOR ALL USING (true); -- Note: For production use (auth.role() = 'authenticated')
 
--- ============================================
--- UNIVERSITY TYPES TABLOSU
--- ============================================
+-- Initial Data
+INSERT INTO public.budget_ranges (label, sort_order) 
+SELECT label, sort_order FROM (
+  VALUES 
+    ('Bütçe Konusunda Kararsızım', 10),
+    ('5.000''e kadar', 20),
+    ('10.000''e kadar', 30),
+    ('15.000''e kadar', 40),
+    ('20.000''e kadar', 50),
+    ('20.000 üzeri uygundur', 60)
+) AS t(label, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM public.budget_ranges);
 
-DROP TABLE IF EXISTS public.university_types;
 
-CREATE TABLE public.university_types (
-    id TEXT PRIMARY KEY,
+-- 2. Interested Programs
+CREATE TABLE IF NOT EXISTS public.interested_programs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    link TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-ALTER TABLE public.university_types DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.interested_programs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read access" ON public.interested_programs;
+CREATE POLICY "Allow public read access" ON public.interested_programs FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow authenticated full access" ON public.interested_programs;
+CREATE POLICY "Allow authenticated full access" ON public.interested_programs FOR ALL USING (true);
 
--- Default University Types
-INSERT INTO public.university_types (id, name, description, link) VALUES
-    ('ut-001', 'Araştırma Üniversitesi', 'Yoğun araştırma faaliyetleri yürüten, güçlü akademik kadroya sahip üniversiteler', ''),
-    ('ut-002', 'Russell Group', 'Birleşik Krallık''ın önde gelen 24 araştırma üniversitesinin birliği', 'https://russellgroup.ac.uk/'),
-    ('ut-003', 'Ivy League', 'ABD''nin sekiz en prestijli üniversitesinin oluşturduğu lig', 'https://www.ivyleague.com/'),
-    ('ut-004', 'TU9', 'Almanya''nın dokuz lider teknik üniversitesinin birliği', 'https://www.tu9.de/'),
-    ('ut-005', 'Uygulamalı Bilimler', 'Pratik ve uygulamaya yönelik eğitim veren üniversiteler (Fachhochschule)', ''),
-    ('ut-006', 'Tasarım Üniversiteleri', 'Görsel sanatlar, tasarım ve mimarlık alanında uzmanlaşmış üniversiteler', ''),
-    ('ut-007', 'Top 100', 'Dünya genelinde en iyi 100 üniversite arasında yer alanlar', ''),
-    ('ut-008', 'Top 200', 'Dünya genelinde en iyi 200 üniversite arasında yer alanlar', ''),
-    ('ut-009', 'Top 500', 'Dünya genelinde en iyi 500 üniversite arasında yer alanlar', ''),
-    ('ut-010', 'Devlet Üniversitesi', 'Devlet tarafından finanse edilen üniversiteler', ''),
-    ('ut-011', 'Özel Üniversite', 'Özel sektör tarafından finanse edilen üniversiteler', ''),
-    ('ut-012', 'Community College', '2 yıllık ön lisans programları sunan kolejler', '')
-ON CONFLICT (id) DO NOTHING;
 
--- ============================================
--- UNIVERSITY TYPES UPSERT FONKSİYONU
--- ============================================
+-- 3. Main Categories & Junction
+CREATE TABLE IF NOT EXISTS public.main_categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
-CREATE OR REPLACE FUNCTION public.upsert_university_type(
-    p_id TEXT,
-    p_name TEXT,
-    p_description TEXT DEFAULT '',
-    p_link TEXT DEFAULT ''
-)
-RETURNS TABLE(
-    out_id TEXT,
-    out_name TEXT,
-    out_description TEXT,
-    out_link TEXT,
-    out_created_at TIMESTAMPTZ
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-    RETURN QUERY
-    INSERT INTO public.university_types (id, name, description, link)
-    VALUES (p_id, p_name, p_description, p_link)
-    ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        description = EXCLUDED.description,
-        link = EXCLUDED.link
-    RETURNING 
-        public.university_types.id,
-        public.university_types.name,
-        public.university_types.description,
-        public.university_types.link,
-        public.university_types.created_at;
-END;
-$$;
+ALTER TABLE public.main_categories ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read access" ON public.main_categories;
+CREATE POLICY "Allow public read access" ON public.main_categories FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow authenticated full access" ON public.main_categories;
+CREATE POLICY "Allow authenticated full access" ON public.main_categories FOR ALL USING (true);
 
--- ============================================
--- STORAGE BUCKET
--- ============================================
+CREATE TABLE IF NOT EXISTS public.program_category_junction (
+    program_id UUID NOT NULL,
+    category_id UUID NOT NULL,
+    PRIMARY KEY (program_id, category_id)
+);
 
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('university-logos', 'university-logos', true)
-ON CONFLICT (id) DO NOTHING;
 
-DROP POLICY IF EXISTS "logos_read" ON storage.objects;
-DROP POLICY IF EXISTS "logos_insert" ON storage.objects;
+-- 4. University Types
+CREATE TABLE IF NOT EXISTS public.university_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT,
+    link TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
-CREATE POLICY "logos_read" ON storage.objects FOR SELECT USING (bucket_id = 'university-logos');
-CREATE POLICY "logos_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'university-logos');
+ALTER TABLE public.university_types ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read access" ON public.university_types;
+CREATE POLICY "Allow public read access" ON public.university_types FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow authenticated full access" ON public.university_types;
+CREATE POLICY "Allow authenticated full access" ON public.university_types FOR ALL USING (true);

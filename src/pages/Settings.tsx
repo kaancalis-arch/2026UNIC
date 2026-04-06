@@ -13,7 +13,7 @@ import { sharedInstitutionService } from '../services/sharedInstitutionService';
 import { systemService } from '../services/systemService';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
-    Shield, CheckCircle, XCircle, Plus, MoreVertical, Edit2, Trash2, 
+    Shield, CheckCircle, XCircle, Plus, PlusCircle, MoreVertical, Edit2, Trash2, 
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload
@@ -54,22 +54,26 @@ const STANDARD_EDUCATION_TYPES = [
     "Meslek Yüksekokulu (Vocational School)"
 ];
 
-const DefinitionCard = ({ id, title, icon: Icon, count, onClick }: any) => (
+const DefinitionCard = ({ id, title, icon: Icon, count, onClick, color = "text-indigo-600", bg = "bg-indigo-50" }: any) => (
     <div 
         onClick={() => onClick(id)}
-        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer group"
+        className="p-5 bg-white border border-slate-100 rounded-2xl hover:border-indigo-200 hover:shadow-md transition-all group cursor-pointer"
     >
-        <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
-                <Icon className="w-6 h-6" />
-            </div>
-            <div>
-                <h4 className="font-bold text-slate-800">{title}</h4>
-                <p className="text-sm text-slate-500">{count} kayıt tanımlı</p>
+        <div className="flex items-center justify-between mb-4">
+            <div className={`p-3 rounded-xl ${bg} ${color}`}>
+                <Icon className="w-5 h-5" />
             </div>
         </div>
-        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-slate-100">
-            <MoreVertical className="w-4 h-4" />
+        <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{id.replace('_', ' ')}</p>
+            <h4 className="text-lg font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors">{title}</h4>
+            <div className="mt-4 flex items-end justify-between">
+                <div className="flex flex-col">
+                    <span className="text-3xl font-black text-slate-900">{count}</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Yönetmek için tıkla</span>
+                </div>
+                <span className="text-xs font-medium text-slate-400 mb-1">Kayıt</span>
+            </div>
         </div>
     </div>
 );
@@ -173,6 +177,10 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     const [sharedInstitutionForm, setSharedInstitutionForm] = useState<SharedInstitutionData>({
         id: '',
         name: '',
+        phone: '',
+        email: '',
+        notes: '',
+        authorizedPerson: '',
         description: ''
     });
     
@@ -227,6 +235,20 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             loadUniversityTypes();
         }
     }, [selectedDefinitionType]);
+
+    // Pre-load data for overview cards when navigating to the tabs
+    useEffect(() => {
+        if (activeTab === 'definitions' && !selectedDefinitionType) {
+            loadInterestedPrograms();
+            loadSharedInstitutions();
+            loadUniversityTypes();
+            loadBudgetRangesList();
+        } else if (activeTab === 'data' && !selectedDefinitionType) {
+            loadCountries();
+            loadUniversities();
+            loadMainDegrees();
+        }
+    }, [activeTab, selectedDefinitionType]);
 
     const loadCountries = async () => {
         setIsLoadingCountries(true);
@@ -881,8 +903,11 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         setSharedInstitutionForm({
             id: `shint-${Date.now()}`,
             name: '',
-            contactName: '',
-            contactInfo: ''
+            phone: '',
+            email: '',
+            notes: '',
+            authorizedPerson: '',
+            description: ''
         });
         setIsSharedInstitutionModalOpen(true);
     };
@@ -906,8 +931,9 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 return [savedInst, ...prev];
             });
             setIsSharedInstitutionModalOpen(false);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to save shared institution", error);
+            alert('Kurum kaydedilirken hata oluştu: ' + (error?.message || JSON.stringify(error)));
         }
     };
 
@@ -928,15 +954,17 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             flag: '🏳️',
             capital: '',
             currency: '',
-            population: '',
-            cities: [],
-            imageUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2000&auto=format&fit=crop',
             educationSystemDescription: '',
             bachelorTypes: [],
             masterTypes: [],
             postGradWorkPermit: '',
+            studentWorkPermit: '',
             yksRequirement: '',
-            popularJobs: []
+            population: '',
+            popularSectors: '',
+            generalApplicationRequirements: '',
+            examRequirements: '',
+            foundationRequirements: ''
         };
         setCountryForm(newCountry);
         setIsEditingCountry(true);
@@ -997,7 +1025,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
 
         setCountryForm(prev => ({
             ...prev,
-            [targetList]: [...prev[targetList], { name: '', description: '' }]
+            [targetList]: [...prev[targetList], { duration: '', description: '' }]
         }));
     };
 
@@ -1774,26 +1802,32 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
                                 <th className="px-6 py-4 font-semibold">Kurum Adı</th>
-                                <th className="px-6 py-4 font-semibold">Yetkili Adı</th>
-                                <th className="px-6 py-4 font-semibold">İletişim Bilgileri</th>
+                                <th className="px-6 py-4 font-semibold">Yetkili</th>
+                                <th className="px-6 py-4 font-semibold">Telefon</th>
+                                <th className="px-6 py-4 font-semibold">E-mail</th>
+                                <th className="px-6 py-4 font-semibold">Not</th>
                                 <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {isLoadingSharedInstitutions ? (
                                 <tr>
-                                    <td colSpan={4} className="p-10 text-center text-slate-500">Yükleniyor...</td>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">Yükleniyor...</td>
                                 </tr>
                             ) : sharedInstitutions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-10 text-center text-slate-500">Henüz kurum eklenmedi.</td>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">Henüz kurum eklenmedi.</td>
                                 </tr>
                             ) : (
                                 sharedInstitutions.map(inst => (
                                     <tr key={inst.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-slate-800">{inst.name}</td>
-                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.contactName || '-'}</td>
-                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.contactInfo || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.authorizedPerson || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.phone || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{inst.email || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-400 italic">
+                                            <div className="max-w-[200px] truncate" title={inst.notes}>{inst.notes || '-'}</div>
+                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 <button onClick={() => handleEditSharedInstitution(inst)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
@@ -1832,22 +1866,22 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                     </button>
                     <div>
                         <h3 className="text-xl font-bold text-slate-800">
-                            {isEditingCountry ? (countryForm.id.startsWith('country-') ? 'Add New Country' : 'Edit Country') : 'Country Definitions'}
+                            {isEditingCountry ? (countryForm.id.startsWith('country-') ? 'Yeni Ülke Ekle' : 'Ülkeyi Düzenle') : 'Ülke Tanımları'}
                         </h3>
-                        <p className="text-sm text-slate-500">Manage education systems, requirements, and country details.</p>
+                        <p className="text-sm text-slate-500">Eğitim sistemlerini, gereksinimleri ve ülke detaylarını yönetin.</p>
                     </div>
                 </div>
 
                 {isLoadingCountries ? (
                     <div className="flex-1 flex items-center justify-center text-slate-500 gap-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> Loading countries...
+                        <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> Ülkeler yükleniyor...
                     </div>
                 ) : (
                     <div className="flex flex-1 gap-6 overflow-hidden">
                         {/* Sidebar List (Disabled when editing) */}
                         <div className={`w-64 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-opacity ${isEditingCountry ? 'opacity-50 pointer-events-none' : ''}`}>
                             <div className="p-4 border-b border-slate-100 bg-slate-50">
-                                <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">Countries List</h4>
+                                <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">Ülke Listesi</h4>
                             </div>
                             <div className="overflow-y-auto flex-1 p-2 space-y-1">
                                 {countries.map(country => (
@@ -1864,14 +1898,14 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         <span className="font-medium text-sm">{country.name}</span>
                                     </button>
                                 ))}
-                                {countries.length === 0 && <div className="p-4 text-center text-sm text-slate-400">No countries found.</div>}
+                                {countries.length === 0 && <div className="p-4 text-center text-sm text-slate-400">Henüz ülke eklenmemiş.</div>}
                             </div>
                             <div className="p-3 border-t border-slate-100">
                                 <button 
                                     onClick={handleCreateNewCountry}
                                     className="w-full py-2 flex items-center justify-center gap-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
                                 >
-                                    <Plus className="w-4 h-4" /> Add Country
+                                    <Plus className="w-4 h-4" /> Ülke Ekle
                                 </button>
                             </div>
                         </div>
@@ -1952,37 +1986,42 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                             <input value={countryForm.currency} onChange={(e) => updateCountryField('currency', e.target.value)} className="w-full border p-2 rounded-lg text-sm" placeholder="e.g. USD ($)" />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Population</label>
-                                            <input value={countryForm.population} onChange={(e) => updateCountryField('population', e.target.value)} className="w-full border p-2 rounded-lg text-sm" placeholder="e.g. 80 Million" />
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Nüfus</label>
+                                            <input value={countryForm.population || ''} onChange={(e) => updateCountryField('population', e.target.value)} className="w-full border p-2 rounded-lg text-sm" placeholder="Örn: 83 Milyon" />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Image URL</label>
-                                            <input value={countryForm.imageUrl} onChange={(e) => updateCountryField('imageUrl', e.target.value)} className="w-full border p-2 rounded-lg text-sm" placeholder="https://..." />
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Öne Çıkan Sektörler</label>
+                                            <input value={countryForm.popularSectors || ''} onChange={(e) => updateCountryField('popularSectors', e.target.value)} className="w-full border p-2 rounded-lg text-sm" placeholder="Örn: Teknoloji, Finans" />
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                                             <div className="flex items-center gap-2 text-slate-500 text-xs uppercase font-bold mb-2">
                                                 <MapPin className="w-4 h-4" /> Capital
                                             </div>
-                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.capital}</p>
+                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.capital || '-'}</p>
                                         </div>
                                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                                             <div className="flex items-center gap-2 text-slate-500 text-xs uppercase font-bold mb-2">
                                                 <Banknote className="w-4 h-4" /> Currency
                                             </div>
-                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.currency}</p>
+                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.currency || '-'}</p>
                                         </div>
                                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                                             <div className="flex items-center gap-2 text-slate-500 text-xs uppercase font-bold mb-2">
-                                                <Users2 className="w-4 h-4" /> Population
+                                                <Globe className="w-4 h-4" /> Nüfus
                                             </div>
-                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.population}</p>
-                    </div>
-                </div>
-            )}
-
+                                            <p className="text-lg font-semibold text-slate-800">{dataToShow.population || '-'}</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                            <div className="flex items-center gap-2 text-slate-500 text-xs uppercase font-bold mb-2">
+                                                <BriefcaseIcon className="w-4 h-4" /> Sektörler
+                                            </div>
+                                            <p className="text-sm font-semibold text-slate-800">{dataToShow.popularSectors || '-'}</p>
+                                        </div>
+                                    </div>
+                                )}
                                 {/* SECTION 2: BACHELOR'S DEGREE (LISANS) */}
                                 <div>
                                     <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-lg border-b border-slate-100 pb-2">
@@ -2006,22 +2045,21 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                                     )}
                                                     
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-                                                        {/* Type Name */}
+                                                        {/* Duration */}
                                                         <div className="md:col-span-1">
                                                             {isEditingCountry ? (
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tür Adı</label>
-                                                                    <select 
-                                                                        value={type.name}
-                                                                        onChange={(e) => updateEducationType('bachelor', index, 'name', e.target.value)}
+                                                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Eğitim Süresi</label>
+                                                                    <input 
+                                                                        type="text"
+                                                                        value={type.duration || ''}
+                                                                        onChange={(e) => updateEducationType('bachelor', index, 'duration', e.target.value)}
                                                                         className="w-full font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-2 focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                                                    >
-                                                                        <option value="">Seçiniz</option>
-                                                                        {STANDARD_EDUCATION_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                                    </select>
+                                                                        placeholder="Örn: 3 Yıl, 4 Yıl"
+                                                                    />
                                                                 </div>
                                                             ) : (
-                                                                <h5 className="font-bold text-slate-800 text-lg">{type.name}</h5>
+                                                                <h5 className="font-bold text-slate-800 text-lg">{type.duration || '-'}</h5>
                                                             )}
                                                         </div>
 
@@ -2060,6 +2098,58 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                                     </div>
                                                 )
                                             )}
+
+                                            <div className="space-y-4 mt-4">
+                                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <FileText className="w-4 h-4 text-slate-400" />
+                                                        <span className="font-bold text-sm text-slate-700">YKS Şartları (Türkiye)</span>
+                                                    </div>
+                                                    {isEditingCountry ? (
+                                                        <textarea rows={2} value={countryForm.yksRequirement || ''} onChange={e => updateCountryField('yksRequirement', e.target.value)} className="w-full text-sm border p-2 rounded" />
+                                                    ) : (
+                                                        <p className="text-sm text-slate-600">{dataToShow.yksRequirement || '-'}</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <FileText className="w-4 h-4 text-slate-400" />
+                                                        <span className="font-bold text-sm text-slate-700">Genel Başvuru Kriterleri</span>
+                                                    </div>
+                                                    {isEditingCountry ? (
+                                                        <textarea rows={2} value={countryForm.generalApplicationRequirements || ''} onChange={e => updateCountryField('generalApplicationRequirements', e.target.value)} className="w-full text-sm border p-2 rounded" placeholder="Örn: Yüksek lise ortalaması, niyet mektubu" />
+                                                    ) : (
+                                                        <p className="text-sm text-slate-600">{dataToShow.generalApplicationRequirements || '-'}</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <FileText className="w-4 h-4 text-slate-400" />
+                                                            <span className="font-bold text-sm text-slate-700">Sınav ve Belge Şartları (IB, AP, SAT vb.)</span>
+                                                        </div>
+                                                        {isEditingCountry ? (
+                                                            <textarea rows={2} value={countryForm.examRequirements || ''} onChange={e => updateCountryField('examRequirements', e.target.value)} className="w-full text-sm border p-2 rounded" placeholder="Örn: AP veya IB diploması istenebilir" />
+                                                        ) : (
+                                                            <p className="text-sm text-slate-600">{dataToShow.examRequirements || '-'}</p>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <FileText className="w-4 h-4 text-slate-400" />
+                                                            <span className="font-bold text-sm text-slate-700">Foundation (Hazırlık) Programları</span>
+                                                        </div>
+                                                        {isEditingCountry ? (
+                                                            <textarea rows={2} value={countryForm.foundationRequirements || ''} onChange={e => updateCountryField('foundationRequirements', e.target.value)} className="w-full text-sm border p-2 rounded" placeholder="Örn: Türk lise diplomaları için 1 yıl zorunlu" />
+                                                        ) : (
+                                                            <p className="text-sm text-slate-600">{dataToShow.foundationRequirements || '-'}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2087,22 +2177,21 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                                     )}
                                                     
                                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-                                                        {/* Type Name */}
+                                                        {/* Duration */}
                                                         <div className="md:col-span-1">
                                                             {isEditingCountry ? (
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tür Adı</label>
-                                                                    <select 
-                                                                        value={type.name}
-                                                                        onChange={(e) => updateEducationType('master', index, 'name', e.target.value)}
+                                                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Eğitim Süresi</label>
+                                                                    <input 
+                                                                        type="text"
+                                                                        value={type.duration || ''}
+                                                                        onChange={(e) => updateEducationType('master', index, 'duration', e.target.value)}
                                                                         className="w-full font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-2 focus:ring-2 focus:ring-purple-500/20 text-sm"
-                                                                    >
-                                                                        <option value="">Seçiniz</option>
-                                                                        {STANDARD_EDUCATION_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                                                    </select>
+                                                                        placeholder="Örn: 1 Yıl, 2 Yıl"
+                                                                    />
                                                                 </div>
                                                             ) : (
-                                                                <h5 className="font-bold text-slate-800 text-lg">{type.name}</h5>
+                                                                <h5 className="font-bold text-slate-800 text-lg">{type.duration || '-'}</h5>
                                                             )}
                                                         </div>
 
@@ -2165,66 +2254,16 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
 
                                         <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
                                             <div className="flex items-center gap-2 mb-2">
-                                                <FileText className="w-4 h-4 text-slate-400" />
-                                                <span className="font-bold text-sm text-slate-700">YKS Şartları (Türkiye)</span>
+                                                <BriefcaseIcon className="w-4 h-4 text-slate-400" />
+                                                <span className="font-bold text-sm text-slate-700">Öğrenciyken Çalışma İzni</span>
                                             </div>
                                             {isEditingCountry ? (
-                                                <textarea rows={3} value={countryForm.yksRequirement} onChange={e => updateCountryField('yksRequirement', e.target.value)} className="w-full text-sm border p-2 rounded" />
+                                                <textarea rows={3} value={countryForm.studentWorkPermit} onChange={e => updateCountryField('studentWorkPermit', e.target.value)} className="w-full text-sm border p-2 rounded" />
                                             ) : (
-                                                <p className="text-sm text-slate-600">{dataToShow.yksRequirement || '-'}</p>
+                                                <p className="text-sm text-slate-600">{dataToShow.studentWorkPermit || '-'}</p>
                                             )}
                                         </div>
                                     </div>
-                                </div>
-
-                                {/* SECTION 5: POPULAR JOBS */}
-                                <div>
-                                    <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <Star className="w-5 h-5 text-amber-500" /> Öne Çıkan Meslekler
-                                    </h4>
-                                    {isEditingCountry ? (
-                                        <div className="space-y-2">
-                                            <textarea 
-                                                rows={2} 
-                                                value={countryForm.popularJobs.join(', ')} 
-                                                onChange={(e) => updateCountryField('popularJobs', e.target.value.split(',').map(s => s.trim()))}
-                                                className="w-full border p-2 rounded-lg text-sm"
-                                                placeholder="Comma separated list (e.g. Engineering, Medicine, CS)"
-                                            />
-                                            <p className="text-xs text-slate-400">Virgül ile ayırarak yazınız.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {dataToShow.popularJobs.length > 0 ? dataToShow.popularJobs.map(job => (
-                                                <span key={job} className="px-3 py-1.5 bg-amber-50 border border-amber-100 text-amber-800 rounded-lg text-sm font-medium">
-                                                    {job}
-                                                </span>
-                                            )) : <span className="text-slate-400 italic text-sm">Veri yok</span>}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* CITIES */}
-                                    <div>
-                                    <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <Building className="w-5 h-5 text-slate-500" /> Önemli Şehirler
-                                    </h4>
-                                    {isEditingCountry ? (
-                                        <textarea 
-                                            rows={2}
-                                            value={countryForm.cities.join(', ')}
-                                            onChange={(e) => updateCountryField('cities', e.target.value.split(',').map(s => s.trim()))}
-                                            className="w-full border p-2 rounded text-sm"
-                                        />
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {dataToShow.cities.map(city => (
-                                                <span key={city} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm shadow-sm">
-                                                    {city}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
 
                                     {/* Education System Desc */}
@@ -2456,9 +2495,9 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                                         await universityTypeService.delete(type.id);
                                                     }
                                                     setUniversityTypesList(prev => prev.filter((_, i) => i !== idx));
-                                                } catch (error) {
+                                                } catch (error: any) {
                                                     console.error('Failed to delete university type', error);
-                                                    alert('Silme işlemi başarısız oldu.');
+                                                    alert('Silme işlemi başarısız oldu: ' + (error?.message || JSON.stringify(error)));
                                                 }
                                             }
                                         }}
@@ -2717,47 +2756,70 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 <>
                     {/* Grid View (Main Menu) */}
                     {!selectedDefinitionType && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
-                            <DefinitionCard 
-                                id="interested_programs"
-                                title="Program Tanımları" 
-                                icon={Briefcase} 
-                                count={interestedPrograms.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
-                                id="shared_institutions"
-                                title="Kurumlar" 
-                                icon={Building} 
-                                count={sharedInstitutions.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
-                                id="budget"
-                                title="Eğitim Bütçesi" 
-                                icon={Banknote} 
-                                count={6} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
-                                id="university_types"
-                                title="Üniversite Tipleri" 
-                                icon={GraduationCap} 
-                                count={universityTypesList.length || 0} 
-                                onClick={(id: string) => setSelectedDefinitionType(id)}
-                            />
-                            <DefinitionCard 
-                                id="docs"
-                                title="Evrak Türleri" 
-                                icon={Shield} 
-                                count={18} 
-                                onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
-                            />
+                        <div className="space-y-6 animate-fade-in pb-20">
+                            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                                <div className="flex items-center justify-between mb-8">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                            <Building className="w-5 h-5 text-indigo-600" /> Sistem Tanımları
+                                        </h3>
+                                        <p className="text-sm text-slate-500 mt-1">Sistem üzerinde kullanılan programlar, kurumlar ve bütçe aralıkları gibi temel tanımları yönetin.</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    <DefinitionCard 
+                                        id="interested_programs"
+                                        title="Program Tanımları" 
+                                        icon={Briefcase} 
+                                        count={interestedPrograms.length || 0} 
+                                        color="text-indigo-600"
+                                        bg="bg-indigo-50"
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
+                                    />
+                                    <DefinitionCard 
+                                        id="shared_institutions"
+                                        title="Kurumlar" 
+                                        icon={Building} 
+                                        count={sharedInstitutions.length || 0} 
+                                        color="text-emerald-600"
+                                        bg="bg-emerald-50"
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
+                                    />
+                                    <DefinitionCard 
+                                        id="budget"
+                                        title="Eğitim Bütçesi" 
+                                        icon={Banknote} 
+                                        count={budgetRangesList.length || 0} 
+                                        color="text-amber-600"
+                                        bg="bg-amber-50"
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
+                                    />
+                                    <DefinitionCard 
+                                        id="university_types"
+                                        title="Üniversite Tipleri" 
+                                        icon={GraduationCap} 
+                                        count={universityTypesList.length || 0} 
+                                        color="text-purple-600"
+                                        bg="bg-purple-50"
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
+                                    />
+                                    <DefinitionCard 
+                                        id="docs"
+                                        title="Evrak Türleri" 
+                                        icon={Shield} 
+                                        count={18} 
+                                        color="text-rose-600"
+                                        bg="bg-rose-50"
+                                        onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     {/* Sub Views for Definitions Tab */}
                     {selectedDefinitionType === 'interested_programs' && renderInterestedProgramManager()}
+                    {selectedDefinitionType === 'shared_institutions' && renderSharedInstitutionManager()}
                     {selectedDefinitionType === 'budget' && renderBudgetManager()}
                     {selectedDefinitionType === 'university_types' && renderUniversityTypesManager()}
                 </>
@@ -3321,23 +3383,44 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     placeholder="Örn: X Danışmanlık A.Ş."
                                 />
                             </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Yetkili</label>
+                                    <input 
+                                        value={sharedInstitutionForm.authorizedPerson || ''} 
+                                        onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, authorizedPerson: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="Örn: Ahmet Bey"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Telefon</label>
+                                    <input 
+                                        value={sharedInstitutionForm.phone || ''} 
+                                        onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, phone: e.target.value})}
+                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                                        placeholder="05xx..."
+                                    />
+                                </div>
+                            </div>
                             <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Yetkili Adı</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">E-mail</label>
                                 <input 
-                                    value={sharedInstitutionForm.contactName || ''} 
-                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, contactName: e.target.value})}
+                                    type="email"
+                                    value={sharedInstitutionForm.email || ''} 
+                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, email: e.target.value})}
                                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                    placeholder="Örn: Ahmet Bey"
+                                    placeholder="kurum@mail.com"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">İletişim Bilgileri</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Not</label>
                                 <textarea 
                                     rows={3}
-                                    value={sharedInstitutionForm.contactInfo || ''} 
-                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, contactInfo: e.target.value})}
+                                    value={sharedInstitutionForm.notes || ''} 
+                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, notes: e.target.value})}
                                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                    placeholder="Telefon, E-posta, Adres vb."
+                                    placeholder="Kurum hakkında notlar..."
                                 />
                             </div>
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
