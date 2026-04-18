@@ -128,7 +128,7 @@ const App: React.FC = () => {
       case 'visa-results':
         return <VisaResults />;
       case 'visa-checklist':
-        return <VisaChecklist />;
+        return <VisaChecklist currentUser={currentUser} />;
       case 'calendar':
         return <CalendarPage />;
       case 'statistics':

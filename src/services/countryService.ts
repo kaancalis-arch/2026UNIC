@@ -36,7 +36,8 @@ export const countryService = {
           examRequirements: row.exam_requirements,
           foundationRequirements: row.foundation_requirements,
           bachelorTypes: row.bachelor_types || [],
-          masterTypes: row.master_types || []
+          masterTypes: row.master_types || [],
+          visaTypes: row.visa_types || []
         }));
     } catch (err) {
         console.warn('Unexpected error in countryService.getAll. Using mock data.', err);
@@ -63,7 +64,8 @@ export const countryService = {
         exam_requirements: country.examRequirements,
         foundation_requirements: country.foundationRequirements,
         bachelor_types: country.bachelorTypes,
-        master_types: country.masterTypes
+        master_types: country.masterTypes,
+        visa_types: country.visaTypes
     };
 
     const { data, error } = await supabase
@@ -91,7 +93,8 @@ export const countryService = {
           examRequirements: data.exam_requirements,
           foundationRequirements: data.foundation_requirements,
           bachelorTypes: data.bachelor_types || [],
-          masterTypes: data.master_types || []
+          masterTypes: data.master_types || [],
+          visaTypes: data.visa_types || []
     };
   },
   

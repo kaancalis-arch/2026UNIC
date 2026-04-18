@@ -260,6 +260,12 @@ export interface EducationType {
   description: string;
 }
 
+export interface VisaType {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface CountryData {
   id: string;
   name: string;
@@ -282,6 +288,8 @@ export interface CountryData {
   generalApplicationRequirements: string;
   examRequirements: string;
   foundationRequirements: string;
+  
+  visaTypes?: VisaType[]; 
 }
 
 export interface UniversityProgram {

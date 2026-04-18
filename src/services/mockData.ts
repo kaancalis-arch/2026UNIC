@@ -229,7 +229,11 @@ export const MOCK_COUNTRIES: CountryData[] = [
         popularSectors: 'Teknoloji, Finans, Sağlık',
         generalApplicationRequirements: 'Yüksek not ortalaması, niyet mektubu ve referanslar.',
         examRequirements: 'SAT/ACT, TOEFL/IELTS',
-        foundationRequirements: 'Gerekli değil'
+        foundationRequirements: 'Gerekli değil',
+        visaTypes: [
+            { id: 'v-usa-1', name: 'F-1 Öğrenci Vizesi', description: 'Akademik eğitim programları için gereken vize türü.' },
+            { id: 'v-usa-2', name: 'J-1 Değişim Ziyaretçisi Vizesi', description: 'Değişim programları ve stajlar için kullanılır.' }
+        ]
     },
     {
         id: 'germany',
@@ -262,7 +266,12 @@ export const MOCK_COUNTRIES: CountryData[] = [
         popularSectors: 'Otomotiv, Mühendislik, Bilişim',
         generalApplicationRequirements: 'Lise diploması ve YKS sonucu.',
         examRequirements: 'TestDaF, DSH, IELTS',
-        foundationRequirements: 'Studienkolleg gerekebilir'
+        foundationRequirements: 'Studienkolleg gerekebilir',
+        visaTypes: [
+            { id: 'v-ger-1', name: 'Ulusal Vize (Öğrenci)', description: '3 aydan uzun süreli akademik eğitimler için.' },
+            { id: 'v-ger-2', name: 'Schengen (Kısa Süreli Eğt.)', description: '90 güne kadar olan kurs ve eğitimler için.' },
+            { id: 'v-ger-3', name: 'Sınava Hazırlık / Dil Kursu Vizesi', description: 'Henüz kabul almamış ancak hazırlık yapacaklar için.' }
+        ]
     }
 ];
 

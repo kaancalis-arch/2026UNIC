@@ -588,38 +588,52 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 const jsonData = XLSX.utils.sheet_to_json(sheet) as any[];
 
                 let importedCount = 0;
+                let updatedCount = 0;
                 const defaultLogo = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8';
+
                 for (const row of jsonData) {
-                    const newUni: UniversityData = {
-                        id: row['ID'] || `uni-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                        name: row['Üniversite Adı'] || row['University Name'] || 'Unknown',
-                        logo: row['Logo URL'] || row['Logo'] || defaultLogo,
-                        websiteUrl: row['Website'] || row['Website URL'] || '',
-                        departmentsUrl: row['Departments URL'] || row['Departments'] || '',
-                        rankingUrl: row['Ranking URL'] || row['Ranking'] || '',
-                        countries: row['Ülkeler'] ? String(row['Ülkeler']).split(',').map((s: string) => s.trim()) : [],
-                        universityTypes: row['Üniversite Tipleri'] ? String(row['Üniversite Tipleri']).split(',').map((s: string) => s.trim()) : [],
-                        consultingType: row['Danışmanlık Türü'] || row['Consulting Type'] || '',
-                        sharedInstitutionId: row['Paylaşımlı Kurum'] || row['Shared Institution'] || '',
-                        programs: []
+                    const uniName = (row['Üniversite Adı'] || row['University Name'] || '').trim();
+                    if (!uniName) continue;
+
+                    // Mevcut üniversiteyi isim bazında ara
+                    const existing = universities.find(u => u.name.toLowerCase() === uniName.toLowerCase());
+
+                    const uniData: UniversityData = {
+                        id: existing?.id || `uni-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        name: uniName,
+                        logo: row['Logo URL'] || row['Logo'] || existing?.logo || defaultLogo,
+                        websiteUrl: row['Website'] || row['Website URL'] || existing?.websiteUrl || '',
+                        departmentsUrl: row['Departments URL'] || row['Departments'] || existing?.departmentsUrl || '',
+                        rankingUrl: row['Ranking URL'] || row['Ranking'] || existing?.rankingUrl || '',
+                        countries: row['Ülkeler'] ? String(row['Ülkeler']).split(',').map((s: string) => s.trim()) : (existing?.countries || []),
+                        universityTypes: row['Üniversite Tipleri'] ? String(row['Üniversite Tipleri']).split(',').map((s: string) => s.trim()) : (existing?.universityTypes || []),
+                        consultingType: row['Danışmanlık Türü'] || row['Consulting Type'] || existing?.consultingType || '',
+                        sharedInstitutionId: row['Paylaşımlı Kurum'] || row['Shared Institution'] || existing?.sharedInstitutionId || '',
+                        programs: existing?.programs || []
                     };
 
                     try {
-                        await universityService.upsert(newUni);
+                        const saved = await universityService.upsert(uniData);
                         setUniversities(prev => {
-                            const exists = prev.find(u => u.id === newUni.id);
-                            if (exists) {
-                                return prev.map(u => u.id === newUni.id ? newUni : u);
+                            const idx = prev.findIndex(u => u.name.toLowerCase() === uniName.toLowerCase());
+                            if (idx >= 0) {
+                                const updated = [...prev];
+                                updated[idx] = saved;
+                                return updated;
                             }
-                            return [newUni, ...prev];
+                            return [saved, ...prev];
                         });
-                        importedCount++;
+                        if (existing) {
+                            updatedCount++;
+                        } else {
+                            importedCount++;
+                        }
                     } catch (err) {
-                        console.error('Failed to import university:', newUni.name, err);
+                        console.error('Failed to import university:', uniName, err);
                     }
                 }
 
-                alert(`${importedCount} üniversite başarıyla içe aktarıldı!`);
+                alert(`${importedCount} yeni üniversite eklendi, ${updatedCount} mevcut üniversite güncellendi.`);
             } catch (error) {
                 console.error('Failed to parse Excel file', error);
                 alert('Excel dosyası okunurken bir hata oluştu.');
@@ -964,7 +978,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             popularSectors: '',
             generalApplicationRequirements: '',
             examRequirements: '',
-            foundationRequirements: ''
+            foundationRequirements: '',
+            visaTypes: []
         };
         setCountryForm(newCountry);
         setIsEditingCountry(true);
@@ -1034,6 +1049,28 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         setCountryForm(prev => ({
             ...prev,
             [targetList]: prev[targetList].filter((_, i) => i !== index)
+        }));
+    };
+
+    const addVisaType = () => {
+        const newVisa = { id: `v-${Date.now()}`, name: '', description: '' };
+        setCountryForm(prev => ({
+            ...prev,
+            visaTypes: [...(prev.visaTypes || []), newVisa]
+        }));
+    };
+
+    const removeVisaType = (id: string) => {
+        setCountryForm(prev => ({
+            ...prev,
+            visaTypes: (prev.visaTypes || []).filter(v => v.id !== id)
+        }));
+    };
+
+    const updateVisaType = (id: string, field: 'name' | 'description', value: string) => {
+        setCountryForm(prev => ({
+            ...prev,
+            visaTypes: (prev.visaTypes || []).map(v => v.id === id ? { ...v, [field]: value } : v)
         }));
     };
 
@@ -2252,7 +2289,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                             )}
                                         </div>
 
-                                        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm md:col-span-2">
                                             <div className="flex items-center gap-2 mb-2">
                                                 <BriefcaseIcon className="w-4 h-4 text-slate-400" />
                                                 <span className="font-bold text-sm text-slate-700">Öğrenciyken Çalışma İzni</span>
@@ -2262,6 +2299,72 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                             ) : (
                                                 <p className="text-sm text-slate-600">{dataToShow.studentWorkPermit || '-'}</p>
                                             )}
+                                        </div>
+
+                                        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm md:col-span-2">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Globe className="w-4 h-4 text-slate-400" />
+                                                    <span className="font-bold text-sm text-slate-700">Vize Tipleri (Visa Types)</span>
+                                                </div>
+                                                {isEditingCountry && (
+                                                    <button 
+                                                        onClick={addVisaType}
+                                                        className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                                                    >
+                                                        <Plus className="w-3 h-3" /> Vize Tipi Ekle
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {(dataToShow.visaTypes || []).length === 0 && (
+                                                    <p className="text-xs text-slate-400 italic py-2 text-center border border-dashed border-slate-100 rounded-lg">Henüz vize tipi tanımlanmamış.</p>
+                                                )}
+                                                {(dataToShow.visaTypes || []).map((vt, idx) => (
+                                                    <div key={vt.id || idx} className="p-3 bg-slate-50 border border-slate-100 rounded-xl relative group">
+                                                        {isEditingCountry && (
+                                                            <button 
+                                                                onClick={() => removeVisaType(vt.id)}
+                                                                className="absolute -top-2 -right-2 p-1 bg-white text-rose-500 border border-rose-100 rounded-full hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-sm"
+                                                            >
+                                                                <Trash2 className="w-3 h-3" />
+                                                            </button>
+                                                        )}
+                                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                                            <div className="md:col-span-1 flex items-center justify-center">
+                                                                <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 text-[10px] font-bold flex items-center justify-center">
+                                                                    {idx + 1}
+                                                                </span>
+                                                            </div>
+                                                            <div className="md:col-span-4">
+                                                                {isEditingCountry ? (
+                                                                    <input 
+                                                                        value={vt.name} 
+                                                                        onChange={(e) => updateVisaType(vt.id, 'name', e.target.value)}
+                                                                        className="w-full text-xs font-bold bg-white border border-slate-200 rounded px-2 py-1.5"
+                                                                        placeholder="Vize Adı (Örn: F-1)"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-sm font-bold text-slate-800">{vt.name}</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="md:col-span-7">
+                                                                {isEditingCountry ? (
+                                                                    <input 
+                                                                        value={vt.description} 
+                                                                        onChange={(e) => updateVisaType(vt.id, 'description', e.target.value)}
+                                                                        className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5"
+                                                                        placeholder="Açıklama"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-xs text-slate-500">{vt.description || '-'}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
