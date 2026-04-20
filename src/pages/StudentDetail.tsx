@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData } from '../types';
+import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
@@ -8,6 +8,7 @@ import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
+import { visaChecklistService, VisaChecklistItem } from '../services/visaChecklistService';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -21,6 +22,8 @@ import {
   MessageSquare,
   CheckCircle,
   Clock,
+  CheckSquare,
+  Square,
   AlertOctagon,
   Sparkles,
   User,
@@ -158,8 +161,16 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [allPrograms, setAllPrograms] = useState<string[]>([]);
   const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
   const [allCountries, setAllCountries] = useState<string[]>([]);
+  const [allCountriesData, setAllCountriesData] = useState<CountryData[]>([]);
   const [allUniversities, setAllUniversities] = useState<any[]>([]);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
+
+  // Visa Checklist State
+  const [visaItems, setVisaItems] = useState<VisaChecklistItem[]>([]);
+  const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
+  const [isLoadingVisaItems, setIsLoadingVisaItems] = useState(false);
+  const [visaChecklistExpanded, setVisaChecklistExpanded] = useState(false);
+  const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
 
   const normalizedTargetDegree = student.targetDegree || '';
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
@@ -186,6 +197,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         setAllMainDegrees(mainDegs.map(d => d.name));
         setMainDegreeDetails(mainDegs);
         setAllCountries(countries.map(c => c.name));
+        setAllCountriesData(countries);
         setAllUniversities(universities);
     } catch (error) {
         console.error("Failed to load options", error);
@@ -199,6 +211,133 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
      } catch (error) {
          console.error("Failed to load tuition ranges", error);
      }
+  };
+
+  // Load visa checklist when country or visa type changes
+  useEffect(() => {
+    const loadVisaItems = async () => {
+      if (student.visaCountry && student.visaType) {
+        setIsLoadingVisaItems(true);
+        try {
+          const items = await visaChecklistService.getItems(student.visaCountry, student.visaType);
+          setVisaItems(items);
+          setCheckedItems({});
+        } catch (error) {
+          console.error("Failed to load visa items", error);
+        } finally {
+          setIsLoadingVisaItems(false);
+        }
+      } else {
+        setVisaItems([]);
+        setCheckedItems({});
+      }
+    };
+    loadVisaItems();
+  }, [student.visaCountry, student.visaType]);
+
+  const toggleVisaCheck = (id: string | undefined) => {
+    if (!id) return;
+    setCheckedItems(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const VISA_CHECKLIST_CATEGORIES = [
+    'Kişisel Belgeler',
+    'E-devletten Alınacak Belgeler',
+    'Banka Bilgileri',
+    'Çalışma Belgeleri',
+    'Danışmanınız Tarafından hazırlanacak Belgeler'
+  ];
+
+  const generateVisaReportText = () => {
+    if (!student.visaCountry || !student.visaType) return "";
+    
+    const uncheckedItemsList = visaItems.filter(item => !checkedItems[item.id!]);
+    const today = new Date().toLocaleDateString('tr-TR');
+    
+    let reportText = `🛂 *VİZE BELGE KONTROL RAPORU*\n`;
+    reportText += `━━━━━━━━━━━━━━━━━━━\n`;
+    reportText += `👤 *Öğrenci:* ${student.firstName} ${student.lastName}\n`;
+    reportText += `🌍 *Ülke:* ${student.visaCountry}\n`;
+    reportText += `📋 *Vize Tipi:* ${student.visaType}\n`;
+    reportText += `📅 *Tarih:* ${today}\n`;
+    reportText += `━━━━━━━━━━━━━━━━━━━\n\n`;
+    
+    if (uncheckedItemsList.length > 0) {
+      reportText += `⚠️ *EKSİK BELGELER:*\n\n`;
+      VISA_CHECKLIST_CATEGORIES.forEach(category => {
+        const categoryUnchecked = uncheckedItemsList.filter(item => item.category === category);
+        if (categoryUnchecked.length > 0) {
+          reportText += `📂 *${category}*\n`;
+          categoryUnchecked.forEach((item, i) => {
+            reportText += `  ${i + 1}. ${item.task}`;
+            if (item.translation_required) reportText += ` 🌐(Çeviri Gerekli)`;
+            reportText += `\n`;
+            if (item.description) reportText += `     _${item.description}_\n`;
+            const note = itemNotes[item.id!];
+            if (note) reportText += `     📝 *Not:* _${note}_\n`;
+          });
+          reportText += `\n`;
+        }
+      });
+    } else {
+      reportText += `✅ Tüm belgeler tamamlandı!\n\n`;
+    }
+    
+    reportText += `━━━━━━━━━━━━━━━━━━━\n`;
+    reportText += `✅ Tamamlanan: ${visaItems.length - uncheckedItemsList.length} / ${visaItems.length}\n`;
+    reportText += `❌ Eksik: ${uncheckedItemsList.length} belge\n`;
+    
+    return reportText;
+  };
+
+  const downloadVisaReportPDF = () => {
+    const reportText = generateVisaReportText();
+    const pdf = new jsPDF();
+    
+    // Simple PDF generation
+    pdf.setFontSize(16);
+    pdf.text("Vize Belge Kontrol Raporu", 20, 20);
+    pdf.setFontSize(10);
+    
+    const lines = reportText.replace(/\*/g, '').split('\n');
+    let y = 30;
+    lines.forEach(line => {
+      if (y > 280) {
+        pdf.addPage();
+        y = 20;
+      }
+      pdf.text(line, 20, y);
+      y += 7;
+    });
+    
+    pdf.save(`${student.firstName}_${student.lastName}_Vize_Raporu.pdf`);
+  };
+
+  const handleSaveVisaChecklist = async () => {
+    if (!student.visaCountry || !student.visaType) return;
+    
+    const reportText = generateVisaReportText();
+    const uncheckedItemsList = visaItems.filter(item => !checkedItems[item.id!]);
+
+    const newReport = {
+      id: Math.random().toString(36).substr(2, 9),
+      createdAt: new Date().toISOString(),
+      country: student.visaCountry,
+      visaType: student.visaType,
+      completedItems: visaItems.length - uncheckedItemsList.length,
+      totalItems: visaItems.length,
+      missingItemsReport: reportText
+    };
+    
+    const updatedReports = [...(student.visaReports || []), newReport];
+    try {
+      await studentService.update(student.id, { visaReports: updatedReports });
+      setStudent(prev => ({ ...prev, visaReports: updatedReports }));
+      alert("Vize kontrol raporu kaydedildi!");
+    } catch (error) {
+      console.error("Failed to save visa checklist", error);
+      alert("Kaydetme sırasında bir hata oluştu.");
+    }
   };
 
   const handleStageChange = async (newStage: PipelineStage) => {
@@ -2783,33 +2922,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                              <CreditCard className="w-6 h-6 text-indigo-600" />
                         </div>
                         <div>
-                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Vize Sonuç Takibi</h3>
+                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Vize Durum Takibi</h3>
                             <p className="text-slate-500 text-sm font-medium">Öğrencinin vize başvuru sürecini buradan yönetebilirsiniz.</p>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* 1. Date Selection */}
-                        <div className="space-y-3">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <Calendar className="w-4 h-4" />
-                                Vize Başvuru Tarihi (date)
-                            </label>
-                            <input 
-                                type="date" 
-                                value={student.visaApplicationDate || ''} 
-                                onChange={async (e) => {
-                                    const date = e.target.value;
-                                    setStudent(prev => ({ ...prev, visaApplicationDate: date }));
-                                    try {
-                                        await studentService.update(student.id, { visaApplicationDate: date });
-                                    } catch (err) { console.error(err); }
-                                }}
-                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                            />
-                        </div>
-
-                        {/* 2. Country Selection */}
+                        {/* 1. Country Selection */}
                         <div className="space-y-3">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <Globe className="w-4 h-4" />
@@ -2819,9 +2938,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 value={student.visaCountry || ''} 
                                 onChange={async (e) => {
                                     const country = e.target.value;
-                                    setStudent(prev => ({ ...prev, visaCountry: country }));
+                                    const countryVisaTypes = allCountriesData.find(c => c.name === country)?.visaTypes || [];
+                                    const isCurrentVisaTypeValid = countryVisaTypes.some(vt => vt.name === student.visaType);
+                                    setStudent(prev => ({ 
+                                        ...prev, 
+                                        visaCountry: country,
+                                        visaType: isCurrentVisaTypeValid ? prev.visaType : ''
+                                    }));
                                     try {
-                                        await studentService.update(student.id, { visaCountry: country });
+                                        await studentService.update(student.id, { 
+                                            visaCountry: country,
+                                            visaType: isCurrentVisaTypeValid ? student.visaType : ''
+                                        });
                                     } catch (err) { console.error(err); }
                                 }}
                                 className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
@@ -2831,15 +2959,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             </select>
                         </div>
 
-                        {/* 3. Visa Type */}
+                        {/* 2. Visa Type */}
                         <div className="space-y-3">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <FileText className="w-4 h-4" />
                                 Vize Tipi
                             </label>
-                            <input 
-                                type="text" 
-                                placeholder="Örn: F-1 Student Visa"
+                            <select 
                                 value={student.visaType || ''} 
                                 onChange={async (e) => {
                                     const type = e.target.value;
@@ -2848,15 +2974,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                         await studentService.update(student.id, { visaType: type });
                                     } catch (err) { console.error(err); }
                                 }}
-                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                            />
+                                disabled={!student.visaCountry}
+                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
+                            >
+                                <option value="">Vize Tipi Seçiniz...</option>
+                                {allCountriesData.find(c => c.name === student.visaCountry)?.visaTypes?.map((vt) => (
+                                    <option key={vt.id} value={vt.name}>{vt.name}</option>
+                                ))}
+                            </select>
                         </div>
 
-                        {/* 4. Visa Status Selection */}
+                        {/* 3. Visa Status Selection */}
                         <div className="space-y-3">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <Activity className="w-4 h-4" />
-                                Vize Sonucu (Status)
+                                Vize Durum
                             </label>
                             <select 
                                 value={student.visaStatus || 'Pending'} 
@@ -2883,8 +3015,197 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 <option value="Approved">Approved</option>
                             </select>
                         </div>
+
+                        {/* 4. Date Selection - Only if not Pending */}
+                        {(student.visaStatus && student.visaStatus !== 'Pending') && (
+                            <div className="space-y-3">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Calendar className="w-4 h-4" />
+                                    Vize Başvuru Tarihi (Zorunlu)
+                                </label>
+                                <input 
+                                    type="date" 
+                                    required
+                                    value={student.visaApplicationDate || ''} 
+                                    onChange={async (e) => {
+                                        const date = e.target.value;
+                                        setStudent(prev => ({ ...prev, visaApplicationDate: date }));
+                                        try {
+                                            await studentService.update(student.id, { visaApplicationDate: date });
+                                        } catch (err) { console.error(err); }
+                                    }}
+                                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
+
+                {/* Visa Kontrol Formu - Expandable Table */}
+                {student.visaCountry && student.visaType && (
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-100/50 overflow-hidden">
+                        <div 
+                            className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                            onClick={() => setVisaChecklistExpanded(!visaChecklistExpanded)}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-50 rounded-xl">
+                                    <CheckSquare className="w-5 h-5 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-800">Vize Kontrol Formu</h3>
+                                    <p className="text-xs text-slate-500">
+                                        {visaItems.length > 0 ? `${visaItems.filter(i => checkedItems[i.id!]).length}/${visaItems.length} belge tamamlandı` : 'Belge listesi yükleniyor...'}
+                                    </p>
+                                </div>
+                            </div>
+                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${visaChecklistExpanded ? 'rotate-180' : ''}`} />
+                        </div>
+
+                        {visaChecklistExpanded && (
+                            <div className="border-t border-slate-100 animate-fade-in">
+                                {isLoadingVisaItems ? (
+                                    <div className="p-8 text-center">
+                                        <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mx-auto" />
+                                        <p className="text-sm text-slate-500 mt-2">Belge listesi yükleniyor...</p>
+                                    </div>
+                                ) : visaItems.length === 0 ? (
+                                    <div className="p-8 text-center">
+                                        <FileWarning className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                        <p className="text-sm text-slate-500">Bu ülke ve vize tipi için belge tanımlanmamış.</p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        {VISA_CHECKLIST_CATEGORIES.map((category) => {
+                                            const categoryItems = visaItems.filter(item => item.category === category);
+                                            if (categoryItems.length === 0) return null;
+                                            
+                                            return (
+                                                <div key={category} className="border-b border-slate-100 last:border-b-0">
+                                                    <div className="px-5 py-3 bg-slate-50 flex items-center justify-between sticky top-0">
+                                                        <h4 className="text-sm font-bold text-slate-700">{category}</h4>
+                                                        <span className="text-xs text-slate-400">
+                                                            {categoryItems.filter(i => checkedItems[i.id!]).length}/{categoryItems.length}
+                                                        </span>
+                                                    </div>
+                                                    <div className="divide-y divide-slate-100">
+                                                        {categoryItems.map(item => {
+                                                            const isChecked = checkedItems[item.id!] || false;
+                                                            return (
+                                                                <div 
+                                                                    key={item.id}
+                                                                    onClick={() => toggleVisaCheck(item.id)}
+                                                                    className={`flex items-start gap-3 px-5 py-3 cursor-pointer transition-colors ${
+                                                                        isChecked ? 'bg-emerald-50/50' : 'hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    <div className="mt-0.5">
+                                                                        {isChecked ? (
+                                                                            <CheckSquare className="w-4 h-4 text-emerald-500" />
+                                                                        ) : (
+                                                                            <Square className="w-4 h-4 text-slate-300" />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <p className={`text-sm font-medium ${isChecked ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>
+                                                                                {item.task}
+                                                                            </p>
+                                                                            {item.translation_required && (
+                                                                                <span className="text-[9px] font-bold uppercase text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Çeviri</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {item.description && (
+                                                                            <p className={`text-xs mt-1 ${isChecked ? 'text-emerald-500/70' : 'text-slate-400'}`}>
+                                                                                {item.description}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* Save Button */}
+                                {visaItems.length > 0 && (
+                                    <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
+                                        <button
+                                            onClick={handleSaveVisaChecklist}
+                                            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all active:scale-95 shadow-lg shadow-indigo-100"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                            Kaydet
+                                        </button>
+                                        
+                                        <button
+                                            onClick={async () => {
+                                                const reportText = generateVisaReportText();
+                                                try {
+                                                    await navigator.clipboard.writeText(reportText);
+                                                    alert("Rapor kopyalandı! WhatsApp'a yapıştırabilirsiniz.");
+                                                } catch (err) {
+                                                    console.error("Failed to copy", err);
+                                                }
+                                            }}
+                                            className="flex items-center justify-center p-3 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all active:scale-95 shadow-sm"
+                                            title="WhatsApp için Kopyala"
+                                        >
+                                            <MessageSquare className="w-5 h-5" />
+                                        </button>
+
+                                        <button
+                                            onClick={() => downloadVisaReportPDF()}
+                                            className="flex items-center justify-center p-3 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl hover:bg-rose-100 transition-all active:scale-95 shadow-sm"
+                                            title="PDF Olarak İndir"
+                                        >
+                                            <Download className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Previous Reports */}
+                {student.visaReports && student.visaReports.length > 0 && (
+                    <div className="mt-8 pt-8 border-t border-slate-100">
+                        <h4 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-indigo-600" />
+                            Kaydedilen Vize Kontrol Raporları
+                        </h4>
+                        <div className="space-y-4">
+                            {student.visaReports.map(report => (
+                                <div key={report.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
+                                    <div className="flex justify-between items-start mb-3 border-b border-slate-200 pb-3">
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                                <Globe className="w-4 h-4 text-indigo-500" /> {report.country}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-1">{report.visaType}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-medium text-slate-400">
+                                                {new Date(report.createdAt).toLocaleString('tr-TR')}
+                                            </p>
+                                            <p className="text-xs font-bold text-emerald-600 mt-1">
+                                                Tamamlanan: {report.completedItems} / {report.totalItems}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white border border-slate-100 rounded-xl p-4 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs text-slate-700 shadow-inner">
+                                        {report.missingItemsReport}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 

@@ -31,7 +31,7 @@ export const visaChecklistService = {
     if (!supabase) return null;
     const { data, error } = await supabase
       .from('country_visa_checklists')
-      .select('institution, locations, method, pricing, durations, additional_info')
+      .select('*')
       .eq('country_name', countryName)
       .eq('visa_type_name', visaTypeName)
       .maybeSingle();

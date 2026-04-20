@@ -72,8 +72,14 @@ CREATE TABLE IF NOT EXISTS public.university_types (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Add visa_application_date column to student_profiles if it doesn't exist
+ALTER TABLE public.student_profiles ADD COLUMN IF NOT EXISTS visa_application_date DATE;
+
 ALTER TABLE public.university_types ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read access" ON public.university_types;
 CREATE POLICY "Allow public read access" ON public.university_types FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Allow authenticated full access" ON public.university_types;
 CREATE POLICY "Allow authenticated full access" ON public.university_types FOR ALL USING (true);
+
+-- Add visa_reports JSONB to student_profiles
+ALTER TABLE public.student_profiles ADD COLUMN IF NOT EXISTS visa_reports JSONB;

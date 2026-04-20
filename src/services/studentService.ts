@@ -52,7 +52,8 @@ function mapDbToStudent(row: any): Student {
         visaStatus: row.visa_status,
         visaApplicationDate: row.visa_application_date,
         visaType: row.visa_type,
-        visaCountry: row.visa_country
+        visaCountry: row.visa_country,
+        visaReports: row.visa_reports || []
     };
 }
 
@@ -62,7 +63,7 @@ function mapStudentToDb(student: Partial<Student>): any {
         last_name: student.lastName,
         email: student.email,
         phone: student.phone,
-        dob: student.dob || null,
+        dob: (student.dob && /^\d{4}-\d{2}-\d{2}$/.test(student.dob)) ? student.dob : null,
         reminder_date: student.reminderDate,
         pipeline_stage: student.pipelineStage,
         gpa: student.gpa,
@@ -98,9 +99,10 @@ function mapStudentToDb(student: Partial<Student>): any {
         analyse_status: student.analyseStatus,
         applications: student.applications,
         visa_status: student.visaStatus,
-        visa_application_date: student.visaApplicationDate,
+        visa_application_date: (student.visaApplicationDate && /^\d{4}-\d{2}-\d{2}$/.test(student.visaApplicationDate)) ? student.visaApplicationDate : null,
         visa_type: student.visaType,
-        visa_country: student.visaCountry
+        visa_country: student.visaCountry,
+        visa_reports: student.visaReports
     };
 
     // Remove undefined keys to avoid overwriting with nulls if using patch

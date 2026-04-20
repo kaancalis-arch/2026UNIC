@@ -532,8 +532,18 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }
 
         try {
+            // Sanitize DOB: only allow complete YYYY-MM-DD
+            let sanitizedDob = null;
+            if (formData.dob) {
+                const parts = formData.dob.split('-');
+                if (parts.length === 3 && parts.every(p => p.length > 0)) {
+                    sanitizedDob = formData.dob;
+                }
+            }
+
             const newStudentPayload: Partial<Student> = {
                 ...formData,
+                dob: sanitizedDob,
                 reminderDate: todayIso,
                 pipelineStage: PipelineStage.FOLLOW,
                 targetCountries: [],

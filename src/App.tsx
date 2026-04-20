@@ -7,6 +7,7 @@ import StudentDetail from './pages/StudentDetail';
 import Settings from './pages/Settings';
 import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
+import VisaControl from './pages/VisaControl';
 import Roadmaps from './pages/Roadmaps';
 import UniversitySearch from './pages/UniversitySearch';
 import UniversityDetail from './pages/UniversityDetail';
@@ -129,6 +130,8 @@ const App: React.FC = () => {
         return <VisaResults />;
       case 'visa-checklist':
         return <VisaChecklist currentUser={currentUser} />;
+      case 'visa-control':
+        return <VisaControl currentUser={currentUser} />;
       case 'calendar':
         return <CalendarPage />;
       case 'statistics':

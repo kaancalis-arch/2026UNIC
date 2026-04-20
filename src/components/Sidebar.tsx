@@ -14,6 +14,7 @@ import {
   Award,
   CalendarDays,
   ChartPie,
+  CheckCircle,
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
 
@@ -67,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { id: 'visa-results', label: 'Results', icon: Award },
         { id: 'visa-checklist', label: 'Checklist', icon: ClipboardCheck },
+        { id: 'visa-control', label: 'Vize Kontrol Formu', icon: CheckCircle },
       ]
     });
 

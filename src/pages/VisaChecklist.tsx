@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { ClipboardCheck, CheckSquare, Square, Info, AlertCircle, Globe, Plus, MessageSquare, Edit2, Check, X, Trash2, MapPin, Building2, CreditCard, Clock, FileText, Link, ExternalLink, Download, Upload } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ClipboardCheck, CheckSquare, Square, Info, AlertCircle, Globe, Plus, MessageSquare, Edit2, Check, X, Trash2, MapPin, Building2, CreditCard, Clock, FileText, Link, ExternalLink, Download, Upload, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getFlagEmoji } from '../utils/countryUtils';
+import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { countryService } from '../services/countryService';
 import { visaChecklistService, VisaChecklistItem, VisaMetadata } from '../services/visaChecklistService';
 import { CountryData, SystemUser, UserRole } from '../types';
@@ -14,6 +14,19 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
   const [countries, setCountries] = useState<CountryData[]>([]);
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedVisaType, setSelectedVisaType] = useState<string>('');
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
+        setCountryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchCountries = async () => {
@@ -73,8 +86,9 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
   const CATEGORIES = [
     'Kişisel Belgeler',
     'E-devletten Alınacak Belgeler',
-    'Sponsor Banka Belgeleri',
-    'Sponsor Çalışma Belgeleri'
+    'Banka Bilgileri',
+    'Çalışma Belgeleri',
+    'Danışmanınız Tarafından hazırlanacak Belgeler'
   ];
 
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
@@ -208,7 +222,6 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
           'Kategori': item.category,
           'Belge Adı': item.task,
           'Açıklama': item.description,
-          'Zorunlu Mu': item.required ? 'Evet' : 'Hayır',
           'Çeviri Gerekli Mi': item.translation_required ? 'Evet' : 'Hayır',
           'Örnek Belge URL': item.example_url || '',
           'Başvurulacak Kurum': meta?.institution || '',
@@ -253,13 +266,13 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
         // Verileri gruplayıp kaydetmemiz lazım
         // 1. Metadata'ları topla (Unique country+visa)
         const metadataMap = new Map();
-        // 2. Item'ları topla
-        const items: VisaChecklistItem[] = [];
+        // 2. Item'ları topla (Unique country+visa+category+task)
+        const itemsMap = new Map();
 
         data.forEach(row => {
-          const key = `${row['Ülke']}-${row['Vize Tipi']}`;
-          if (!metadataMap.has(key)) {
-            metadataMap.set(key, {
+          const metaKey = `${row['Ülke']}-${row['Vize Tipi']}`;
+          if (!metadataMap.has(metaKey)) {
+            metadataMap.set(metaKey, {
               country_name: String(row['Ülke']),
               visa_type_name: String(row['Vize Tipi']),
               institution: String(row['Başvurulacak Kurum'] || ''),
@@ -271,17 +284,20 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
             });
           }
 
-          items.push({
+          const itemKey = `${row['Ülke']}-${row['Vize Tipi']}-${row['Kategori'] || 'Diğer'}-${row['Belge Adı']}`;
+          itemsMap.set(itemKey, {
             country_name: String(row['Ülke']),
             visa_type_name: String(row['Vize Tipi']),
             category: String(row['Kategori'] || 'Diğer'),
             task: String(row['Belge Adı'] || ''),
             description: String(row['Açıklama'] || ''),
-            required: String(row['Zorunlu Mu']).toLowerCase() === 'evet',
+            required: true,
             translation_required: String(row['Çeviri Gerekli Mi']).toLowerCase() === 'evet',
             example_url: String(row['Örnek Belge URL'] || '')
           });
         });
+
+        const items = Array.from(itemsMap.values());
 
         // Veritabanına yaz
         for (const meta of metadataMap.values()) {
@@ -316,20 +332,83 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
           
           <div className="flex flex-col w-full sm:w-auto">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 ml-1">Ülke Seçimi</label>
-            <div className="relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                <Globe className="w-4 h-4 text-slate-400" />
-              </div>
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="pl-9 pr-8 py-2 w-full sm:w-48 border border-slate-200 rounded-lg text-sm font-medium outline-none focus:border-indigo-500 hover:bg-slate-50 transition-colors appearance-none"
+            <div className="relative" ref={countryDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
+                className="pl-3 pr-8 py-2 w-full sm:w-56 border border-slate-200 rounded-lg text-sm font-medium outline-none focus:border-indigo-500 hover:bg-slate-50 transition-colors text-left flex items-center gap-2.5 bg-white"
               >
-                <option value="">Ülke Seçiniz...</option>
-                {countries.map(c => (
-                  <option key={c.id} value={c.name}>{getFlagEmoji(c.name)} {c.name}</option>
-                ))}
-              </select>
+                {selectedCountry ? (
+                  <>
+                    {getCountryCode(selectedCountry) ? (
+                      <img 
+                        src={`https://flagcdn.com/24x18/${getCountryCode(selectedCountry)}.png`}
+                        srcSet={`https://flagcdn.com/48x36/${getCountryCode(selectedCountry)}.png 2x`}
+                        width="24" 
+                        height="18" 
+                        alt={selectedCountry}
+                        className="rounded-sm shadow-sm border border-slate-200/50 flex-shrink-0"
+                      />
+                    ) : (
+                      <Globe className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    )}
+                    <span className="truncate">{selectedCountry}</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <span className="text-slate-400">Ülke Seçiniz...</span>
+                  </>
+                )}
+                <ChevronDown className={`w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 transition-transform ${countryDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {countryDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full sm:w-56 bg-white border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto animate-fade-in">
+                  <div
+                    className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-50 cursor-pointer text-sm text-slate-400 border-b border-slate-100"
+                    onClick={() => {
+                      setSelectedCountry('');
+                      setCountryDropdownOpen(false);
+                    }}
+                  >
+                    <Globe className="w-4 h-4 flex-shrink-0" />
+                    Ülke Seçiniz...
+                  </div>
+                  {countries.map(c => {
+                    const code = getCountryCode(c.name);
+                    return (
+                      <div
+                        key={c.id}
+                        className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-indigo-50 cursor-pointer text-sm font-medium transition-colors ${
+                          selectedCountry === c.name ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'
+                        }`}
+                        onClick={() => {
+                          setSelectedCountry(c.name);
+                          setCountryDropdownOpen(false);
+                        }}
+                      >
+                        {code ? (
+                          <img 
+                            src={`https://flagcdn.com/24x18/${code}.png`}
+                            srcSet={`https://flagcdn.com/48x36/${code}.png 2x`}
+                            width="24" 
+                            height="18" 
+                            alt={c.name}
+                            className="rounded-sm shadow-sm border border-slate-200/50 flex-shrink-0"
+                          />
+                        ) : (
+                          <span className="text-base flex-shrink-0">{getFlagEmoji(c.name)}</span>
+                        )}
+                        {c.name}
+                        {selectedCountry === c.name && (
+                          <Check className="w-4 h-4 text-indigo-600 ml-auto flex-shrink-0" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -511,8 +590,22 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
                 <div key={category} className="space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                      <div className="w-1 h-6 bg-indigo-500 rounded-full" />
-                      {category}
+                      <div className="flex flex-col">
+                        <span className="flex items-center gap-2">
+                          <div className="w-1 h-6 bg-indigo-500 rounded-full" />
+                          {category}
+                        </span>
+                        {category === 'Banka Bilgileri' && (
+                          <span className="text-[10px] text-slate-500 font-normal ml-3">
+                            (Sponsor veya Başvuru sahibine ait olmalıdır)
+                          </span>
+                        )}
+                        {category === 'Çalışma Belgeleri' && (
+                          <span className="text-[10px] text-slate-500 font-normal ml-3">
+                            (Sponsor ve Başvuru sahibi çalışıyorsa her ikisi için de alınmalıdır)
+                          </span>
+                        )}
+                      </div>
                     </h3>
                     <button 
                       onClick={() => handleAddNewItem(category)}
@@ -549,15 +642,6 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
                                     />
                                   </div>
                                   <div className="flex gap-4 items-end pb-1">
-                                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={editingItem.required}
-                                        onChange={(e) => setEditingItem({ ...editingItem, required: e.target.checked })}
-                                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded cursor-pointer"
-                                      />
-                                      Zorunlu
-                                    </label>
                                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                                       <input 
                                         type="checkbox" 
@@ -616,29 +700,6 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
                                         />
                                       </label>
                                     </div>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase">Toplu İşlem Seçenekleri</p>
-                                  <div className="flex flex-wrap gap-4">
-                                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={editingItem.applyToCountry || false}
-                                        onChange={(e) => setEditingItem({ ...editingItem, applyToCountry: e.target.checked })}
-                                        className="w-3.5 h-3.5 text-amber-600 border-gray-300 rounded cursor-pointer"
-                                      />
-                                      Seçili Ülkenin Tüm Vize Tiplerine Uygula
-                                    </label>
-                                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={editingItem.applyGlobally || false}
-                                        onChange={(e) => setEditingItem({ ...editingItem, applyGlobally: e.target.checked })}
-                                        className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded cursor-pointer"
-                                      />
-                                      TÜM Ülkelerin Vizelerine Uygula
-                                    </label>
                                   </div>
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -731,11 +792,7 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
-                                      {item.required ? (
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 bg-rose-50 px-2 py-0.5 rounded">Zorunlu</span>
-                                      ) : (
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-0.5 rounded">Opsiyonel</span>
-                                      )}
+
                                     </div>
                                   </div>
                                   

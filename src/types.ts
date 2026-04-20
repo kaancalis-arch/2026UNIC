@@ -214,6 +214,7 @@ export interface Student {
   visaApplicationDate?: string;
   visaType?: string;
   visaCountry?: string;
+  visaReports?: any[];
 }
 
 export interface AnalysisResult {
