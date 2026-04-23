@@ -25,7 +25,9 @@ ALTER TABLE public.countries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read access" ON public.countries;
 CREATE POLICY "Allow public read access" ON public.countries FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Allow authenticated full access" ON public.countries;
-CREATE POLICY "Allow authenticated full access" ON public.countries FOR ALL USING (true);
+CREATE POLICY "Allow authenticated full access" ON public.countries FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public full access" ON public.countries;
+CREATE POLICY "Allow public full access" ON public.countries FOR ALL USING (true) WITH CHECK (true);
 
 -- 2. Vize Bilgilerini İçeren Ülke Verilerini İşle
 INSERT INTO public.countries (id, name, flag, visa_types)

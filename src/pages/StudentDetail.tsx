@@ -58,6 +58,7 @@ import {
 interface StudentDetailProps {
   student: Student;
   onBack: () => void;
+  isSidebarCollapsed?: boolean;
 }
 
 // Options will be loaded from services
@@ -95,7 +96,7 @@ const isExamExpired = (dateString?: string): boolean => {
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     return date < twoYearsAgo;
 };
-const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack }) => {
+const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack, isSidebarCollapsed }) => {
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
   const [activeTab, setActiveTab] = useState<'profile' | 'documents' | 'analysis' | 'roadmap'>('profile');
@@ -2326,12 +2327,24 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     };
                                     return statusMap[student.educationStatus || ''] || student.educationStatus || '-';
                                 })()}
-                                <span> - </span>
-                                {student.schoolName || '-'}
-                                <span> - </span>
-                                {student.currentGrade || '-'}
-                                <span> - </span>
-                                {student.analysis?.academic?.educationField || '-'}
+                                {student.schoolName && (
+                                    <>
+                                        <span className="mx-1">&nbsp;&nbsp;</span>
+                                        {student.schoolName}
+                                    </>
+                                )}
+                                {student.currentGrade && (
+                                    <>
+                                        <span className="mx-1">&nbsp;&nbsp;</span>
+                                        {student.currentGrade}
+                                    </>
+                                )}
+                                {student.analysis?.academic?.educationField && (
+                                    <>
+                                        <span className="mx-1">&nbsp;&nbsp;</span>
+                                        {student.analysis.academic.educationField}
+                                    </>
+                                )}
                             </div>
                             <div className="text-[13px] text-slate-600 flex items-center gap-1 flex-wrap">
                                 <span>Yaklaşık Not Ortalaması: <strong className="text-slate-800">{student.analysis?.academic?.gpa || '-'}</strong></span>
@@ -3264,14 +3277,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                         <p className="text-sm text-slate-600">{degree.careerOpportunities}</p>
                                                     </div>
                                                     <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">AI Etkisi</label>
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Lisans Bölümleri</label>
                                                         <p className="text-sm text-slate-600 italic">{degree.aiImpact}</p>
                                                     </div>
                                                 </div>
-                                                <div className="pt-3 border-t border-slate-100">
-                                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">En İyi Şirketler</label>
-                                                     <p className="text-sm font-medium text-slate-700">{degree.topCompanies}</p>
-                                                </div>
+
                                                 <div className="pt-3 border-t border-slate-100">
                                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Türkiye'de Sektör Durumu</label>
                                                      <p className="text-sm text-slate-600">{degree.sectorStatusTR}</p>
@@ -3421,7 +3431,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Edit Analysis Modal */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in-only print:hidden">
+        <div className={`fixed inset-0 ${isSidebarCollapsed ? 'left-20' : 'left-64'} bg-black/60 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in-only print:hidden transition-all duration-300`}>
              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
                 <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
                     <div className="flex items-center gap-3">

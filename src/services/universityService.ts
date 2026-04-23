@@ -6,9 +6,22 @@ export const universityService = {
   async getAll(): Promise<UniversityData[]> {
     if (!supabase) return [];
     
+    // Fetch universities and their programs from the relational table
     const { data, error } = await supabase
       .from('universities')
-      .select('*')
+      .select(`
+        *,
+        university_programs (
+          id,
+          name,
+          url,
+          language,
+          tuition_range,
+          main_degree:programs!main_degree_id (name),
+          main_degree2:programs!main_degree_2_id (name),
+          main_degree3:programs!main_degree_3_id (name)
+        )
+      `)
       .order('name', { ascending: true });
       
     if (error) {
@@ -27,7 +40,19 @@ export const universityService = {
       consultingType: row.consulting_type,
       universityTypes: row.university_types || [],
       sharedInstitutionId: row.shared_institution_id,
-      programs: row.programs || []
+      // Map relational programs to the UniversityProgram structure
+      programs: (row.university_programs || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        link: p.url,
+        type: p.type || 'Bachelor', 
+        tuitionRange: p.tuition_range,
+        groupNames: [
+          p.main_degree?.name,
+          p.main_degree2?.name,
+          p.main_degree3?.name
+        ].filter(Boolean)
+      }))
     }));
   },
 

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent, UniversityProgramData } from '../types';
 import { MOCK_USERS, MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
@@ -10,6 +10,7 @@ import { mainDegreeService } from '../services/mainDegreeService';
 import { mainCategoryService } from '../services/mainCategoryService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { sharedInstitutionService } from '../services/sharedInstitutionService';
+import { universityProgramService } from '../services/universityProgramService';
 import { systemService } from '../services/systemService';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
@@ -136,16 +137,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     const [agentForm, setAgentForm] = useState<AIAgent>({
         id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: []
     });
-    const [mainCategories, setMainCategories] = useState<MainCategoryData[]>([]);
-    const [degreeSubTab, setDegreeSubTab] = useState<'main' | 'sub'>('sub');
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
-    
-    const [isMainCategoryModalOpen, setIsMainCategoryModalOpen] = useState(false);
-    const [mainCategoryForm, setMainCategoryForm] = useState<MainCategoryData>({
-        id: '',
-        name: '',
-        description: ''
-    });
 
     const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
     const [mainDegreeForm, setMainDegreeForm] = useState<MainDegreeData>({
@@ -193,6 +185,19 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
     const [budgetForm, setBudgetForm] = useState({ id: '', label: '', sort_order: 0 });
 
+    // University Programs State
+    const [universityPrograms, setUniversityPrograms] = useState<UniversityProgramData[]>([]);
+    const [isLoadingUniversityPrograms, setIsLoadingUniversityPrograms] = useState(false);
+    const [isUniversityProgramModalOpen, setIsUniversityProgramModalOpen] = useState(false);
+    const [universityProgramForm, setUniversityProgramForm] = useState<UniversityProgramData>({
+        id: '', universityId: '', type: 'Bachelor', name: '', url: '', 
+        mainCategoryId: '', mainCategory2Id: '', mainCategory3Id: '',
+        mainDegreeId: '', mainDegree2Id: '', mainDegree3Id: '',
+        language: '', tuitionRange: ''
+    });
+    const [selectedProgramFilterCountry, setSelectedProgramFilterCountry] = useState<string>('');
+    const [universityProgramSearchTerm, setUniversityProgramSearchTerm] = useState('');
+
     // Country Edit/Create State
     const [isEditingCountry, setIsEditingCountry] = useState(false);
     const [countryForm, setCountryForm] = useState<CountryData>(MOCK_COUNTRIES[0]);
@@ -231,6 +236,12 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             loadMainDegrees();
         } else if (selectedDefinitionType === 'budget') {
             loadBudgetRangesList();
+        } else if (selectedDefinitionType === 'university_programs') {
+            loadUniversityPrograms();
+            loadUniversities();
+            loadMainDegrees();
+            loadBudgetRangesList();
+            loadTuitionRanges();
         } else if (selectedDefinitionType === 'university_types') {
             loadUniversityTypes();
         }
@@ -249,6 +260,18 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             loadMainDegrees();
         }
     }, [activeTab, selectedDefinitionType]);
+
+    const loadUniversityPrograms = async () => {
+        setIsLoadingUniversityPrograms(true);
+        try {
+            const data = await universityProgramService.getAll();
+            setUniversityPrograms(data);
+        } catch (error) {
+            console.error("Failed to load university programs", error);
+        } finally {
+            setIsLoadingUniversityPrograms(false);
+        }
+    };
 
     const loadCountries = async () => {
         setIsLoadingCountries(true);
@@ -313,22 +336,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     const loadMainDegrees = async () => {
         setIsLoadingMainDegrees(true);
         try {
-            const [degrees, cats, junctions] = await Promise.all([
-                mainDegreeService.getAll(),
-                mainCategoryService.getAll(),
-                mainCategoryService.getJunctions()
-            ]);
-            
-            // Map junctions to degrees
-            const enrichedDegrees = degrees.map(deg => ({
-                ...deg,
-                categoryIds: junctions
-                    .filter(j => j.program_id === deg.id)
-                    .map(j => j.category_id)
-            }));
-            
-            setMainDegrees(enrichedDegrees as MainDegreeData[]);
-            setMainCategories(cats);
+            const degrees = await mainDegreeService.getAll();
+            setMainDegrees(degrees as MainDegreeData[]);
         } catch (error) {
             console.error('Failed to load degrees data', error);
         } finally {
@@ -672,6 +681,12 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         }));
     };
 
+    const updateUniversityField = (field: keyof UniversityData, value: any) => {
+        const urlFields: string[] = ['rankingUrl', 'websiteUrl', 'logo', 'departmentsUrl'];
+        const formattedValue = (typeof value === 'string' && !urlFields.includes(field)) ? formatTitleCase(value) : value;
+        setUniversityForm(prev => ({ ...prev, [field]: formattedValue }));
+    };
+
     const removeUniversityProgram = (id: string) => {
         setUniversityForm(prev => ({
             ...prev,
@@ -792,44 +807,83 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         setIsMainDegreeModalOpen(true);
     };
 
-    const handleAddMainCategory = () => {
-        setMainCategoryForm({ id: `cat-${Date.now()}`, name: '', description: '' });
-        setIsMainCategoryModalOpen(true);
-    };
-
-    const handleEditMainCategory = (cat: MainCategoryData) => {
-        setMainCategoryForm(cat);
-        setIsMainCategoryModalOpen(true);
-    };
-
-    const handleSaveMainCategory = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleExportMainDegrees = () => {
         try {
-            const saved = await mainCategoryService.upsert(mainCategoryForm);
-            setMainCategories(prev => {
-                const idx = prev.findIndex(c => c.id === saved.id);
-                if (idx >= 0) {
-                    const updated = [...prev];
-                    updated[idx] = saved;
-                    return updated;
-                }
-                return [saved, ...prev];
+            const exportData = mainDegrees.map(deg => {
+                return {
+                    'ID': deg.id.startsWith('deg-') ? '' : deg.id,
+                    'Bölüm Adı': deg.name,
+                    'Bölüm Tanımı': deg.description,
+                    'Kariyer Fırsatları': deg.careerOpportunities,
+                    'Lisans Bölümleri': deg.aiImpact,
+                    'Öne Çıkan Firmalar': deg.topCompanies,
+                    "Türkiye'de Sektörün Durumu": deg.sectorStatusTR,
+                    'Resim URL': deg.imageUrl
+                };
             });
-            setIsMainCategoryModalOpen(false);
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Bölümler");
+            XLSX.writeFile(wb, `bolumler_${new Date().toISOString().split('T')[0]}.xlsx`);
         } catch (error) {
-            console.error("Failed to save category", error);
-            alert("Kategori kaydedilemedi");
+            console.error("Excel export failed", error);
+            alert("Export failed");
         }
     };
 
-    const handleDeleteMainCategory = async (id: string) => {
-        if (!confirm("Bu ana bölümü silmek istediğinize emin misiniz?")) return;
-        try {
-            await mainCategoryService.delete(id);
-            setMainCategories(prev => prev.filter(c => c.id !== id));
-        } catch (error) {
-            console.error("Delete category failed", error);
+    const handleImportMainDegrees = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!window.confirm("Excel'deki veriler sisteme yüklenecek. Devam edilsin mi?")) {
+            e.target.value = '';
+            return;
         }
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                let successCount = 0;
+                for (const row of data) {
+                    try {
+                        const rowName = String(row['Bölüm Adı'] || row['Alt Başlık Adı'] || '').trim();
+                        const existingDegree = mainDegrees.find(d => d.name.toLowerCase() === rowName.toLowerCase());
+                        
+                        const dbPayload: MainDegreeData = {
+                            id: row['ID'] || existingDegree?.id || `deg-new-${Date.now()}-${successCount}`,
+                            name: rowName,
+                            description: String(row['Bölüm Tanımı'] || row['Açıklama'] || ''),
+                            careerOpportunities: String(row['Kariyer Fırsatları'] || ''),
+                            aiImpact: String(row['Lisans Bölümleri'] || row['AI Etkisi'] || ''),
+                            topCompanies: String(row['Öne Çıkan Firmalar'] || ''),
+                            sectorStatusTR: String(row["Türkiye'de Sektörün Durumu"] || row['Sektör Durumu (TR)'] || ''),
+                            imageUrl: String(row['Resim URL'] || ''),
+                            categoryIds: existingDegree?.categoryIds || []
+                        };
+
+                        await mainDegreeService.upsert(dbPayload);
+                        successCount++;
+                    } catch (err) {
+                        console.error("Row import failed", row, err);
+                    }
+                }
+
+                alert(`${successCount} adet alt başlık başarıyla yüklendi.`);
+                loadMainDegrees();
+            } catch (error) {
+                console.error("Excel import failed", error);
+                alert("Import failed");
+            } finally {
+                e.target.value = '';
+            }
+        };
+        reader.readAsBinaryString(file);
     };
 
     const handleSaveMainDegree = async (e: React.FormEvent) => {
@@ -854,9 +908,11 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 return [enriched, ...prev];
             });
             setIsMainDegreeModalOpen(false);
-        } catch (error) {
-            console.error("Failed to save main degree", error);
-            alert("Failed to save main degree");
+        } catch (error: any) {
+            console.error("Failed to save main degree detail:", error);
+            const errorMsg = error?.message || (typeof error === 'string' ? error : "Unknown error");
+            const errorDetail = error?.details || error?.hint || "";
+            alert(`Failed to save main degree: ${errorMsg} ${errorDetail}`);
         }
     };
 
@@ -1017,7 +1073,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     };
 
     const updateCountryField = (field: keyof CountryData, value: any) => {
-        setCountryForm(prev => ({ ...prev, [field]: value }));
+        const formattedValue = typeof value === 'string' ? formatTitleCase(value) : value;
+        setCountryForm(prev => ({ ...prev, [field]: formattedValue }));
     };
 
     const updateEducationType = (
@@ -1028,7 +1085,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     ) => {
         const targetList = degree === 'bachelor' ? 'bachelorTypes' : 'masterTypes';
         const newList = [...countryForm[targetList]];
-        newList[index] = { ...newList[index], [field]: value };
+        newList[index] = { ...newList[index], [field]: formatTitleCase(value) };
         setCountryForm(prev => ({ ...prev, [targetList]: newList }));
     };
 
@@ -1068,9 +1125,10 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     };
 
     const updateVisaType = (id: string, field: 'name' | 'description', value: string) => {
+        const formattedValue = formatTitleCase(value);
         setCountryForm(prev => ({
             ...prev,
-            visaTypes: (prev.visaTypes || []).map(v => v.id === id ? { ...v, [field]: value } : v)
+            visaTypes: (prev.visaTypes || []).map(v => v.id === id ? { ...v, [field]: formattedValue } : v)
         }));
     };
 
@@ -1432,37 +1490,54 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
                     <div>
-                        <h3 className="text-xl font-bold text-slate-800">Bölüm Grupları</h3>
-                        <p className="text-sm text-slate-500">Akademik programları Ana Bölümler ve Alt Başlıklar halinde düzenleyin.</p>
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-xl font-bold text-slate-800">Bölümler</h3>
+                            <div className="flex gap-2">
+                                <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-md text-[10px] font-bold uppercase tracking-wider border border-purple-100">
+                                    {mainDegrees.length} Bölüm
+                                </span>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-500 mt-1">Akademik programları düzenleyin.</p>
                     </div>
                 </div>
-                <button 
-                    onClick={degreeSubTab === 'main' ? handleAddMainCategory : handleAddMainDegree}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20 shadow-indigo-500/20 transition-all active:scale-95"
-                >
-                    <Plus className="w-4 h-4" />
-                    {degreeSubTab === 'main' ? 'Yeni Ana Bölüm Ekle' : 'Yeni Alt Başlık Ekle'}
-                </button>
-            </div>
-
-            {/* Sub Tabs */}
-            <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl w-fit mb-6">
-                <button 
-                    onClick={() => setDegreeSubTab('main')}
-                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-                        degreeSubTab === 'main' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                >
-                    Ana Bölümler
-                </button>
-                <button 
-                    onClick={() => setDegreeSubTab('sub')}
-                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-                        degreeSubTab === 'sub' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                >
-                    Alt Başlıklar
-                </button>
+                <div className="flex items-center gap-3">
+                    <>
+                        <button
+                            onClick={handleExportMainDegrees}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-sm font-bold hover:bg-emerald-100 transition-colors"
+                            title="Bölümleri Excel'e aktar"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">Excel İndir</span>
+                        </button>
+                        <div className="relative">
+                            <input
+                                type="file"
+                                accept=".xlsx, .xls"
+                                onChange={handleImportMainDegrees}
+                                className="hidden"
+                                id="degree-excel-upload"
+                            />
+                            <label
+                                htmlFor="degree-excel-upload"
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                                title="Excel'den toplu bölüm yükle"
+                            >
+                                <Upload className="w-4 h-4" />
+                                <span className="hidden sm:inline">Excel Yükle</span>
+                            </label>
+                        </div>
+                    </>
+                    
+                    <button 
+                        onClick={handleAddMainDegree}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20 shadow-indigo-500/20 transition-all active:scale-95"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Yeni Bölüm Ekle
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
@@ -1470,8 +1545,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                                <th className="px-6 py-4 font-semibold">{degreeSubTab === 'main' ? 'Ana Bölüm Adı' : 'Alt Başlık Adı'}</th>
-                                <th className="px-6 py-4 font-semibold">{degreeSubTab === 'main' ? 'Açıklama' : 'Atanan Gruplar'}</th>
+                                <th className="px-6 py-4 font-semibold">Bölüm Adı</th>
+                                <th className="px-6 py-4 font-semibold">Açıklama</th>
                                 <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
@@ -1480,68 +1555,29 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 <tr>
                                     <td colSpan={3} className="p-10 text-center text-slate-500 italic">Veriler yükleniyor...</td>
                                 </tr>
-                            ) : degreeSubTab === 'main' ? (
-                                mainCategories.length === 0 ? (
-                                    <tr><td colSpan={3} className="p-10 text-center text-slate-400 italic">Henüz ana bölüm tanımlanmamış.</td></tr>
-                                ) : mainCategories.map(cat => (
-                                    <tr key={cat.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
-                                                    <Shield className="w-5 h-5 text-indigo-600" />
-                                                </div>
-                                                <span className="font-bold text-slate-800">{cat.name}</span>
+                            ) : mainDegrees.length === 0 ? (
+                                <tr><td colSpan={3} className="p-10 text-center text-slate-400 italic">Henüz bölüm tanımlanmamış.</td></tr>
+                            ) : mainDegrees.map(deg => (
+                                <tr key={deg.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
+                                                {deg.imageUrl ? <img src={deg.imageUrl} alt="" className="w-full h-full object-cover" /> : <BookOpen className="w-6 h-6 text-slate-300" />}
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4 font-medium text-slate-500 text-sm">
-                                            {cat.description || '-'}
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button onClick={() => handleEditMainCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteMainCategory(cat.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : (
-                                mainDegrees.length === 0 ? (
-                                    <tr><td colSpan={3} className="p-10 text-center text-slate-400 italic">Henüz alt başlık tanımlanmamış.</td></tr>
-                                ) : mainDegrees.map(deg => (
-                                    <tr key={deg.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
-                                                    {deg.imageUrl ? <img src={deg.imageUrl} alt="" className="w-full h-full object-cover" /> : <BookOpen className="w-6 h-6 text-slate-300" />}
-                                                </div>
-                                                <span className="font-bold text-slate-800">{deg.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-wrap gap-1">
-                                                {(deg.categoryIds || []).length > 0 ? (
-                                                    deg.categoryIds?.map(catId => {
-                                                        const cat = mainCategories.find(c => c.id === catId);
-                                                        return cat ? (
-                                                            <span key={catId} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold border border-indigo-100 uppercase">
-                                                                {cat.name}
-                                                            </span>
-                                                        ) : null;
-                                                    })
-                                                ) : (
-                                                    <span className="text-xs text-slate-300 italic">Gruplanmamış</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button onClick={() => handleEditMainDegree(deg)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteMainDegree(deg.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
+                                            <span className="font-bold text-slate-800">{deg.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className="text-sm text-slate-500">{deg.description || '-'}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button onClick={() => handleEditMainDegree(deg)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
+                                            <button onClick={() => handleDeleteMainDegree(deg.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -1881,32 +1917,134 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         </div>
     );
 
+    const handleExportCountries = () => {
+        try {
+            const exportData = countries.map(c => ({
+                'ID': c.id,
+                'Ülke': c.name,
+                'Bayrak': c.flag,
+                'Başkent': c.capital,
+                'Para Birimi': c.currency,
+                'Nüfus': c.population,
+                'Sektörler': c.popularSectors,
+                'Mezuniyet Sonrası Çalışma İzni': c.postGradWorkPermit,
+                'Öğrenci Çalışma İzni': c.studentWorkPermit,
+            }));
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Ülkeler");
+            XLSX.writeFile(wb, "ulkeler.xlsx");
+        } catch (error) {
+            console.error("Export error:", error);
+            alert("Dışa aktarma sırasında hata oluştu.");
+        }
+    };
+
+    const handleImportCountries = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                let successCount = 0;
+                for (const row of data) {
+                    try {
+                        const countryName = String(row['Ülke'] || '');
+                        if (!countryName) continue;
+
+                        const id = row['ID'] || countryName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                        
+                        const dbPayload = {
+                            id: id,
+                            name: countryName,
+                            flag: row['Bayrak'] || '🏳️',
+                            capital: row['Başkent'] || '',
+                            currency: row['Para Birimi'] || '',
+                            population: row['Nüfus'] || '',
+                            popular_sectors: row['Sektörler'] || '',
+                            post_grad_work_permit: row['Mezuniyet Sonrası Çalışma İzni'] || '',
+                            student_work_permit: row['Öğrenci Çalışma İzni'] || ''
+                        };
+
+                        await countryService.upsert(dbPayload as any);
+                        successCount++;
+                    } catch (err) {
+                        console.error("Error importing country:", err);
+                    }
+                }
+                alert(`${successCount} ülke başarıyla içe aktarıldı.`);
+                loadCountries();
+            };
+            reader.readAsBinaryString(file);
+        } catch (error) {
+            console.error("Import error:", error);
+            alert("İçe aktarma sırasında hata oluştu.");
+        } finally {
+            if (e.target) e.target.value = '';
+        }
+    };
+
     const renderCountryManager = () => {
         const selectedCountry = countries.find(c => c.id === selectedCountryId) || (countries.length > 0 ? countries[0] : countryForm);
         const dataToShow = isEditingCountry ? countryForm : selectedCountry;
 
         return (
             <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
-                {/* Back Button & Title */}
-                <div className="flex items-center gap-4 mb-6">
-                    <button 
-                        onClick={() => {
-                            if (isEditingCountry) {
-                                if (window.confirm("Changes will be lost. Exit?")) setIsEditingCountry(false);
-                            } else {
-                                setSelectedDefinitionType(null);
-                            }
-                        }}
-                        className="p-2 rounded-full hover:bg-slate-100 transition-colors"
-                    >
-                        <ArrowLeft className="w-5 h-5 text-slate-600" />
-                    </button>
-                    <div>
-                        <h3 className="text-xl font-bold text-slate-800">
-                            {isEditingCountry ? (countryForm.id.startsWith('country-') ? 'Yeni Ülke Ekle' : 'Ülkeyi Düzenle') : 'Ülke Tanımları'}
-                        </h3>
-                        <p className="text-sm text-slate-500">Eğitim sistemlerini, gereksinimleri ve ülke detaylarını yönetin.</p>
+                {/* Back Button, Title & Actions */}
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => {
+                                if (isEditingCountry) {
+                                    if (window.confirm("Changes will be lost. Exit?")) setIsEditingCountry(false);
+                                } else {
+                                    setSelectedDefinitionType(null);
+                                }
+                            }}
+                            className="p-2 rounded-full hover:bg-slate-100 transition-colors"
+                        >
+                            <ArrowLeft className="w-5 h-5 text-slate-600" />
+                        </button>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">
+                                {isEditingCountry ? (countryForm.id.startsWith('country-') ? 'Yeni Ülke Ekle' : 'Ülkeyi Düzenle') : 'Ülke Tanımları'}
+                            </h3>
+                            <p className="text-sm text-slate-500">Eğitim sistemlerini, gereksinimleri ve ülke detaylarını yönetin.</p>
+                        </div>
                     </div>
+                    {!isEditingCountry && (
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={handleExportCountries}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-sm font-bold hover:bg-emerald-100 transition-colors"
+                            >
+                                <Download className="w-4 h-4" />
+                                <span className="hidden sm:inline">Excel İndir</span>
+                            </button>
+                            <div className="relative">
+                                <input
+                                    type="file"
+                                    accept=".xlsx, .xls"
+                                    onChange={handleImportCountries}
+                                    className="hidden"
+                                    id="countries-excel-upload"
+                                />
+                                <label
+                                    htmlFor="countries-excel-upload"
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Excel Yükle</span>
+                                </label>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {isLoadingCountries ? (
@@ -2694,12 +2832,296 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         );
     }
 
+    const handleExportUniversityPrograms = () => {
+        try {
+            const exportData = universityPrograms.map(prog => ({
+                'ID': prog.id.startsWith('new-') ? '' : prog.id,
+                'Üniversite': prog.universityName,
+                'Bölüm Adı': prog.name,
+                'Bölüm Linki': prog.url,
+                'Ana Bölüm 1': prog.mainCategoryName,
+                'Alt Başlık 1': prog.mainDegreeName,
+                'Ana Bölüm 2': prog.mainCategory2Name,
+                'Alt Başlık 2': prog.mainDegree2Name,
+                'Ana Bölüm 3': prog.mainCategory3Name,
+                'Alt Başlık 3': prog.mainDegree3Name,
+                'Dil': prog.language,
+                'Eğitim Bütçesi': prog.tuitionRange
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Üniversite Bölümleri");
+            XLSX.writeFile(wb, `universite_bolumleri_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } catch (error) {
+            console.error("Excel export failed", error);
+            alert("Export failed");
+        }
+    };
+
+    const handleImportUniversityPrograms = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!window.confirm("Excel'deki veriler sisteme yüklenecek. Devam edilsin mi?")) {
+            e.target.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                let successCount = 0;
+                for (const row of data) {
+                    try {
+                        const uniName = String(row['Üniversite'] || '');
+                        const university = universities.find(u => u.name.toLowerCase() === uniName.toLowerCase());
+                        if (!university) {
+                            console.warn(`Üniversite bulunamadı: ${uniName}`);
+                            continue;
+                        }
+
+                        const degName = String(row['Alt Başlık 1'] || row['Bölüm 1'] || row['Alt Başlık'] || '');
+                        const degree = mainDegrees.find(d => d.name.toLowerCase() === degName.toLowerCase());
+
+                        const deg2Name = String(row['Alt Başlık 2'] || row['Bölüm 2'] || '');
+                        const degree2 = mainDegrees.find(d => d.name.toLowerCase() === deg2Name.toLowerCase());
+
+                        const deg3Name = String(row['Alt Başlık 3'] || row['Bölüm 3'] || '');
+                        const degree3 = mainDegrees.find(d => d.name.toLowerCase() === deg3Name.toLowerCase());
+
+                        const dbPayload: any = {
+                            id: row['ID'] || `new-${Date.now()}-${successCount}`,
+                            universityId: university.id,
+                            type: (row['Bölüm Türü'] === 'Master' || row['Tür'] === 'Master') ? 'Master' : 'Bachelor',
+                            name: String(row['Bölüm Adı'] || ''),
+                            url: String(row['Bölüm Linki'] || ''),
+                            mainDegreeId: degree?.id || '',
+                            mainDegree2Id: degree2?.id || '',
+                            mainDegree3Id: degree3?.id || '',
+                            language: String(row['Dil'] || ''),
+                            tuitionRange: String(row['Eğitim Bütçesi'] || '')
+                        };
+
+                        await universityProgramService.upsert(dbPayload);
+                        successCount++;
+                    } catch (err) {
+                        console.error("Row import failed", row, err);
+                    }
+                }
+
+                alert(`${successCount} adet bölüm başarıyla yüklendi.`);
+                loadUniversityPrograms();
+            } catch (error) {
+                console.error("Excel import failed", error);
+                alert("Import failed");
+            } finally {
+                e.target.value = '';
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
+
+    const renderUniversityProgramManager = () => {
+        const filteredPrograms = universityPrograms.filter(prog => {
+            if (!universityProgramSearchTerm) return true;
+            const search = universityProgramSearchTerm.toLowerCase();
+            return (
+                prog.name?.toLowerCase().includes(search) ||
+                prog.universityName?.toLowerCase().includes(search) ||
+                prog.mainCategoryName?.toLowerCase().includes(search) ||
+                prog.mainDegreeName?.toLowerCase().includes(search)
+            );
+        });
+
+        return (
+            <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                            <ArrowLeft className="w-5 h-5 text-slate-600" />
+                        </button>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">Üniversite Bölümleri</h3>
+                            <p className="text-sm text-slate-500 mt-1">Üniversite bazlı bölümleri, ana kategorileri ve bütçe bilgilerini yönetin.</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleExportUniversityPrograms}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-sm font-bold hover:bg-emerald-100 transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">Excel İndir</span>
+                        </button>
+                        <div className="relative">
+                            <input
+                                type="file"
+                                accept=".xlsx, .xls"
+                                onChange={handleImportUniversityPrograms}
+                                className="hidden"
+                                id="uni-prog-excel-upload"
+                            />
+                            <label
+                                htmlFor="uni-prog-excel-upload"
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                            >
+                                <Upload className="w-4 h-4" />
+                                <span className="hidden sm:inline">Excel Yükle</span>
+                            </label>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                setUniversityProgramForm({
+                                    id: '', universityId: '', type: 'Bachelor', name: '', url: '', 
+                                    mainCategoryId: '', mainCategory2Id: '', mainCategory3Id: '',
+                                    mainDegreeId: '', mainDegree2Id: '', mainDegree3Id: '',
+                                    language: '', tuitionRange: ''
+                                });
+                                setSelectedProgramFilterCountry('');
+                                setIsUniversityProgramModalOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+                        >
+                            <Plus className="w-4 h-4" /> Yeni Bölüm Ekle
+                        </button>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-0">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                            <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-extrabold border border-indigo-200">
+                                {filteredPrograms.length} KAYIT
+                            </span>
+                        </div>
+                        <div className="relative">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                                type="text"
+                                placeholder="Bölüm veya üniversite ara..."
+                                value={universityProgramSearchTerm}
+                                onChange={(e) => setUniversityProgramSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/10 outline-none w-64"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/80 sticky top-0 z-10 border-b border-slate-100">
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Üniversite</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bölüm Adı</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bölüm Gruplandırma (Max 3)</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Dil & Bütçe</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {isLoadingUniversityPrograms ? (
+                                    <tr><td colSpan={5} className="py-20 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500" /></td></tr>
+                                ) : filteredPrograms.length === 0 ? (
+                                    <tr><td colSpan={5} className="py-20 text-center text-slate-500">Sonuç bulunamadı.</td></tr>
+                                ) : filteredPrograms.map(prog => (
+                                    <tr key={prog.id} className="hover:bg-slate-50/50 transition-colors group">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                                                    <Building className="w-4 h-4 text-indigo-500" />
+                                                </div>
+                                                <div className="text-sm font-bold text-slate-700">{prog.universityName}</div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div>
+                                                <div className="font-bold text-slate-800">{prog.name}</div>
+                                                {prog.url && (
+                                                    <a href={prog.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-indigo-600 mt-1">
+                                                        <LinkIcon className="w-3 h-3" /> Linke Git
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1">
+                                                {prog.mainDegreeId && (
+                                                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100 w-fit">
+                                                        {mainDegrees.find(d => d.id === prog.mainDegreeId)?.name || prog.mainDegreeName || '-'}
+                                                    </span>
+                                                )}
+                                                {prog.mainDegree2Id && (
+                                                    <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px] font-bold border border-purple-100 w-fit">
+                                                        {mainDegrees.find(d => d.id === prog.mainDegree2Id)?.name || '-'}
+                                                    </span>
+                                                )}
+                                                {prog.mainDegree3Id && (
+                                                    <span className="px-2 py-0.5 bg-pink-50 text-pink-600 rounded text-[10px] font-bold border border-pink-100 w-fit">
+                                                        {mainDegrees.find(d => d.id === prog.mainDegree3Id)?.name || '-'}
+                                                    </span>
+                                                )}
+                                                {!prog.mainDegreeId && !prog.mainDegree2Id && !prog.mainDegree3Id && (
+                                                    <span className="text-xs text-slate-400">-</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="text-xs font-bold text-slate-700">{prog.language || '-'}</div>
+                                                <div className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit">
+                                                    {prog.tuitionRange || '-'}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => {
+                                                        // Try to find the university's primary country to pre-set the filter
+                                                        const uni = universities.find(u => u.id === prog.universityId);
+                                                        if (uni && uni.countries && uni.countries.length > 0) {
+                                                            setSelectedProgramFilterCountry(uni.countries[0]);
+                                                        }
+                                                        setUniversityProgramForm({...prog});
+                                                        setIsUniversityProgramModalOpen(true);
+                                                    }}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={async () => {
+                                                        if (window.confirm("Bu bölümü silmek istediğinizden emin misiniz?")) {
+                                                            await universityProgramService.delete(prog.id);
+                                                            await loadUniversityPrograms();
+                                                        }
+                                                    }}
+                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderDataManager = () => {
         const stats = [
             { id: 'countries', name: 'Ülkeler', table: 'countries', icon: Globe, count: countries.length, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { id: 'universities', name: 'Üniversiteler', table: 'universities', icon: GraduationCap, count: universities.length, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { id: 'degrees', name: 'Bölüm Grupları', table: 'main_degrees', icon: BookOpen, count: mainDegrees.length, color: 'text-purple-600', bg: 'bg-purple-50' },
-            { id: 'all_programs', name: 'Bölümler', table: 'programs', icon: GraduationCap, count: universities.reduce((acc, u) => acc + (u.programs?.length || 0), 0), color: 'text-amber-600', bg: 'bg-amber-50' }
+            { id: 'degrees', name: 'Bölümler', table: 'main_degrees', icon: BookOpen, count: mainDegrees.length, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { id: 'university_programs', name: 'Üniversite Bölümleri', table: 'university_programs', icon: BookOpen, count: universityPrograms.length, color: 'text-blue-600', bg: 'bg-blue-50' }
         ];
 
         return (
@@ -2754,7 +3176,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <div className="mt-4 flex items-end justify-between">
                                         <div className="flex flex-col">
                                             <span className="text-3xl font-black text-slate-900">{stat.count}</span>
-                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Yönetmek için tıkla</span>
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Yönetmek için tıkla</span>
                                         </div>
                                         <span className="text-xs font-medium text-slate-400 mb-1">Kaydolmuş Satır</span>
                                     </div>
@@ -2934,8 +3356,173 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                     {selectedDefinitionType === 'countries' && renderCountryManager()}
                     {selectedDefinitionType === 'universities' && renderUniversityManager()}
                     {selectedDefinitionType === 'degrees' && renderMainDegreeManager()}
+                    {selectedDefinitionType === 'university_programs' && renderUniversityProgramManager()}
                     {selectedDefinitionType === 'all_programs' && renderAllProgramsManager()}
                 </>
+            )}
+
+            {/* University Program Modal */}
+            {isUniversityProgramModalOpen && (
+                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mb-10 animate-fade-in">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-lg text-slate-800">
+                                {universityProgramForm.id ? 'Bölüm Düzenle' : 'Yeni Bölüm Ekle'}
+                            </h3>
+                            <button onClick={() => setIsUniversityProgramModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                        </div>
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            try {
+                                const saved = await universityProgramService.upsert(universityProgramForm);
+                                await loadUniversityPrograms();
+                                setIsUniversityProgramModalOpen(false);
+                            } catch (error) {
+                                console.error("University Program Save Error:", error);
+                                alert("Kaydetme sırasında hata oluştu.");
+                            }
+                        }} className="p-6 space-y-4">
+                             <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ülke Filtresi</label>
+                                    <select 
+                                        value={selectedProgramFilterCountry} 
+                                        onChange={e => setSelectedProgramFilterCountry(e.target.value)}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm bg-slate-50"
+                                    >
+                                        <option value="">Tüm Ülkeler</option>
+                                        {countries.map(c => <option key={c.id} value={c.name}>{c.flag} {c.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Üniversite Seçimi</label>
+                                    <select 
+                                        required
+                                        value={universityProgramForm.universityId} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, universityId: e.target.value})}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm"
+                                    >
+                                        <option value="">Üniversite Seçiniz</option>
+                                        {universities
+                                            .filter(uni => !selectedProgramFilterCountry || uni.countries?.includes(selectedProgramFilterCountry))
+                                            .map(uni => <option key={uni.id} value={uni.id}>{uni.name}</option>)
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="col-span-1">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Türü</label>
+                                    <select 
+                                        value={universityProgramForm.type} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, type: e.target.value as 'Bachelor' | 'Master'})}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm bg-slate-50"
+                                    >
+                                        <option value="Bachelor">Bachelor (Lisans)</option>
+                                        <option value="Master">Master (Yüksek Lisans)</option>
+                                    </select>
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Adı</label>
+                                    <input 
+                                        required
+                                        value={universityProgramForm.name} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, name: e.target.value})}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm" 
+                                        placeholder="Örn: Computer Science"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Linki</label>
+                                <input 
+                                    value={universityProgramForm.url || ''} 
+                                    onChange={e => setUniversityProgramForm({...universityProgramForm, url: e.target.value})}
+                                    className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm" 
+                                    placeholder="https://..."
+                                />
+                            </div>
+
+                            <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bölüm Gruplandırma (Max 3)</label>
+                                
+                                {/* Slot 1 */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <select 
+                                        value={universityProgramForm.mainDegreeId || ''} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, mainDegreeId: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-xs bg-white col-span-2"
+                                    >
+                                        <option value="">1. Bölüm Seçin</option>
+                                        {mainDegrees.map(deg => <option key={deg.id} value={deg.id}>{deg.name}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Slot 2 */}
+                                <div className="grid grid-cols-1 gap-3">
+                                    <select 
+                                        value={universityProgramForm.mainDegree2Id || ''} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, mainDegree2Id: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"
+                                    >
+                                        <option value="">2. Bölüm (Opsiyonel)</option>
+                                        {mainDegrees.map(deg => <option key={deg.id} value={deg.id}>{deg.name}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Slot 3 */}
+                                <div className="grid grid-cols-1 gap-3">
+                                    <select 
+                                        value={universityProgramForm.mainDegree3Id || ''} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, mainDegree3Id: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"
+                                    >
+                                        <option value="">3. Bölüm (Opsiyonel)</option>
+                                        {mainDegrees.map(deg => <option key={deg.id} value={deg.id}>{deg.name}</option>)
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dil</label>
+                                    <select 
+                                        value={universityProgramForm.language || ''} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, language: e.target.value})}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm"
+                                    >
+                                        <option value="">Seçiniz</option>
+                                        <option value="İngilizce">İngilizce</option>
+                                        <option value="Almanca">Almanca</option>
+                                        <option value="Fransızca">Fransızca</option>
+                                        <option value="İspanyolca">İspanyolca</option>
+                                        <option value="İtalyanca">İtalyanca</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bütçe Aralığı</label>
+                                    <select 
+                                        value={universityProgramForm.tuitionRange || ''} 
+                                        onChange={e => setUniversityProgramForm({...universityProgramForm, tuitionRange: e.target.value})}
+                                        className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none text-sm"
+                                    >
+                                        <option value="">Seçiniz</option>
+                                        {budgetRangesList
+                                            .filter(r => r.label !== 'Bütçe Konusunda Kararsızım')
+                                            .map(range => <option key={range.id} value={range.label}>{range.label}</option>)
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsUniversityProgramModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
 
             {/* Add User Modal */}
@@ -3066,7 +3653,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <input 
                                         required
                                         value={universityForm.name} 
-                                        onChange={e => setUniversityForm({...universityForm, name: e.target.value})}
+                                        onChange={e => updateUniversityField('name', e.target.value)}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                         placeholder="Örn: Technical University of Munich"
                                     />
@@ -3141,7 +3728,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                 </div>
                             </div>
 
-<div>
+                            <div>
                                 <label className="block text-xs font-medium text-slate-600 mb-2">Danışmanlık Tipi</label>
                                 <div className="grid grid-cols-4 gap-2">
                                     {['Depozito', 'Danışmanlık', 'Kabul Sonrası Danışmanlık', 'Depozito - Paylaşımlı'].map(type => (
@@ -3185,7 +3772,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Sıralama Linki (Ranking)</label>
                                     <input 
                                         value={universityForm.rankingUrl} 
-                                        onChange={e => setUniversityForm({...universityForm, rankingUrl: e.target.value})}
+                                        onChange={e => updateUniversityField('rankingUrl', e.target.value)}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                         placeholder="https://www.topuniversities.com/..."
                                     />
@@ -3194,7 +3781,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Web Sitesi</label>
                                     <input 
                                         value={universityForm.websiteUrl} 
-                                        onChange={e => setUniversityForm({...universityForm, websiteUrl: e.target.value})}
+                                        onChange={e => updateUniversityField('websiteUrl', e.target.value)}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                         placeholder="https://..."
                                     />
@@ -3236,48 +3823,9 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             )}
 
             {/* Main Degree Add/Edit Modal */}
-            {isMainCategoryModalOpen && (
-                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-center z-[9999] p-4 pt-[100px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-3xl shadow-xl w-full max-w-md animate-fade-in overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                {mainCategories.find(c => c.id === mainCategoryForm.id) ? 'Ana Bölüm Düzenle' : 'Yeni Ana Bölüm Ekle'}
-                            </h3>
-                            <button onClick={() => setIsMainCategoryModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
-                        </div>
-                        <form onSubmit={handleSaveMainCategory} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ana Bölüm Adı</label>
-                                <input 
-                                    required
-                                    value={mainCategoryForm.name} 
-                                    onChange={e => setMainCategoryForm({...mainCategoryForm, name: formatTitleCase(e.target.value)})}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium" 
-                                    placeholder="e.g. Mühendislik"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Açıklama (Opsiyonel)</label>
-                                <textarea 
-                                    rows={3}
-                                    value={mainCategoryForm.description} 
-                                    onChange={e => setMainCategoryForm({...mainCategoryForm, description: e.target.value})}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium" 
-                                    placeholder="Bu kategori hakkında kısa bilgi..."
-                                />
-                            </div>
-                            <div className="pt-4 flex justify-end gap-3">
-                                <button type="button" onClick={() => setIsMainCategoryModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
-                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">Kaydet</button>
-                            </div>
-                        </form>
-                    </div>
-                 </div>
-            )}
-
             {isMainDegreeModalOpen && (
-                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
+                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 overflow-y-auto animate-fade-in-only">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[calc(100vh-80px)] overflow-y-auto animate-fade-in">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="font-bold text-lg text-slate-800">
                                 {mainDegrees.find(d => d.id === mainDegreeForm.id) ? 'Alt Başlık Düzenle' : 'Yeni Alt Başlık Ekle'}
@@ -3287,7 +3835,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                         <form onSubmit={handleSaveMainDegree} className="p-6 space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Alt Başlık Adı (Sub-Major Name)</label>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Tipi</label>
                                     <input 
                                         required
                                         value={mainDegreeForm.name} 
@@ -3297,50 +3845,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     />
                                 </div>
 
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Atanan Ana Gruplar (Bir veya birden fazla seçebilirsiniz)</label>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                        {mainCategories.map(cat => (
-                                            <label 
-                                                key={cat.id} 
-                                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                                                    (mainDegreeForm.categoryIds || []).includes(cat.id)
-                                                        ? 'border-indigo-600 bg-indigo-50/50'
-                                                        : 'border-slate-100 bg-slate-50/30 hover:border-slate-200'
-                                                }`}
-                                            >
-                                                <input 
-                                                    type="checkbox"
-                                                    className="hidden"
-                                                    checked={(mainDegreeForm.categoryIds || []).includes(cat.id)}
-                                                    onChange={(e) => {
-                                                        const current = mainDegreeForm.categoryIds || [];
-                                                        if (e.target.checked) {
-                                                            setMainDegreeForm({...mainDegreeForm, categoryIds: [...current, cat.id]});
-                                                        } else {
-                                                            setMainDegreeForm({...mainDegreeForm, categoryIds: current.filter(id => id !== cat.id)});
-                                                        }
-                                                    }}
-                                                />
-                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                                                    (mainDegreeForm.categoryIds || []).includes(cat.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
-                                                }`}>
-                                                    {(mainDegreeForm.categoryIds || []).includes(cat.id) && <CheckCircle className="w-3 h-3 text-white" />}
-                                                </div>
-                                                <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                                                    (mainDegreeForm.categoryIds || []).includes(cat.id) ? 'text-indigo-700' : 'text-slate-500'
-                                                }`}>
-                                                    {cat.name}
-                                                </span>
-                                            </label>
-                                        ))}
-                                        {mainCategories.length === 0 && (
-                                            <p className="col-span-full text-xs text-rose-500 italic p-4 bg-rose-50 rounded-xl border border-rose-100">
-                                                Lütfen önce 'Ana Bölümler' sekmesinden en az bir grup oluşturun.
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
+                                {/* Atanan Ana Gruplar kaldırıldı */}
 
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Tanımı</label>
@@ -3348,7 +3853,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         required
                                         rows={3}
                                         value={mainDegreeForm.description} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, description: e.target.value})}
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, description: formatTitleCase(e.target.value)})}
                                         className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                         placeholder="Bölüm hakkında genel bilgi..."
                                     />
@@ -3359,40 +3864,20 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <textarea 
                                         rows={4}
                                         value={mainDegreeForm.careerOpportunities} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, careerOpportunities: e.target.value})}
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, careerOpportunities: formatTitleCase(e.target.value)})}
                                         className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                         placeholder="Mezunlar hangi pozisyonlarda çalışabilir?"
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Yapay Zekanın Etkisi</label>
-                                    <textarea 
-                                        rows={4}
-                                        value={mainDegreeForm.aiImpact} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, aiImpact: e.target.value})}
-                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                        placeholder="AI bu mesleği nasıl dönüştürüyor?"
-                                    />
-                                </div>
 
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Dünyada Öne Çıkan Firmalar</label>
-                                    <textarea 
-                                        rows={3}
-                                        value={mainDegreeForm.topCompanies} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, topCompanies: e.target.value})}
-                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                        placeholder="Google, Tesla, Goldman Sachs, etc."
-                                    />
-                                </div>
 
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Türkiye'de Sektörün Durumu</label>
                                     <textarea 
                                         rows={3}
                                         value={mainDegreeForm.sectorStatusTR} 
-                                        onChange={e => setMainDegreeForm({...mainDegreeForm, sectorStatusTR: e.target.value})}
+                                        onChange={e => setMainDegreeForm({...mainDegreeForm, sectorStatusTR: formatTitleCase(e.target.value)})}
                                         className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
                                         placeholder="Türkiye'deki iş imkanları ve sektör büyüklüğü..."
                                     />

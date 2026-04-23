@@ -101,12 +101,12 @@ const App: React.FC = () => {
         return <Dashboard />;
       case 'students':
         if (currentUser.role === UserRole.STUDENT) return <div className="p-10 text-slate-500">Access Denied. Students cannot view the CRM list.</div>;
-        return <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} />;
+        return <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'student-detail':
         return selectedStudent ? (
-          <StudentDetail student={selectedStudent} onBack={handleBackToStudents} />
+          <StudentDetail student={selectedStudent} onBack={handleBackToStudents} isSidebarCollapsed={isSidebarCollapsed} />
         ) : (
-           currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} /> : <Dashboard />
+           currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} /> : <Dashboard />
          );
       case 'settings':
         if (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN) return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;

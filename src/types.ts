@@ -114,7 +114,9 @@ export interface AnalysisReport {
   };
   // 5. Bölüm ve Ülke Tercihi
   preferences: {
+    program1Category?: string;
     program1?: string;
+    program2Category?: string;
     program2?: string;
     country1?: string;
     country2?: string;
@@ -306,6 +308,30 @@ export interface UniversityProgram {
   notes: string;
 }
 
+export interface UniversityProgramData {
+    id: string;
+    universityId: string;
+    universityName?: string;
+    type: 'Bachelor' | 'Master';
+    name: string;
+    url?: string;
+    mainCategoryId?: string;
+    mainCategoryName?: string;
+    mainCategory2Id?: string;
+    mainCategory2Name?: string;
+    mainCategory3Id?: string;
+    mainCategory3Name?: string;
+    mainDegreeId?: string;
+    mainDegreeName?: string;
+    mainDegree2Id?: string;
+    mainDegree2Name?: string;
+    mainDegree3Id?: string;
+    mainDegree3Name?: string;
+    language?: string;
+    tuitionRange?: string;
+    created_at?: string;
+}
+
 export interface SharedInstitutionData {
   id: string;
   name: string;
@@ -354,6 +380,15 @@ export interface InterestedProgramData {
   id: string;
   name: string;
   description: string;
+}
+
+export interface SubProgramData {
+  id: string;
+  name: string;
+  parentProgramId: string;
+  parentProgramName?: string;
+  description?: string;
+  sortOrder?: number;
 }
 
 export interface AIAgent {

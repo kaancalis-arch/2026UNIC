@@ -47,6 +47,9 @@ export const mainDegreeService = {
         dbPayload.id = degree.id;
     }
 
+    console.log('mainDegreeService.upsert - degree.id:', degree.id);
+    console.log('mainDegreeService.upsert - dbPayload:', dbPayload);
+
     const { data, error } = await supabase
       .from('programs')
       .upsert(dbPayload)

@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
 import { studentService } from '../services/studentService';
 import { systemService } from '../services/systemService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
-import { Student, PipelineStage, AnalysisReport, ExamDetails } from '../types';
+import { mainCategoryService } from '../services/mainCategoryService';
+import { Student, PipelineStage, AnalysisReport, ExamDetails, MainCategoryData, MainDegreeData } from '../types';
 import {
     Search, Plus, Filter, ChevronRight, X, ChevronDown, ChevronUp,
     User, Phone, Mail, Calendar, School, Users, Globe, FileCheck,
@@ -14,10 +16,12 @@ import {
     GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag
 } from 'lucide-react';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
+import { formatTitleCase } from '../lib/utils';
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
     initialStageFilter?: string | null;
+    isSidebarCollapsed?: boolean;
 }
 
 // Options will be loaded from services
@@ -39,7 +43,7 @@ const getLanguageLevelColor = (level?: string) => {
     return 'bg-slate-100 text-slate-600 border-slate-200';
 };
 
-const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter }) => {
+const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter, isSidebarCollapsed }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
 
@@ -92,6 +96,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     // Dynamic Options
     const [allPrograms, setAllPrograms] = useState<string[]>([]);
     const [allMainDegrees, setAllMainDegrees] = useState<string[]>([]);
+    const [allMainDegreesObjects, setAllMainDegreesObjects] = useState<MainDegreeData[]>([]);
+    const [allMainCategories, setAllMainCategories] = useState<MainCategoryData[]>([]);
+    const [allJunctions, setAllJunctions] = useState<Array<{program_id: string, category_id: string}>>([]);
     const [allCountries, setAllCountries] = useState<string[]>([]);
     const todayIso = new Date().toISOString().split('T')[0];
     const getInitialStage = () => {
@@ -257,13 +264,18 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const loadOptions = async () => {
         try {
-            const [programs, mainDegs, countries] = await Promise.all([
+            const [programs, mainDegs, categories, junctions, countries] = await Promise.all([
                 interestedProgramService.getAll(),
                 mainDegreeService.getAll(),
+                mainCategoryService.getAll(),
+                mainCategoryService.getJunctions(),
                 countryService.getAll()
             ]);
             setAllPrograms(programs.map(p => p.name));
+            setAllMainDegreesObjects(mainDegs);
             setAllMainDegrees(mainDegs.map(d => d.name));
+            setAllMainCategories(categories);
+            setAllJunctions(junctions);
             setAllCountries(countries.map(c => c.name));
         } catch (error) {
             console.error("Failed to load options", error);
@@ -391,17 +403,26 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
         if (name.includes('.')) {
             const [parent, child] = name.split('.');
+            // Only format name-like fields
+            const fieldsToFormat = ['firstName', 'lastName', 'fullName', 'relationship', 'schoolName'];
+            const needsFormatting = (type === 'text' || type === 'textarea') && fieldsToFormat.includes(child);
+            const finalValue = needsFormatting ? formatTitleCase(value) : value;
+
             setFormData(prev => ({
                 ...prev,
                 [parent]: {
                     ...(prev as any)[parent],
-                    [child]: value
+                    [child]: finalValue
                 }
             }));
         } else {
+            const fieldsToFormat = ['firstName', 'lastName', 'schoolName'];
+            const needsFormatting = (type === 'text' || type === 'textarea') && fieldsToFormat.includes(name);
+            const finalValue = needsFormatting ? formatTitleCase(value) : value;
+
             setFormData(prev => ({
                 ...prev,
-                [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+                [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : finalValue
             }));
         }
     };
@@ -594,12 +615,31 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const openAnalysisModal = (student: Student, e: React.MouseEvent) => {
         e.stopPropagation();
+        
+        let prefs = { ...(student.analysis?.preferences || {}) };
+
+        // Auto-detect category if missing (for legacy data)
+        if (prefs.program1 && !prefs.program1Category) {
+            const program = allMainDegreesObjects.find(d => d.name === prefs.program1);
+            if (program) {
+                const junction = allJunctions.find(j => j.program_id === program.id);
+                if (junction) prefs.program1Category = junction.category_id;
+            }
+        }
+        if (prefs.program2 && !prefs.program2Category) {
+            const program = allMainDegreesObjects.find(d => d.name === prefs.program2);
+            if (program) {
+                const junction = allJunctions.find(j => j.program_id === program.id);
+                if (junction) prefs.program2Category = junction.category_id;
+            }
+        }
+
         setSelectedStudentForAnalysis(student);
         setAnalysisForm({
             language: student.analysis?.language || {},
             academic: student.analysis?.academic || { exams: {} },
             social: student.analysis?.social || {},
-            preferences: student.analysis?.preferences || {},
+            preferences: prefs,
             budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
         });
         setStudentAcademicInfo({
@@ -666,7 +706,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 phone: studentContactInfo.parent2Phone,
                 email: studentContactInfo.parent2Email,
             },
-            analysis: analysisForm
+            analysis: analysisForm,
+            pipelineStage: PipelineStage.ANALYSE,
+            analyseStatus: selectedStudentForAnalysis.analyseStatus || 'Hot'
         };
 
         try {
@@ -700,16 +742,20 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     }
 
     const updateAnalysisField = (section: keyof AnalysisReport, field: string, value: any) => {
+        // Only format text fields, exclude IDs and technical selections
+        const technicalFields = ['program1Category', 'program2Category', 'range', 'educationStatus', 'languageStatus', 'examStatus'];
+        const formattedValue = (typeof value === 'string' && !technicalFields.includes(field)) ? formatTitleCase(value) : value;
         setAnalysisForm(prev => ({
             ...prev,
             [section]: {
                 ...(prev as any)[section],
-                [field]: value
+                [field]: formattedValue
             }
         }));
     };
 
     const updateNestedExam = (key: string, field: string, value: any) => {
+        const formattedValue = typeof value === 'string' ? formatTitleCase(value) : value;
         setAnalysisForm(prev => {
             const currentExams = prev.academic.exams || {};
             return {
@@ -720,7 +766,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         ...currentExams,
                         [key]: {
                             ...currentExams[key],
-                            [field]: value
+                            [field]: formattedValue
                         }
                     }
                 }
@@ -1362,36 +1408,95 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         <div className="space-y-6 animate-fade-in">
 
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <h4 className="text-sm font-semibold text-slate-700 mb-3">Bölüm Tercihleri</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
-                        <select
-                            value={analysisForm.preferences.program1 || ''}
-                            onChange={(e) => updateAnalysisField('preferences', 'program1', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        >
-                            <option value="">Seçiniz</option>
-                            <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
-                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
+                <h4 className="text-sm font-semibold text-slate-700 mb-4">Bölüm Tercihleri</h4>
+                <div className="space-y-6">
+                    {/* Choice 1 */}
+                    <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 flex flex-col md:flex-row gap-4">
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">1. Ana Bölüm</label>
+                            <select
+                                value={analysisForm.preferences.program1Category || ''}
+                                onChange={(e) => {
+                                    updateAnalysisField('preferences', 'program1Category', e.target.value);
+                                    updateAnalysisField('preferences', 'program1', '');
+                                }}
+                                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
+                            >
+                                <option value="">Önce Ana Bölüm Seçiniz</option>
+                                <option value="kararsiz">Bölüm konusunda kesin kararlı değilim</option>
+                                {allMainCategories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">1. Alt Bölüm</label>
+                            <select
+                                disabled={!analysisForm.preferences.program1Category || analysisForm.preferences.program1Category === 'kararsiz'}
+                                value={analysisForm.preferences.program1 || ''}
+                                onChange={(e) => updateAnalysisField('preferences', 'program1', e.target.value)}
+                                className={`w-full px-3 py-2.5 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all ${
+                                    (!analysisForm.preferences.program1Category || analysisForm.preferences.program1Category === 'kararsiz')
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400'
+                                    : 'bg-white border-slate-300 focus:border-indigo-500'
+                                }`}
+                            >
+                                <option value="">Alt Bölüm Seçiniz</option>
+                                {allMainDegreesObjects
+                                    .filter(deg => allJunctions.some(j => j.program_id === deg.id && j.category_id === analysisForm.preferences.program1Category))
+                                    .map(deg => (
+                                        <option key={deg.id} value={deg.name}>{deg.name}</option>
+                                    ))
+                                }
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">2. Tercih</label>
-                        <select
-                            value={analysisForm.preferences.program2 || ''}
-                            onChange={(e) => updateAnalysisField('preferences', 'program2', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        >
-                            <option value="">Seçiniz</option>
-                            <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
-                            {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
+
+                    {/* Choice 2 */}
+                    <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 flex flex-col md:flex-row gap-4">
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">2. Ana Bölüm</label>
+                            <select
+                                value={analysisForm.preferences.program2Category || ''}
+                                onChange={(e) => {
+                                    updateAnalysisField('preferences', 'program2Category', e.target.value);
+                                    updateAnalysisField('preferences', 'program2', '');
+                                }}
+                                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
+                            >
+                                <option value="">Önce Ana Bölüm Seçiniz</option>
+                                <option value="kararsiz">Bölüm konusunda kesin kararlı değilim</option>
+                                {allMainCategories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">2. Alt Bölüm</label>
+                            <select
+                                disabled={!analysisForm.preferences.program2Category || analysisForm.preferences.program2Category === 'kararsiz'}
+                                value={analysisForm.preferences.program2 || ''}
+                                onChange={(e) => updateAnalysisField('preferences', 'program2', e.target.value)}
+                                className={`w-full px-3 py-2.5 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all ${
+                                    (!analysisForm.preferences.program2Category || analysisForm.preferences.program2Category === 'kararsiz')
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400'
+                                    : 'bg-white border-slate-300 focus:border-indigo-500'
+                                }`}
+                            >
+                                <option value="">Alt Bölüm Seçiniz</option>
+                                {allMainDegreesObjects
+                                    .filter(deg => allJunctions.some(j => j.program_id === deg.id && j.category_id === analysisForm.preferences.program2Category))
+                                    .map(deg => (
+                                        <option key={deg.id} value={deg.name}>{deg.name}</option>
+                                    ))
+                                }
+                            </select>
+                        </div>
                     </div>
                 </div>
 
                 {/* Coaching Support Request */}
-                {(analysisForm.preferences.program1 === "Bölüm konusunda kesin kararlı değilim" || analysisForm.preferences.program2 === "Bölüm konusunda kesin kararlı değilim") && (
+                {(analysisForm.preferences.program1Category === "kararsiz" || analysisForm.preferences.program2Category === "kararsiz") && (
                     <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden mt-6 animate-fade-in">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
                         <div className="relative z-10 flex items-start gap-4">
@@ -1718,9 +1823,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
                     <div>
                         <p className="text-sm font-semibold text-amber-900">Bütçe Hakkında Not</p>
-                        <p className="text-xs text-amber-700 mt-1">
-                            Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsammaktadır.
-                            Konaklama, yemek ve diğer yaşam giderleri bu tutarlara dahil değildir.
+                        <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                            Belirtilen bütçe aralıkları sadece yıllık eğitim ücretini (tuition) kapsamaktadır. 
+                            Konaklama, yemek ve diğer yaşam giderleri bu tutarlara dahil değildir. 
+                            Seçilen ülkenin para birimini dikkate alınız.
                         </p>
                     </div>
                 </div>
@@ -1996,10 +2102,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             </div>
 
             {/* Add Student Modal */}
-            {isModalOpen && (
-                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
-                        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {isModalOpen && ReactDOM.createPortal(
+                <div
+                    className={`fixed inset-y-0 right-0 ${isSidebarCollapsed ? 'left-[80px]' : 'left-[256px]'} z-[9999] bg-slate-900/40 backdrop-blur-sm transition-all duration-300 overflow-y-auto animate-fade-in-only`}
+                    onClick={() => setIsModalOpen(false)}
+                >
+                    <div
+                        className="min-h-full flex items-start justify-center p-8 pt-[160px] pb-16"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200/50 animate-fade-in">
+                            <form onSubmit={handleSubmit} className="p-6 space-y-6">
                             {/* Personal Info Section */}
                             <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
                                 <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -2307,13 +2420,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         </form>
                     </div>
                 </div>
-            )}
+            </div>
+            , document.body)}
 
             {/* Analysis Modal */}
-            {isAnalysisModalOpen && selectedStudentForAnalysis && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
+            {isAnalysisModalOpen && selectedStudentForAnalysis && ReactDOM.createPortal(
+                <div
+                    className={`fixed inset-y-0 right-0 ${isSidebarCollapsed ? 'left-[80px]' : 'left-[256px]'} z-[9999] bg-slate-900/40 backdrop-blur-md transition-all duration-300 overflow-y-auto animate-fade-in-only`}
+                    onClick={() => setIsAnalysisModalOpen(false)}
+                >
+                    <div
+                        className="min-h-full flex items-start justify-center p-8 pt-[160px] pb-16"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden border border-slate-200/50 animate-fade-in">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-white">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
                                     <BrainCircuit className="w-6 h-6" />
@@ -2388,7 +2509,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         </div>
                     </div>
                 </div>
-            )}
+            </div>
+            , document.body)}
 
         </div>
     );

@@ -83,3 +83,6 @@ CREATE POLICY "Allow authenticated full access" ON public.university_types FOR A
 
 -- Add visa_reports JSONB to student_profiles
 ALTER TABLE public.student_profiles ADD COLUMN IF NOT EXISTS visa_reports JSONB;
+
+-- Add analyse_status column to student_profiles
+ALTER TABLE public.student_profiles ADD COLUMN IF NOT EXISTS analyse_status TEXT DEFAULT 'Hot';
