@@ -18,11 +18,16 @@ import {
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
 
+const ResearchIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <span className={`${className || ''} inline-flex items-center justify-center text-base leading-none`}>📊</span>
+);
+
 interface SidebarProps {
   currentPage: string;
   setPage: (page: string) => void;
   currentUser: SystemUser;
   onSwitchUser: () => void;
+  onLogout: () => void;
   isCollapsed: boolean;
   onToggle: () => void;
 }
@@ -39,9 +44,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   setPage,
   currentUser,
   onSwitchUser,
+  onLogout,
   isCollapsed,
   onToggle
-}) => {
+}: SidebarProps) => {
   const getNavItems = (): NavItem[] => {
     const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,6 +63,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     } else {
       baseItems.push({ id: 'statistics', label: 'Statistics', icon: ChartPie });
       baseItems.push({ id: 'universities', label: 'University Search', icon: GraduationCap });
+      baseItems.push({ id: 'university-research', label: 'Üniversite Araştırma', icon: ResearchIcon });
       baseItems.push({ id: 'calendar', label: 'Calendar', icon: CalendarDays });
       baseItems.push({ id: 'roadmap', label: 'Roadmaps', icon: Map });
     }
@@ -192,13 +199,14 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        <button
-          title={isCollapsed ? 'Sign Out' : ''}
-          className={`w-full rounded-xl text-xs font-medium text-rose-400 transition-colors hover:bg-slate-800 hover:text-rose-300 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'} flex items-center`}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!isCollapsed && <span>Sign Out</span>}
-        </button>
+         <button
+           onClick={onLogout}
+           title={isCollapsed ? 'Sign Out' : ''}
+           className={`w-full rounded-xl text-xs font-medium text-rose-400 transition-colors hover:bg-slate-800 hover:text-rose-300 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'} flex items-center`}
+         >
+           <LogOut className="h-4 w-4 shrink-0" />
+           {!isCollapsed && <span>Sign Out</span>}
+         </button>
       </div>
     </div>
   );

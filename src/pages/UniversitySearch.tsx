@@ -8,10 +8,9 @@ import {
     Check, X, Loader2, ChevronRight, ClipboardCopy, Upload, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { UniversityData, UniversityProgram, MainDegreeData, MainCategoryData } from '../types';
+import { UniversityData, UniversityProgram, MainDegreeData } from '../types';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
-import { mainCategoryService } from '../services/mainCategoryService';
 import { systemService, BudgetRange } from '../services/systemService';
 import { jsPDF } from 'jspdf';
 import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
@@ -20,11 +19,9 @@ const UniversitySearch: React.FC = () => {
     const [universities, setUniversities] = useState<UniversityData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
-    const [mainCategories, setMainCategories] = useState<MainCategoryData[]>([]);
     
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [selectedDegree, setSelectedDegree] = useState<string>('');
     const [selectedCountry, setSelectedCountry] = useState<string>('');
     const [selectedType, setSelectedType] = useState<string>('');
@@ -41,23 +38,14 @@ const UniversitySearch: React.FC = () => {
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [uniData, degreeData, cats, junctions, rawBudgets] = await Promise.all([
+            const [uniData, degreeData, rawBudgets] = await Promise.all([
                 universityService.getAll(),
                 mainDegreeService.getAll(),
-                mainCategoryService.getAll(),
-                mainCategoryService.getJunctions(),
                 systemService.getBudgetRangesRaw()
             ]);
-            
-            // Enrich degrees with category IDs
-            const enrichedDegrees = degreeData.map(d => ({
-                ...d,
-                categoryIds: junctions.filter(j => j.program_id === d.id).map(j => j.category_id)
-            }));
 
             setUniversities(uniData);
-            setMainDegrees(enrichedDegrees as MainDegreeData[]);
-            setMainCategories(cats);
+            setMainDegrees(degreeData as MainDegreeData[]);
             setBudgetRanges(rawBudgets);
         } catch (error) {
             console.error("Failed to load search data", error);
@@ -67,9 +55,17 @@ const UniversitySearch: React.FC = () => {
     };
 
     const countries = Array.from(new Set(universities.flatMap(u => u.countries || []))).sort();
+    const selectedDegreeName = mainDegrees.find(deg => deg.id === selectedDegree)?.name || '';
+
+    const matchesSelectedDegree = (program: UniversityProgram) => {
+        if (!selectedDegreeName) return true;
+
+        const normalizedDegree = selectedDegreeName.toLowerCase();
+        return program.name.toLowerCase().includes(normalizedDegree) ||
+            (program.groupNames || []).some(groupName => groupName.toLowerCase() === normalizedDegree);
+    };
 
     const hasAnyFilter = searchTerm.trim() !== '' || 
-                         selectedCategory !== '' ||
                          selectedDegree !== '' || 
                          selectedCountry !== '' || 
                          selectedType !== '' || 
@@ -80,22 +76,10 @@ const UniversitySearch: React.FC = () => {
         const matchesSearch = uni.name.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesCountry = !selectedCountry || (uni.countries || []).includes(selectedCountry);
         
-        // Filter by Category/Degree
+        // Filter by Data > Bölümler selection
         let matchesDegree = true;
         if (selectedDegree) {
-            matchesDegree = (uni.programs || []).some(prog => 
-                prog.name.toLowerCase().includes(selectedDegree.toLowerCase()) || 
-                (prog.groupNames || []).some(gn => gn.toLowerCase() === selectedDegree.toLowerCase())
-            );
-        } else if (selectedCategory) {
-            // Filter by Category if no specific degree selected
-            const degreesInCategory = mainDegrees
-                .filter(d => (d.categoryIds || []).includes(selectedCategory))
-                .map(d => d.name.toLowerCase());
-            
-            matchesDegree = (uni.programs || []).some(prog => 
-                (prog.groupNames || []).some(gn => degreesInCategory.includes(gn.toLowerCase()))
-            );
+            matchesDegree = (uni.programs || []).some(matchesSelectedDegree);
         }
 
         // More filters
@@ -395,36 +379,16 @@ const UniversitySearch: React.FC = () => {
                     </div>
                     
                     <div className="relative">
-                        <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <select 
-                            value={selectedCategory}
-                            onChange={(e) => {
-                                setSelectedCategory(e.target.value);
-                                setSelectedDegree(''); // Reset degree when category changes
-                            }}
-                            className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all text-sm appearance-none cursor-pointer"
-                        >
-                            <option value="">Ana Bölüm Seçiniz</option>
-                            {mainCategories.map(cat => (
-                                <option key={cat.id} value={cat.id}>{cat.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="relative">
                         <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <select 
                             value={selectedDegree}
                             onChange={(e) => setSelectedDegree(e.target.value)}
                             className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all text-sm appearance-none cursor-pointer"
                         >
-                            <option value="">Alt Başlık Seçiniz</option>
-                            {mainDegrees
-                                .filter(deg => !selectedCategory || (deg.categoryIds || []).includes(selectedCategory))
-                                .map(deg => (
-                                    <option key={deg.id} value={deg.name}>{deg.name}</option>
-                                ))
-                            }
+                            <option value="">Bölüm Seçiniz</option>
+                            {mainDegrees.map(deg => (
+                                <option key={deg.id} value={deg.id}>{deg.name}</option>
+                            ))}
                         </select>
                     </div>
 
@@ -594,9 +558,7 @@ const UniversitySearch: React.FC = () => {
                                             
                                             // Get matching budgets for this uni
                                             const matchedBudgets = Array.from(new Set((uni.programs || []).filter(p => {
-                                                const matchDegree = !selectedDegree || 
-                                                                    p.name.toLowerCase().includes(selectedDegree.toLowerCase()) || 
-                                                                    (p.groupNames || []).some(gn => gn.toLowerCase() === selectedDegree.toLowerCase());
+                                                const matchDegree = matchesSelectedDegree(p);
                                                 const matchType = !selectedType || p.type === selectedType;
                                                 const matchBudget = (() => {
                                                     if (!selectedBudget) return true;
@@ -644,9 +606,7 @@ const UniversitySearch: React.FC = () => {
                                     <div className="flex-1 space-y-3 mb-6">
                                         {(() => {
                                             const filteredPrograms = (uni.programs || []).filter(prog => {
-                                                const matchDegree = !selectedDegree || 
-                                                                    prog.name.toLowerCase().includes(selectedDegree.toLowerCase()) || 
-                                                                    (prog.groupNames || []).some(gn => gn.toLowerCase() === selectedDegree.toLowerCase());
+                                                const matchDegree = matchesSelectedDegree(prog);
                                                 const matchType = !selectedType || prog.type === selectedType;
                                                 
                                                 const matchBudget = (() => {

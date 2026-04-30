@@ -13,8 +13,10 @@ import {
     Search, Plus, Filter, ChevronRight, X, ChevronDown, ChevronUp,
     User, Phone, Mail, Calendar, School, Users, Globe, FileCheck,
     ClipboardList, Save, CheckCircle, AlertCircle, Trash2, Sparkles,
-    GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag
+    GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag,
+    Download, Upload, FileDown
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { formatTitleCase } from '../lib/utils';
 
@@ -53,6 +55,100 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     // Tuition Ranges State
     const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleExportExcel = () => {
+        const exportData = students.map(s => ({
+            'Ad': s.firstName,
+            'Soyad': s.lastName,
+            'E-posta': s.email,
+            'Telefon': s.phone,
+            'Doğum Tarihi': s.dob || '',
+            'Okul': s.schoolName || '',
+            'Sınıf': s.currentGrade || '',
+            'Eğitim Durumu': s.educationStatus || '',
+            'Aşama': s.pipelineStage
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Öğrenciler");
+        XLSX.writeFile(wb, `Ogrenci_Listesi_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                if (jsonData.length === 0) {
+                    alert('Excel dosyası boş.');
+                    return;
+                }
+
+                if (!window.confirm(`${jsonData.length} öğrenci aktarılacak. Emin misiniz?`)) {
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                }
+
+                setIsLoading(true);
+                let successCount = 0;
+                let failCount = 0;
+
+                for (const row of jsonData as any[]) {
+                    try {
+                        const newStudent: Partial<Student> = {
+                            firstName: String(row['Ad'] || '').trim(),
+                            lastName: String(row['Soyad'] || '').trim(),
+                            email: String(row['E-posta'] || '').trim(),
+                            phone: String(row['Telefon'] || '0').trim(),
+                            dob: row['Doğum Tarihi'] || null,
+                            schoolName: String(row['Okul'] || '').trim(),
+                            currentGrade: String(row['Sınıf'] || '').trim(),
+                            pipelineStage: PipelineStage.FOLLOW,
+                            reminderDate: todayIso,
+                            targetPrograms: [],
+                            analysis: {
+                                language: {},
+                                academic: { exams: {} },
+                                social: {},
+                                preferences: {},
+                                budget: {}
+                            }
+                        };
+
+                        if (newStudent.firstName && (newStudent.email || newStudent.phone)) {
+                            await studentService.create(newStudent);
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (err) {
+                        console.error('Error importing row:', row, err);
+                        failCount++;
+                    }
+                }
+
+                alert(`${successCount} öğrenci başarıyla eklendi. ${failCount} hata oluştu.`);
+                loadStudents();
+            } catch (error) {
+                console.error('Excel import error:', error);
+                alert('Excel dosyası okunurken bir hata oluştu.');
+            } finally {
+                setIsLoading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
 
     // Analysis Modal State
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
@@ -1930,6 +2026,29 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     </div>
                 </div>
                 <div className="flex gap-3">
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImportExcel} 
+                        accept=".xlsx, .xls" 
+                        className="hidden" 
+                    />
+                    <button
+                        onClick={handleExportExcel}
+                        className="flex items-center gap-2 px-4 py-3 bg-white text-slate-700 rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 font-medium shadow-sm"
+                        title="Excel İndir"
+                    >
+                        <FileDown className="w-5 h-5 text-emerald-600" />
+                        <span className="hidden sm:inline">Excel İndir</span>
+                    </button>
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-3 bg-white text-slate-700 rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 font-medium shadow-sm"
+                        title="Excel Yükle"
+                    >
+                        <Upload className="w-5 h-5 text-indigo-600" />
+                        <span className="hidden sm:inline">Excel Yükle</span>
+                    </button>
                     <button
                         onClick={() => setIsModalOpen(true)}
                         className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 font-medium"

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent, UniversityProgramData } from '../types';
-import { MOCK_USERS, MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent, UniversityProgramData, Branch } from '../types';
+import { MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
 import { universityTypeService } from '../services/universityTypeService';
@@ -15,7 +15,7 @@ import { systemService } from '../services/systemService';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
     Shield, CheckCircle, XCircle, Plus, PlusCircle, MoreVertical, Edit2, Trash2, 
-    Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen,
+    Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen, Edit,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload
 } from 'lucide-react';
@@ -80,10 +80,21 @@ const DefinitionCard = ({ id, title, icon: Icon, count, onClick, color = "text-i
 );
 
 const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => void }> = ({ onUniversitySelect }) => {
-    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data'>('users');
-    const [users, setUsers] = useState<SystemUser[]>(MOCK_USERS);
-    const [branches] = useState(MOCK_BRANCHES);
+    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions'>('users');
+    const [users, setUsers] = useState<SystemUser[]>([]);
+    const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
+    const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
+    const [branchForm, setBranchForm] = useState<Partial<Branch>>({
+        name: '',
+        city: '',
+        address: '',
+        phone: '',
+        email: '',
+        status: 'active'
+    });
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [newUserPassword, setNewUserPassword] = useState('');
     
     // Definitions State
     const [selectedDefinitionType, setSelectedDefinitionType] = useState<string | null>(null);
@@ -208,11 +219,17 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         full_name: '',
         email: '',
         phone: '',
+        avatarUrl: '',
         role: UserRole.CONSULTANT,
         branch_id: '',
         status: 'active',
         parent_user_id: ''
     });
+
+    useEffect(() => {
+        loadUsers();
+        loadBranches();
+    }, []);
 
     // Load definitions
     useEffect(() => {
@@ -369,11 +386,57 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         }
     };
 
+    const loadBranches = async () => {
+        const data = await systemService.getBranches();
+        setBranches(data);
+    };
+
+    const loadUsers = async () => {
+        const data = await systemService.getSystemUsers();
+        setUsers(data);
+    };
+
     // User Actions
-    const handleAddUser = (e: React.FormEvent) => {
+    const resetUserForm = () => {
+        setEditingUserId(null);
+        setNewUserPassword('');
+        setNewUser({
+            full_name: '',
+            email: '',
+            phone: '',
+            avatarUrl: '',
+            role: UserRole.CONSULTANT,
+            branch_id: '',
+            status: 'active',
+            parent_user_id: ''
+        });
+    };
+
+    const openAddUserModal = () => {
+        resetUserForm();
+        setIsUserModalOpen(true);
+    };
+
+    const openEditUserModal = (user: SystemUser) => {
+        setEditingUserId(user.id);
+        setNewUserPassword('');
+        setNewUser({
+            full_name: user.full_name,
+            email: user.email,
+            phone: user.phone,
+            avatarUrl: user.avatarUrl,
+            role: user.role,
+            branch_id: user.branch_id,
+            status: user.status,
+            parent_user_id: user.parent_user_id
+        });
+        setIsUserModalOpen(true);
+    };
+
+    const handleSaveUser = async (e: React.FormEvent) => {
         e.preventDefault();
         const createdUser: SystemUser = {
-            id: `user-${Date.now()}`,
+            id: editingUserId || `user-${Date.now()}`,
             full_name: newUser.full_name || '',
             email: newUser.email || '',
             phone: newUser.phone || '',
@@ -381,30 +444,131 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             branch_id: newUser.branch_id || '',
             parent_user_id: newUser.parent_user_id,
             status: newUser.status || 'active',
-            avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name}`,
+            avatarUrl: newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name}`,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
-        setUsers([...users, createdUser]);
-        setIsUserModalOpen(false);
-        setNewUser({
-            full_name: '',
-            email: '',
-            phone: '',
-            role: UserRole.CONSULTANT,
-            branch_id: '',
-            status: 'active',
-            parentId: ''
-        });
+
+        try {
+            if (!editingUserId && !newUserPassword) {
+                alert('Sisteme giriş şifresi zorunludur.');
+                return;
+            }
+
+            const userPayload = {
+                full_name: createdUser.full_name,
+                email: createdUser.email,
+                phone: createdUser.phone,
+                role: createdUser.role,
+                branch_id: createdUser.branch_id,
+                parent_user_id: createdUser.parent_user_id,
+                status: createdUser.status,
+                avatarUrl: createdUser.avatarUrl
+            };
+
+            const savedUser = editingUserId
+                ? await systemService.updateSystemUser(editingUserId, userPayload)
+                : await systemService.addSystemUserWithAuth(userPayload, newUserPassword);
+
+            setUsers(editingUserId
+                ? users.map(user => user.id === editingUserId ? savedUser : user)
+                : [savedUser, ...users]
+            );
+            setIsUserModalOpen(false);
+            resetUserForm();
+        } catch (error) {
+            console.error('Failed to save user to system_users', error);
+            const message = error instanceof Error ? error.message : JSON.stringify(error);
+            alert(`Kullanıcı kaydedilemedi: ${message}`);
+        }
     };
 
-    const toggleUserStatus = (id: string) => {
-        setUsers(users.map(u => u.id === id ? { ...u, isActive: !u.isActive } : u));
+    const handleAddBranch = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const now = new Date().toISOString();
+        const createdBranch: Branch = {
+            id: `branch-${Date.now()}`,
+            name: branchForm.name || '',
+            country: 'Türkiye',
+            city: branchForm.city || '',
+            address: branchForm.address || '',
+            phone: branchForm.phone || '',
+            email: branchForm.email || '',
+            status: branchForm.status || 'active',
+            manager_id: branchForm.manager_id || '',
+            created_at: now,
+            updated_at: now
+        };
+
+        try {
+            const savedBranch = await systemService.addBranch({
+                name: createdBranch.name,
+                country: createdBranch.country,
+                city: createdBranch.city,
+                address: createdBranch.address,
+                phone: createdBranch.phone,
+                email: createdBranch.email,
+                status: createdBranch.status,
+                manager_id: createdBranch.manager_id
+            });
+            setBranches([savedBranch, ...branches]);
+        } catch (error) {
+            console.warn('Branch could not be saved to Supabase. Keeping local record.', error);
+            setBranches([createdBranch, ...branches]);
+        } finally {
+            setIsBranchModalOpen(false);
+            setBranchForm({
+                name: '',
+                city: '',
+                address: '',
+                phone: '',
+                email: '',
+                status: 'active'
+            });
+        }
     };
 
-    const deleteUser = (id: string) => {
+    const toggleBranchStatus = async (id: string) => {
+        const branch = branches.find(b => b.id === id);
+        if (!branch) return;
+
+        const nextStatus = branch.status === 'active' ? 'passive' : 'active';
+        setBranches(branches.map(b => b.id === id ? { ...b, status: nextStatus, updated_at: new Date().toISOString() } : b));
+
+        try {
+            await systemService.updateBranchStatus(id, nextStatus);
+        } catch (error) {
+            console.warn('Branch status could not be saved to Supabase. Keeping local update.', error);
+        }
+    };
+
+    const toggleUserStatus = async (id: string) => {
+        const user = users.find(u => u.id === id);
+        if (!user) return;
+
+        const nextStatus = user.status === 'active' ? 'passive' : 'active';
+        setUsers(users.map(u => u.id === id ? { ...u, status: nextStatus, updated_at: new Date().toISOString() } : u));
+
+        try {
+            await systemService.updateSystemUserStatus(id, nextStatus);
+        } catch (error) {
+            console.error('Failed to update system_users status', error);
+            alert('Kullanıcı durumu Supabase üzerinde güncellenemedi.');
+            setUsers(users);
+        }
+    };
+
+    const deleteUser = async (id: string) => {
         if(window.confirm('Are you sure you want to delete this user?')) {
+            const previousUsers = users;
             setUsers(users.filter(u => u.id !== id));
+            try {
+                await systemService.deleteSystemUser(id);
+            } catch (error) {
+                console.error('Failed to delete system_users record', error);
+                alert('Kullanıcı Supabase üzerinden silinemedi.');
+                setUsers(previousUsers);
+            }
         }
     };
 
@@ -1138,15 +1302,15 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         <div className="space-y-6 animate-fade-in">
              <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-lg font-bold text-slate-800">User Management</h3>
-                    <p className="text-sm text-slate-500">Manage admins, consultants, and representatives.</p>
+                    <h3 className="text-lg font-bold text-slate-800">Kullanıcı Yönetimi</h3>
+                    <p className="text-sm text-slate-500">Admin, danışman ve temsilci kullanıcılarını yönetin.</p>
                 </div>
                 <button 
-                    onClick={() => setIsUserModalOpen(true)}
+                    onClick={openAddUserModal}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
                 >
                     <Plus className="w-4 h-4" />
-                    Add User
+                    Yeni Kullanıcı Ekle
                 </button>
             </div>
 
@@ -1154,21 +1318,21 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                 <table className="w-full text-left">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                            <th className="px-6 py-4 font-semibold">User</th>
-                            <th className="px-6 py-4 font-semibold">Role</th>
-                            <th className="px-6 py-4 font-semibold">Reports To</th>
-                            <th className="px-6 py-4 font-semibold">Status</th>
-                            <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                            <th className="px-6 py-4 font-semibold">Kullanıcı</th>
+                            <th className="px-6 py-4 font-semibold">Rol</th>
+                            <th className="px-6 py-4 font-semibold">Bağlı Olduğu Yönetici</th>
+                            <th className="px-6 py-4 font-semibold">Durum</th>
+                            <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {users.map(user => {
-                            const parent = users.find(u => u.id === user.parentId);
+                            const parent = users.find(u => u.id === user.parent_user_id);
                             return (
                                 <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full bg-slate-100" />
+                                            <img src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.full_name}`} alt="" className="w-10 h-10 rounded-full bg-slate-100" />
                                             <div>
                                                 <p className="font-bold text-slate-800">{user.full_name}</p>
                                                 <p className="text-xs text-slate-500">{user.email}</p>
@@ -1188,7 +1352,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                     <td className="px-6 py-4 text-sm text-slate-600">
                                         {parent ? (
                                             <div className="flex items-center gap-2">
-                                                <img src={parent.avatarUrl} className="w-5 h-5 rounded-full" />
+                                                <img src={parent.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${parent.full_name}`} className="w-5 h-5 rounded-full" />
                                                 <span className="font-medium text-slate-700">{parent.full_name}</span>
                                             </div>
                                         ) : (
@@ -1199,19 +1363,25 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         <button 
                                             onClick={() => toggleUserStatus(user.id)}
                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                            user.isActive 
+                                            user.status === 'active'
                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
                                                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                         }`}>
-                                            {user.isActive ? (
-                                                <><CheckCircle className="w-3 h-3" /> Active</>
+                                            {user.status === 'active' ? (
+                                                <><CheckCircle className="w-3 h-3" /> Aktif</>
                                             ) : (
-                                                <><XCircle className="w-3 h-3" /> Passive</>
+                                                <><XCircle className="w-3 h-3" /> Pasif</>
                                             )}
                                         </button>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => openEditUserModal(user)}
+                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                            </button>
                                             <button 
                                                 onClick={() => deleteUser(user.id)}
                                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
@@ -3116,6 +3286,152 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
         );
     };
 
+    const renderInstitutions = () => {
+        return (
+            <div className="space-y-6 animate-fade-in pb-20">
+                <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                <Building className="w-5 h-5 text-indigo-600" /> Kurumlar
+                            </h3>
+                            <p className="text-sm text-slate-500 mt-1">Şubeler ve kurum bilgilerini yönetin.</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <DefinitionCard
+                            id="branches"
+                            title="Şubeler"
+                            icon={MapPin}
+                            count={branches.length}
+                            color="text-emerald-600"
+                            bg="bg-emerald-50"
+                            onClick={(id: string) => setSelectedDefinitionType(id)}
+                        />
+                        <DefinitionCard
+                            id="shared_institutions"
+                            title="Paylaşımlı Kurumlar"
+                            icon={Building}
+                            count={sharedInstitutions.length || 0}
+                            color="text-amber-600"
+                            bg="bg-amber-50"
+                            onClick={(id: string) => setSelectedDefinitionType(id)}
+                        />
+                    </div>
+                </div>
+
+                {selectedDefinitionType === 'branches' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={() => setSelectedDefinitionType(null)}
+                                    className="p-2 rounded-full hover:bg-slate-100 transition-colors"
+                                >
+                                    <ArrowLeft className="w-5 h-5" />
+                                </button>
+                                <h3 className="text-lg font-bold text-slate-800">Şubeler</h3>
+                            </div>
+                            <button 
+                                onClick={() => setIsBranchModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Yeni Şube
+                            </button>
+                        </div>
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                    <th className="px-6 py-4 font-semibold">Şube Adı</th>
+                                    <th className="px-6 py-4 font-semibold">Şehir</th>
+                                    <th className="px-6 py-4 font-semibold">Adres</th>
+                                    <th className="px-6 py-4 font-semibold">Telefon</th>
+                                    <th className="px-6 py-4 font-semibold">E-posta</th>
+                                    <th className="px-6 py-4 font-semibold">Durum</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {branches.map(branch => (
+                                    <tr key={branch.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-bold text-slate-800">{branch.name}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{branch.city}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{branch.address}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{branch.phone}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{branch.email}</td>
+                                        <td className="px-6 py-4">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleBranchStatus(branch.id)}
+                                                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${
+                                                    branch.status === 'active' ? 'bg-emerald-500' : 'bg-slate-300'
+                                                }`}
+                                                aria-label={`${branch.name} durumunu değiştir`}
+                                            >
+                                                <span
+                                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                                                        branch.status === 'active' ? 'translate-x-8' : 'translate-x-1'
+                                                    }`}
+                                                />
+                                            </button>
+                                            <span className={`ml-2 text-xs font-semibold ${branch.status === 'active' ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                                {branch.status === 'active' ? 'Aktif' : 'Pasif'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {selectedDefinitionType === 'shared_institutions' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={() => setSelectedDefinitionType(null)}
+                                    className="p-2 rounded-full hover:bg-slate-100 transition-colors"
+                                >
+                                    <ArrowLeft className="w-5 h-5" />
+                                </button>
+                                <h3 className="text-lg font-bold text-slate-800">Paylaşımlı Kurumlar</h3>
+                            </div>
+                            <button 
+                                onClick={() => setIsSharedInstitutionModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Yeni Kurum Ekle
+                            </button>
+                        </div>
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                    <th className="px-6 py-4 font-semibold">Kurum Adı</th>
+                                    <th className="px-6 py-4 font-semibold">Telefon</th>
+                                    <th className="px-6 py-4 font-semibold">E-posta</th>
+                                    <th className="px-6 py-4 font-semibold">Yetkili Kişi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {sharedInstitutions.map(inst => (
+                                    <tr key={inst.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-bold text-slate-800">{inst.name}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{inst.phone}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{inst.email}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-600">{inst.authorizedPerson}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderDataManager = () => {
         const stats = [
             { id: 'countries', name: 'Ülkeler', table: 'countries', icon: Globe, count: countries.length, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -3226,6 +3542,15 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
     };
 
     const availableParents = getAvailableParents(newUser.role);
+    const showSettingsBackButton = activeTab !== 'users' || !!selectedDefinitionType;
+
+    const returnToSettingsHome = () => {
+        setActiveTab('users');
+        setSelectedDefinitionType(null);
+        setSelectedCountryId(null);
+        setUniversitySearchTerm('');
+        setExpandedUniversityId(null);
+    };
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 pb-20 h-full">
@@ -3241,11 +3566,23 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                     <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
                 </div>
 
-                <div className="relative z-10">
-                    <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-                        System Settings
-                    </h1>
-                    <p className="text-purple-300/70 mt-1 text-sm">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
+                <div className="relative z-10 flex items-start gap-4">
+                    {showSettingsBackButton && (
+                        <button
+                            type="button"
+                            onClick={returnToSettingsHome}
+                            className="mt-1 rounded-full bg-white/10 p-2.5 text-white transition-colors hover:bg-white/20"
+                            aria-label="System Settings ana sayfasına dön"
+                        >
+                            <ArrowLeft className="w-5 h-5" />
+                        </button>
+                    )}
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                            System Settings
+                        </h1>
+                        <p className="text-purple-300/70 mt-1 text-sm">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
+                    </div>
                 </div>
             </motion.div>
 
@@ -3255,6 +3592,7 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                     <div className="flex gap-6 border-b border-slate-200">
                         {[
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
+                            { id: 'institutions', label: 'Kurumlar', icon: Building },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
                             { id: 'data', label: 'DATA', icon: Database },
                         ].map((tab) => (
@@ -3276,6 +3614,8 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
             )}
 
             {activeTab === 'users' && !selectedDefinitionType && renderUserManagement()}
+
+            {activeTab === 'institutions' && renderInstitutions()}
 
             {activeTab === 'definitions' && (
                 <>
@@ -3299,15 +3639,6 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         count={interestedPrograms.length || 0} 
                                         color="text-indigo-600"
                                         bg="bg-indigo-50"
-                                        onClick={(id: string) => setSelectedDefinitionType(id)}
-                                    />
-                                    <DefinitionCard 
-                                        id="shared_institutions"
-                                        title="Kurumlar" 
-                                        icon={Building} 
-                                        count={sharedInstitutions.length || 0} 
-                                        color="text-emerald-600"
-                                        bg="bg-emerald-50"
                                         onClick={(id: string) => setSelectedDefinitionType(id)}
                                     />
                                     <DefinitionCard 
@@ -3527,91 +3858,150 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
 
             {/* Add User Modal */}
             {isUserModalOpen && (
-                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100vh-160px)] overflow-y-auto mb-10 animate-fade-in">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-slate-800">Yeni Kullanıcı Ekle</h3>
-                            <button onClick={() => setIsUserModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
+                    <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl p-6 md:p-8 animate-fade-in">
+                        <div className="mb-6 flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-xl font-semibold text-slate-900">{editingUserId ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı Ekle'}</h2>
+                                <p className="mt-1 text-sm text-slate-500">Kullanıcı bilgilerini, rolünü ve bağlı olduğu yöneticiyi belirleyin.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { setIsUserModalOpen(false); resetUserForm(); }}
+                                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                                <XCircle className="w-6 h-6" />
+                            </button>
                         </div>
-                        <form onSubmit={handleAddUser} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Ad Soyad</label>
-                                <input
-                                    required
-                                    value={newUser.full_name}
-                                    onChange={e => setNewUser({...newUser, full_name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
-                                <input 
-                                    required
-                                    type="email"
-                                    value={newUser.email} 
-                                    onChange={e => setNewUser({...newUser, email: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
-                                <input
-                                    value={newUser.phone}
-                                    onChange={e => setNewUser({...newUser, phone: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
-                                <select
-                                    value={newUser.branch_id}
-                                    onChange={e => setNewUser({...newUser, branch_id: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                >
-                                    <option value="">Şube Seçin</option>
-                                    {branches.map(branch => (
-                                        <option key={branch.id} value={branch.id}>
-                                            {branch.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                                <select
-                                    value={newUser.role}
-                                    onChange={e => {
-                                        const newRole = e.target.value as UserRole;
-                                        setNewUser({
-                                            ...newUser,
-                                            role: newRole,
-                                            parent_user_id: '' // Reset parent when role changes to ensure validity
-                                        });
-                                    }}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                >
-                                    <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
-                                    <option value={UserRole.ADMIN}>Admin</option>
-                                    <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
-                                    <option value={UserRole.CONSULTANT}>Danışman</option>
-                                    <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
-                                    <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilci</option>
-                                    <option value={UserRole.STUDENT}>Öğrenci</option>
-                                </select>
+                        <form onSubmit={handleSaveUser} className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
+                                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Kullanıcı Bilgileri</h3>
+                                <div className="mb-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4">
+                                    <img
+                                        src={newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name || 'User'}`}
+                                        alt="Kullanıcı resmi"
+                                        className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100 object-cover"
+                                    />
+                                    <div className="flex-1">
+                                        <label className="mb-2 block text-sm font-medium text-slate-700">Kullanıcı Resmi</label>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                                <Upload className="h-4 w-4" />
+                                                Resim Seç
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                    onChange={e => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        const reader = new FileReader();
+                                                        reader.onload = () => setNewUser({...newUser, avatarUrl: String(reader.result)});
+                                                        reader.readAsDataURL(file);
+                                                    }}
+                                                />
+                                            </label>
+                                            {newUser.avatarUrl && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewUser({...newUser, avatarUrl: ''})}
+                                                    className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                                                >
+                                                    Kaldır
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Ad Soyad</label>
+                                        <input
+                                            required
+                                            value={newUser.full_name}
+                                            onChange={e => setNewUser({...newUser, full_name: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
+                                        <input 
+                                            required
+                                            type="email"
+                                            value={newUser.email} 
+                                            onChange={e => setNewUser({...newUser, email: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                        />
+                                    </div>
+                                    {!editingUserId && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Sisteme Giriş Şifresi</label>
+                                            <input
+                                                required
+                                                minLength={6}
+                                                type="password"
+                                                value={newUserPassword}
+                                                onChange={e => setNewUserPassword(e.target.value)}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                                placeholder="En az 6 karakter"
+                                            />
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+                                        <select
+                                            value={newUser.role}
+                                            onChange={e => {
+                                                const newRole = e.target.value as UserRole;
+                                                setNewUser({
+                                                    ...newUser,
+                                                    role: newRole,
+                                                    branch_id: newRole === UserRole.SUPER_ADMIN || newRole === UserRole.ADMIN ? '' : newUser.branch_id,
+                                                    parent_user_id: ''
+                                                });
+                                            }}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        >
+                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
+                                            <option value={UserRole.ADMIN}>Admin</option>
+                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
+                                            <option value={UserRole.CONSULTANT}>Danışman</option>
+                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
+                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilci</option>
+                                            <option value={UserRole.STUDENT}>Öğrenci</option>
+                                        </select>
+                                    </div>
+                                    {newUser.role !== UserRole.SUPER_ADMIN && newUser.role !== UserRole.ADMIN && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
+                                            <select
+                                                value={newUser.branch_id}
+                                                onChange={e => setNewUser({...newUser, branch_id: e.target.value})}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            >
+                                                <option value="">Şube Seçin</option>
+                                                {branches.map(branch => (
+                                                    <option key={branch.id} value={branch.id}>
+                                                        {branch.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             
-                            {/* Reports To Selection */}
-                            {(newUser.role === UserRole.ADMIN || newUser.role === UserRole.BRANCH_MANAGER || newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT_REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Reports To (Manager)
+                            {(newUser.role === UserRole.ADMIN || newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT_REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                        Bağlı Olduğu Yönetici
                                     </label>
                                     <select
                                         value={newUser.parent_user_id || ''}
                                         onChange={e => setNewUser({...newUser, parent_user_id: e.target.value})}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                     >
-                                        <option value="">Select Manager</option>
+                                        <option value="">Yönetici Seçin</option>
                                         {availableParents.map(parent => (
                                             <option key={parent.id} value={parent.id}>
                                                 {parent.full_name} ({parent.role})
@@ -3619,19 +4009,113 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         ))}
                                     </select>
                                     <p className="text-xs text-slate-400 mt-1">
-                                        {newUser.role === UserRole.ADMIN ? 'Admins report to Super Admin.' :
-                                         newUser.role === UserRole.BRANCH_MANAGER ? 'Branch Managers report to Admin.' :
-                                         newUser.role === UserRole.CONSULTANT ? 'Consultants report to Branch Manager.' :
-                                         newUser.role === UserRole.REPRESENTATIVE ? 'Representatives report to Consultant or Branch Manager.' :
-                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Student Representatives report to Representative, Consultant, or Branch Manager.' :
-                                         'Students are assigned to Representative, Consultant, or Branch Manager.'}
+                                        {newUser.role === UserRole.ADMIN ? 'Admin kullanıcıları Super Admin altında çalışır.' :
+                                         newUser.role === UserRole.BRANCH_MANAGER ? 'Şube Müdürleri Admin altında çalışır.' :
+                                         newUser.role === UserRole.CONSULTANT ? 'Danışmanlar Şube Müdürüne bağlıdır.' :
+                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler Danışman veya Şube Müdürüne bağlıdır.' :
+                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri Temsilci, Danışman veya Şube Müdürüne bağlıdır.' :
+                                         'Öğrenciler Temsilci, Danışman veya Şube Müdürüne atanır.'}
                                     </p>
                                 </div>
                             )}
 
-                            <div className="pt-4 flex justify-end gap-3">
-                                <button type="button" onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">Cancel</button>
-                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Create User</button>
+                            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+                                <button type="button" onClick={() => { setIsUserModalOpen(false); resetUserForm(); }} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">İptal</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">{editingUserId ? 'Kullanıcıyı Güncelle' : 'Kullanıcı Oluştur'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Branch Modal */}
+            {isBranchModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
+                    <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl p-6 md:p-8">
+                        <div className="mb-6 flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-xl font-semibold text-slate-900">Yeni Şube Ekle</h2>
+                                <p className="mt-1 text-sm text-slate-500">Şube bilgilerini girerek listeye yeni kayıt ekleyin.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBranchModalOpen(false)}
+                                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                                <XCircle className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleAddBranch} className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
+                                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Şube Bilgileri</h3>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Şube Adı</label>
+                                        <input
+                                            required
+                                            value={branchForm.name || ''}
+                                            onChange={e => setBranchForm({...branchForm, name: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            placeholder="Örn: İstanbul Şubesi"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Şehir</label>
+                                        <input
+                                            required
+                                            value={branchForm.city || ''}
+                                            onChange={e => setBranchForm({...branchForm, city: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            placeholder="Örn: İstanbul"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Adres</label>
+                                        <textarea
+                                            required
+                                            value={branchForm.address || ''}
+                                            onChange={e => setBranchForm({...branchForm, address: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none min-h-[90px]"
+                                            placeholder="Şube adresi"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
+                                        <input
+                                            value={branchForm.phone || ''}
+                                            onChange={e => setBranchForm({...branchForm, phone: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            placeholder="+90 ..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
+                                        <input
+                                            type="email"
+                                            value={branchForm.email || ''}
+                                            onChange={e => setBranchForm({...branchForm, email: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            placeholder="sube@unic.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Durum</label>
+                                        <select
+                                            value={branchForm.status || 'active'}
+                                            onChange={e => setBranchForm({...branchForm, status: e.target.value as 'active' | 'passive'})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        >
+                                            <option value="active">Aktif</option>
+                                            <option value="passive">Pasif</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+                                <button type="button" onClick={() => setIsBranchModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">İptal</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Şube Oluştur</button>
                             </div>
                         </form>
                     </div>
@@ -3952,68 +4436,80 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
 
             {/* Shared Institution Form Modal (Kurumlar) */}
             {isSharedInstitutionModalOpen && (
-                 <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-start justify-start z-[9999] p-4 pt-[100px] pl-[75px] overflow-y-auto animate-fade-in-only">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mb-10 animate-fade-in">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                {sharedInstitutions.find(p => p.id === sharedInstitutionForm.id) ? 'Kurum Düzenle' : 'Yeni Kurum Ekle'}
-                            </h3>
-                            <button onClick={() => setIsSharedInstitutionModalOpen(false)}><XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" /></button>
+                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
+                    <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl p-6 md:p-8 animate-fade-in">
+                        <div className="mb-6 flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-xl font-semibold text-slate-900">
+                                    {sharedInstitutions.find(p => p.id === sharedInstitutionForm.id) ? 'Kurum Düzenle' : 'Yeni Kurum Ekle'}
+                                </h2>
+                                <p className="mt-1 text-sm text-slate-500">Paylaşımlı kurum iletişim ve yetkili bilgilerini yönetin.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsSharedInstitutionModalOpen(false)}
+                                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                                <XCircle className="w-6 h-6" />
+                            </button>
                         </div>
-                        <form onSubmit={handleSaveSharedInstitution} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Kurum Adı</label>
-                                <input 
-                                    required
-                                    value={sharedInstitutionForm.name} 
-                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, name: e.target.value})}
-                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                    placeholder="Örn: X Danışmanlık A.Ş."
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Yetkili</label>
-                                    <input 
-                                        value={sharedInstitutionForm.authorizedPerson || ''} 
-                                        onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, authorizedPerson: e.target.value})}
-                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                        placeholder="Örn: Ahmet Bey"
-                                    />
+                        <form onSubmit={handleSaveSharedInstitution} className="space-y-5">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
+                                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Kurum Bilgileri</h3>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Kurum Adı</label>
+                                        <input 
+                                            required
+                                            value={sharedInstitutionForm.name} 
+                                            onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, name: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            placeholder="Örn: X Danışmanlık A.Ş."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Yetkili</label>
+                                        <input 
+                                            value={sharedInstitutionForm.authorizedPerson || ''} 
+                                            onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, authorizedPerson: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            placeholder="Örn: Ahmet Bey"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Telefon</label>
+                                        <input 
+                                            value={sharedInstitutionForm.phone || ''} 
+                                            onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, phone: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            placeholder="05xx..."
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
+                                        <input 
+                                            type="email"
+                                            value={sharedInstitutionForm.email || ''} 
+                                            onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, email: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            placeholder="kurum@mail.com"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Not</label>
+                                        <textarea 
+                                            rows={3}
+                                            value={sharedInstitutionForm.notes || ''} 
+                                            onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, notes: e.target.value})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            placeholder="Kurum hakkında notlar..."
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Telefon</label>
-                                    <input 
-                                        value={sharedInstitutionForm.phone || ''} 
-                                        onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, phone: e.target.value})}
-                                        className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                        placeholder="05xx..."
-                                    />
-                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">E-mail</label>
-                                <input 
-                                    type="email"
-                                    value={sharedInstitutionForm.email || ''} 
-                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, email: e.target.value})}
-                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                    placeholder="kurum@mail.com"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Not</label>
-                                <textarea 
-                                    rows={3}
-                                    value={sharedInstitutionForm.notes || ''} 
-                                    onChange={e => setSharedInstitutionForm({...sharedInstitutionForm, notes: e.target.value})}
-                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                    placeholder="Kurum hakkında notlar..."
-                                />
-                            </div>
-                            <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
-                                <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
-                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+                                <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">Vazgeç</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Kaydet</button>
                             </div>
                         </form>
                     </div>
