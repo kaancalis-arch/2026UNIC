@@ -11,6 +11,7 @@ import VisaControl from './pages/VisaControl';
 import Roadmaps from './pages/Roadmaps';
 import UniversitySearch from './pages/UniversitySearch';
 import UniversityResearch from './pages/UniversityResearch';
+import DepartmentKeywordRules from './pages/DepartmentKeywordRules';
 import UniversityDetail from './pages/UniversityDetail';
 import CalendarPage from './pages/CalendarPage';
 import Statistics from './pages/Statistics';
@@ -105,7 +106,12 @@ const App: React.FC = () => {
         if (!currentUser || (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN)) {
           return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
         }
-        return <Settings onUniversitySelect={handleUniversitySelect} />;
+        return <Settings onUniversitySelect={handleUniversitySelect} onDepartmentKeywordRulesOpen={() => setCurrentPage('department-keyword-rules')} />;
+      case 'department-keyword-rules':
+        if (!currentUser || (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN)) {
+          return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
+        }
+        return <DepartmentKeywordRules />;
       case 'universities':
         return <UniversitySearch />;
       case 'university-research':

@@ -79,7 +79,10 @@ const DefinitionCard = ({ id, title, icon: Icon, count, onClick, color = "text-i
     </div>
 );
 
-const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => void }> = ({ onUniversitySelect }) => {
+const Settings: React.FC<{
+    onUniversitySelect?: (university: UniversityData) => void;
+    onDepartmentKeywordRulesOpen?: () => void;
+}> = ({ onUniversitySelect, onDepartmentKeywordRulesOpen }) => {
     const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions'>('users');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
@@ -3667,6 +3670,15 @@ const Settings: React.FC<{ onUniversitySelect?: (university: UniversityData) => 
                                         color="text-rose-600"
                                         bg="bg-rose-50"
                                         onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
+                                    />
+                                    <DefinitionCard
+                                        id="department_keyword_rules"
+                                        title="Bölüm Eşleşme Kuralları"
+                                        icon={Key}
+                                        count={0}
+                                        color="text-teal-600"
+                                        bg="bg-teal-50"
+                                        onClick={() => onDepartmentKeywordRulesOpen?.()}
                                     />
                                 </div>
                             </div>
