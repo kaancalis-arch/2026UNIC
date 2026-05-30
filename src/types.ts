@@ -352,6 +352,7 @@ export interface UniversityData {
   rankingUrl?: string;
   websiteUrl: string;
   departmentsUrl: string;
+  parserProfile?: string;
   tuitionRange?: string;
   consultingType?: string;
   universityTypes?: string[];
