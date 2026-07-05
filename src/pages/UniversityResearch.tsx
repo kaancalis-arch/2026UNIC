@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import type { ProgramLevel } from '../agents/universityProgramResearchAgent';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { supabase } from '../services/supabaseClient';
+import { systemService, type BudgetRange } from '../services/systemService';
 import { universityService } from '../services/universityService';
 
 const programLevelLabels: Record<ProgramLevel, string> = {
@@ -13,8 +14,24 @@ const programLevelLabels: Record<ProgramLevel, string> = {
 };
 
 type MatchStatus = 'matched' | 'needs_manual_review';
+type MatchStatusFilter = 'all' | MatchStatus;
+type SortDirection = 'asc' | 'desc';
+type SortKey = 'programName' | 'matchedDepartments' | 'matchStatus' | 'degree' | 'durationYears' | 'tuition' | 'language' | 'applicationStatus' | 'sourceUrl';
+
+type SortConfig = {
+  key: SortKey;
+  direction: SortDirection;
+};
+
+const matchStatusFilterLabels: Record<MatchStatusFilter, string> = {
+  all: 'Tümü',
+  matched: 'Eşleşti',
+  needs_manual_review: 'Manuel kontrol',
+};
 
 const maxMatchedDepartments = 3;
+
+const tuitionCurrencyOptions = ['GBP', 'EUR', 'USD', 'CAD', 'AUD'];
 
 const UNIC_MAIN_DEPARTMENTS = [
   'Bilgisayar Bilimleri',
@@ -45,12 +62,22 @@ interface ResearchResult {
   faculty: string;
   duration: string;
   tuition: string;
+  tuitionBudgetRange?: string;
+  tuitionCurrency?: string;
   language: string;
   applicationStatus: string;
   sourceUrl: string;
   matchedDepartments?: string[];
   matchStatus?: MatchStatus;
   matchNotes?: string;
+  degree: string;
+  durationYears: number | null;
+  placementYear: boolean;
+  internship: boolean;
+  studyAbroad: boolean;
+  foundationRequired: boolean;
+  portfolioRequired: boolean;
+  deliveryMode: string;
 }
 
 type UniversityOption = {
@@ -83,6 +110,15 @@ type UniversityResearchResult = {
   matched_departments?: string[];
   match_status?: MatchStatus;
   match_notes?: string;
+  tuition_budget_range?: string;
+  tuition_currency?: string;
+  duration_years?: number | null;
+  placement_year?: boolean;
+  internship?: boolean;
+  study_abroad?: boolean;
+  foundation_required?: boolean;
+  portfolio_required?: boolean;
+  delivery_mode?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,6 +174,21 @@ function normalizeUniversityResearchPayload(payload: unknown): UniversityResearc
   throw new Error('Üniversite araştırma cevabı beklenen formatta değil. Beklenen format: { success: true, data: [...] }.');
 }
 
+async function getEdgeFunctionErrorMessage(error: unknown) {
+  if (isRecord(error) && error.context instanceof Response) {
+    try {
+      const payload = await error.context.clone().json();
+      if (isRecord(payload) && typeof payload.error === 'string') {
+        return payload.error;
+      }
+    } catch {
+      // Fall through to the SDK error message when the response is not JSON.
+    }
+  }
+
+  return error instanceof Error ? error.message : 'Üniversite araştırma isteği başarısız oldu.';
+}
+
 function sanitizeMatchedDepartments(departments: string[] | undefined, validDepartmentNames: string[]) {
   if (!departments || validDepartmentNames.length === 0) return [];
 
@@ -153,6 +204,14 @@ function sanitizeMatchedDepartments(departments: string[] | undefined, validDepa
   });
 
   return Array.from(uniqueDepartments).slice(0, maxMatchedDepartments);
+}
+
+function formatDurationYears(durationYears: number | null, fallbackDuration: string) {
+  return durationYears ? `${durationYears} yıl` : fallbackDuration;
+}
+
+function formatBooleanValue(value: boolean) {
+  return value ? 'Evet' : 'Hayır';
 }
 
 function mapResearchResultToUI(
@@ -176,40 +235,110 @@ function mapResearchResultToUI(
     faculty: result.faculty_or_school || result.degree || result.degree_type || 'Belirtilmemiş',
     duration: result.duration || '-',
     tuition: result.tuition_fee || '-',
+    tuitionBudgetRange: result.tuition_budget_range || '',
+    tuitionCurrency: result.tuition_currency || '',
     language: result.language_requirement || '-',
     applicationStatus: matchStatus === 'matched' ? 'Eşleşme onaylı' : 'Manuel kontrol gerekli',
     sourceUrl: result.source_url || result.url || '#',
     matchedDepartments,
     matchStatus,
     matchNotes: result.match_notes || 'Güvenli bölüm eşleşmesi bulunamadı; manuel kontrol gerekli.',
+    degree: result.degree || result.degree_type || '-',
+    durationYears: result.duration_years ?? null,
+    placementYear: Boolean(result.placement_year),
+    internship: Boolean(result.internship),
+    studyAbroad: Boolean(result.study_abroad),
+    foundationRequired: Boolean(result.foundation_required),
+    portfolioRequired: Boolean(result.portfolio_required),
+    deliveryMode: result.delivery_mode || '-',
   };
+}
+
+function getResearchResultSortValue(result: ResearchResult, key: SortKey) {
+  switch (key) {
+    case 'matchedDepartments':
+      return (result.matchedDepartments || []).join(', ');
+    case 'matchStatus':
+      return result.matchStatus === 'matched' ? 'Eşleşti' : 'Manuel kontrol';
+    case 'tuition':
+      return [result.tuitionBudgetRange, result.tuitionCurrency].filter(Boolean).join(' ');
+    default:
+      return String(result[key] || '');
+  }
 }
 
 const UniversityResearch: React.FC = () => {
   const [universityName, setUniversityName] = useState('');
   const [programLevel, setProgramLevel] = useState<ProgramLevel>('all');
   const [results, setResults] = useState<ResearchResult[]>([]);
+  const [matchStatusFilter, setMatchStatusFilter] = useState<MatchStatusFilter>('all');
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [selectedResultIds, setSelectedResultIds] = useState<string[]>([]);
   const [isResearching, setIsResearching] = useState(false);
   const [isLoadingUniversities, setIsLoadingUniversities] = useState(false);
   const [universityOptions, setUniversityOptions] = useState<UniversityOption[]>([]);
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+  const [budgetRanges, setBudgetRanges] = useState<BudgetRange[]>([]);
+  const [selectedBudgetRange, setSelectedBudgetRange] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState('GBP');
   const [saveMessage, setSaveMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [editingResultId, setEditingResultId] = useState<string | null>(null);
+  const [detailResultId, setDetailResultId] = useState<string | null>(null);
   const [temporaryDepartments, setTemporaryDepartments] = useState<string[]>([]);
 
   const selectedResults = results.filter((result) => selectedResultIds.includes(result.id));
   const matchedResults = results.filter((result) => result.matchStatus === 'matched');
   const manualReviewResults = results.filter((result) => result.matchStatus !== 'matched');
+  const filteredResults = matchStatusFilter === 'all'
+    ? results
+    : results.filter((result) => result.matchStatus === matchStatusFilter);
+  const sortedFilteredResults = sortConfig
+    ? [...filteredResults].sort((first, second) => {
+        const firstValue = getResearchResultSortValue(first, sortConfig.key);
+        const secondValue = getResearchResultSortValue(second, sortConfig.key);
+        const sortResult = firstValue.localeCompare(secondValue, 'tr', { numeric: true, sensitivity: 'base' });
+
+        return sortConfig.direction === 'asc' ? sortResult : -sortResult;
+      })
+    : filteredResults;
+  const filteredMatchedResults = filteredResults.filter((result) => result.matchStatus === 'matched');
   const editingResult = results.find((result) => result.id === editingResultId);
+  const detailResult = results.find((item) => item.id === detailResultId);
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev?.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const renderSortableHeader = (key: SortKey, label: string) => {
+    const isActive = sortConfig?.key === key;
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleSort(key)}
+        className="inline-flex items-center gap-1 font-black text-slate-500 transition hover:text-teal-700"
+      >
+        <span>{label}</span>
+        <span className={`text-[10px] ${isActive ? 'text-teal-700' : 'text-slate-300'}`}>
+          {isActive ? (sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    );
+  };
 
   useEffect(() => {
     const loadOptions = async () => {
       setIsLoadingUniversities(true);
       try {
-        const [universities, departments] = await Promise.all([
+        const [universities, departments, budgets] = await Promise.all([
           universityService.getAll(),
           mainDegreeService.getAll(),
+          systemService.getBudgetRangesRaw(),
         ]);
         const options = universities
           .filter((university) => university.id && university.name)
@@ -218,10 +347,12 @@ const UniversityResearch: React.FC = () => {
         setUniversityOptions(options);
         setDepartmentOptions(Array.from(new Set(departments.map((department) => department.name).filter(Boolean)))
           .sort((a, b) => a.localeCompare(b, 'tr')));
+        setBudgetRanges(budgets);
       } catch (error) {
         console.error('University research options failed to load', error);
         setUniversityOptions([]);
         setDepartmentOptions([]);
+        setBudgetRanges([]);
       } finally {
         setIsLoadingUniversities(false);
       }
@@ -261,7 +392,7 @@ const UniversityResearch: React.FC = () => {
       });
 
       if (error) {
-        throw error;
+        throw new Error(await getEdgeFunctionErrorMessage(error));
       }
 
       const payload = data as UniversityResearchApiResponse;
@@ -294,8 +425,10 @@ const UniversityResearch: React.FC = () => {
   };
 
   const toggleAllResults = () => {
-    const matchedResultIds = matchedResults.map((result) => result.id);
-    setSelectedResultIds((prev) => matchedResultIds.every((id) => prev.includes(id)) ? [] : matchedResultIds);
+    const matchedResultIds = filteredMatchedResults.map((result) => result.id);
+    setSelectedResultIds((prev) => matchedResultIds.every((id) => prev.includes(id))
+      ? prev.filter((id) => !matchedResultIds.includes(id))
+      : Array.from(new Set([...prev, ...matchedResultIds])));
   };
 
   const updateResultDepartments = (id: string, selectedDepartments: string[]) => {
@@ -318,6 +451,27 @@ const UniversityResearch: React.FC = () => {
     }));
 
     setSelectedResultIds((prev) => limitedDepartments.length > 0 ? prev : prev.filter((resultId) => resultId !== id));
+  };
+
+  const applyBudgetToSelectedResults = () => {
+    if (selectedResultIds.length === 0) {
+      setSaveMessage('Eğitim bütçesi atamak için en az bir program seçin.');
+      return;
+    }
+
+    if (!selectedBudgetRange) {
+      setSaveMessage('Lütfen uygulanacak bütçe aralığını seçin.');
+      return;
+    }
+
+    setResults((prev) => prev.map((result) => selectedResultIds.includes(result.id)
+      ? {
+          ...result,
+          tuitionBudgetRange: selectedBudgetRange,
+          tuitionCurrency: selectedCurrency,
+        }
+      : result));
+    setSaveMessage(`${selectedResultIds.length} seçili programa eğitim bütçesi atandı.`);
   };
 
   const openDepartmentMatchingModal = (result: ResearchResult) => {
@@ -391,8 +545,10 @@ const UniversityResearch: React.FC = () => {
       'Eşleşme Durumu': result.matchStatus === 'matched' ? 'Eşleşti' : 'Manuel Kontrol Gerekli',
       'Eşleşme Notu': result.matchNotes,
       'Fakülte / Okul': result.faculty,
-      'Süre': result.duration,
-      'Ücret': result.tuition,
+      'Degree': result.degree,
+      'Süre': formatDurationYears(result.durationYears, result.duration),
+      'Ücret': result.tuitionBudgetRange || '',
+      'Para Birimi': result.tuitionCurrency || '',
       'Dil Şartı': result.language,
       'Başvuru Notu': result.applicationStatus,
       'Kaynak': result.sourceUrl,
@@ -405,29 +561,91 @@ const UniversityResearch: React.FC = () => {
   };
 
   const saveToSupabase = async () => {
+    console.log('SAVE_CLICKED');
+    console.log('selectedResultIds:', selectedResultIds);
+    console.log('selectedResults:', selectedResults);
+    setSaveSuccess(false);
+
     if (selectedResults.length === 0) {
-      setSaveMessage('Lütfen kaydetmek için en az bir program seçin.');
+      setSaveMessage('Lütfen önce kaydetmek için program seçin.');
       return;
     }
 
+    setIsSaving(true);
+    setSaveMessage('Seçili programlar Supabase\'e kaydediliyor...');
+
     try {
       for (const result of selectedResults) {
-        const { error } = await supabase
+        const assignedTuitionRange = [result.tuitionBudgetRange, result.tuitionCurrency].filter(Boolean).join(' ').trim();
+        const updatePayload = {
+          is_approved: true,
+          approved_at: new Date().toISOString(),
+          tuition_range: assignedTuitionRange || null,
+          tuition_budget_range: result.tuitionBudgetRange || null,
+          tuition_currency: result.tuitionCurrency || null,
+        };
+        let { data, error } = await supabase
           .from('university_programs')
-          .update({
-            is_approved: true,
-            approved_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq('university_id', result.universityId)
-          .eq('url', result.sourceUrl);
+          .eq('url', result.sourceUrl)
+          .select();
 
-        if (error) throw error;
+        if (!error && (!data || data.length === 0)) {
+          const fallbackUpdate = await supabase
+            .from('university_programs')
+            .update(updatePayload)
+            .eq('university_id', result.universityId)
+            .eq('source_url', result.sourceUrl)
+            .select();
+          data = fallbackUpdate.data;
+          error = fallbackUpdate.error;
+        }
+
+        if (!error && (!data || data.length === 0)) {
+          const fallbackUpdate = await supabase
+            .from('university_programs')
+            .update(updatePayload)
+            .eq('university_id', result.universityId)
+            .eq('name', result.programName)
+            .select();
+          data = fallbackUpdate.data;
+          error = fallbackUpdate.error;
+        }
+
+        console.log('SAVE_UPDATE_RESULT:', {
+          resultId: result.id,
+          universityId: result.universityId,
+          sourceUrl: result.sourceUrl,
+          assignedTuitionRange,
+          tuitionBudgetRange: result.tuitionBudgetRange,
+          tuitionCurrency: result.tuitionCurrency,
+          data,
+          error,
+        });
+
+        if (error) {
+          console.error('SAVE_ERROR:', error);
+          setSaveSuccess(false);
+          setSaveMessage(`Kaydetme hatası: ${error.message}`);
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          setSaveSuccess(false);
+          setSaveMessage(`Kaydedilecek program bulunamadı: ${result.programName}`);
+          return;
+        }
       }
 
-      setSaveMessage(`${selectedResults.length} program Supabase'de onaylandı.`);
+      setSaveSuccess(true);
+      setSaveMessage('Seçili programlar Supabase\'e kaydedildi.');
     } catch (error) {
       console.error('University program approval update failed', error);
+      setSaveSuccess(false);
       setSaveMessage(error instanceof Error ? error.message : 'Programlar Supabase\'de onaylanamadı.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -518,7 +736,19 @@ const UniversityResearch: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+              <span className="whitespace-nowrap">Durum</span>
+              <select
+                value={matchStatusFilter}
+                onChange={(event) => setMatchStatusFilter(event.target.value as MatchStatusFilter)}
+                className="bg-transparent text-sm font-bold text-slate-800 outline-none"
+              >
+                {Object.entries(matchStatusFilterLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={exportToExcel}
@@ -531,19 +761,64 @@ const UniversityResearch: React.FC = () => {
             <button
               type="button"
               onClick={saveToSupabase}
-              disabled={results.length === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition ${saveSuccess ? 'bg-teal-600 hover:bg-teal-700' : 'bg-slate-900 hover:bg-slate-800'}`}
             >
-              <Database className="h-4 w-4" />
-              Supabase'e Kaydet
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : saveSuccess ? <CheckCircle2 className="h-4 w-4" /> : <Database className="h-4 w-4" />}
+              {isSaving ? 'Kaydediliyor...' : saveSuccess ? 'Kaydedildi' : 'Supabase\'e Kaydet'}
             </button>
           </div>
         </div>
 
         {saveMessage && (
-          <div className={`mx-6 mt-6 flex items-start gap-3 rounded-2xl border p-4 text-sm ${saveMessage.includes('kaydedilemez') || saveMessage.includes('başarısız') || saveMessage.includes('Lütfen') ? 'border-amber-100 bg-amber-50 text-amber-800' : 'border-teal-100 bg-teal-50 text-teal-800'}`}>
-            {saveMessage.includes('kaydedilemez') || saveMessage.includes('başarısız') || saveMessage.includes('Lütfen') ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+          <div className={`mx-6 mt-6 flex items-start gap-3 rounded-2xl border p-4 text-sm ${isSaving ? 'border-sky-100 bg-sky-50 text-sky-800' : saveMessage.includes('kaydedilemez') || saveMessage.includes('başarısız') || saveMessage.includes('Lütfen') || saveMessage.includes('hatası') ? 'border-amber-100 bg-amber-50 text-amber-800' : 'border-teal-100 bg-teal-50 text-teal-800'}`}>
+            {isSaving ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" /> : saveMessage.includes('kaydedilemez') || saveMessage.includes('başarısız') || saveMessage.includes('Lütfen') || saveMessage.includes('hatası') ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
             <span>{saveMessage}</span>
+          </div>
+        )}
+
+        {results.length > 0 && (
+          <div className="mx-6 mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Seçili Programlara Eğitim Bütçesi Ata</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Seçili {selectedResults.length} programa aynı bütçe aralığı ve para birimi uygulanır.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_140px_auto] sm:items-end">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-widest text-slate-400">Bütçe Aralığı</span>
+                  <select
+                    value={selectedBudgetRange}
+                    onChange={(event) => setSelectedBudgetRange(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  >
+                    <option value="">Bütçe seç</option>
+                    {budgetRanges.map((budget) => (
+                      <option key={budget.id} value={budget.label}>{budget.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-widest text-slate-400">Para Birimi</span>
+                  <select
+                    value={selectedCurrency}
+                    onChange={(event) => setSelectedCurrency(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  >
+                    {tuitionCurrencyOptions.map((currency) => (
+                      <option key={currency} value={currency}>{currency}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={applyBudgetToSelectedResults}
+                  disabled={selectedResults.length === 0 || !selectedBudgetRange}
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Seçilenlere Uygula
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -557,33 +832,31 @@ const UniversityResearch: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1240px] text-left text-sm">
+            <table className="w-full min-w-[1120px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-widest text-slate-400">
                 <tr>
                   <th className="px-6 py-4">
                     <input
                       type="checkbox"
-                      checked={matchedResults.length > 0 && matchedResults.every((result) => selectedResultIds.includes(result.id))}
+                      checked={filteredMatchedResults.length > 0 && filteredMatchedResults.every((result) => selectedResultIds.includes(result.id))}
                       onChange={toggleAllResults}
-                      disabled={matchedResults.length === 0}
+                      disabled={filteredMatchedResults.length === 0}
                       className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                     />
                   </th>
-                  <th className="px-6 py-4 font-black">Program</th>
-                  <th className="px-6 py-4 font-black">Seviye</th>
-                  <th className="px-6 py-4 font-black">Eşleşen Bölümler</th>
-                  <th className="px-6 py-4 font-black">Eşleşme Durumu</th>
-                  <th className="px-6 py-4 font-black">Fakülte / Okul</th>
-                  <th className="px-6 py-4 font-black">Süre</th>
-                  <th className="px-6 py-4 font-black">Ücret</th>
-                  <th className="px-6 py-4 font-black">Dil Şartı</th>
-                  <th className="px-6 py-4 font-black">Not</th>
-                  <th className="px-6 py-4 font-black">Kaynak</th>
-                  <th className="px-6 py-4 font-black">Aksiyon</th>
+                  <th className="px-6 py-4">{renderSortableHeader('programName', 'Program')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('matchedDepartments', 'Bölüm Eşleşmesi')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('degree', 'Degree')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('durationYears', 'Süre')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('tuition', 'Ücret')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('language', 'Dil Şartı')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('matchStatus', 'Eşleşme Durumu')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('applicationStatus', 'Not')}</th>
+                  <th className="px-6 py-4">{renderSortableHeader('sourceUrl', 'Kaynak')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {results.map((result) => (
+                {sortedFilteredResults.map((result) => (
                     <tr key={result.id} className="transition hover:bg-slate-50/80">
                       <td className="px-6 py-4">
                         <input
@@ -598,11 +871,13 @@ const UniversityResearch: React.FC = () => {
                       <td className="px-6 py-4">
                         <div className="font-bold text-slate-900">{result.programName}</div>
                         <div className="text-xs text-slate-500">{result.universityName}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${result.level === 'Lisans' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {result.level}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDetailResultId(result.id)}
+                          className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                        >
+                          Detay
+                        </button>
                       </td>
                       <td className="px-6 py-4">
                         <select
@@ -631,17 +906,35 @@ const UniversityResearch: React.FC = () => {
                         <div className="mt-1 text-[10px] font-semibold text-slate-400">
                           {(result.matchedDepartments || []).length}/{maxMatchedDepartments} seçildi
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => openDepartmentMatchingModal(result)}
+                          className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                        >
+                          Eşleştir / Düzenle
+                        </button>
                       </td>
+                      <td className="px-6 py-4 font-semibold text-slate-700">{result.degree}</td>
+                      <td className="px-6 py-4 text-slate-600">{formatDurationYears(result.durationYears, result.duration)}</td>
+                      <td className="px-6 py-4">
+                        <div className="min-w-48">
+                          <div className="font-semibold text-slate-800">
+                            {result.tuitionBudgetRange
+                              ? `${result.tuitionBudgetRange} ${result.tuitionCurrency || ''}`.trim()
+                              : 'Belirlenmedi'}
+                          </div>
+                          {result.tuition !== '-' && (
+                            <span className="text-[10px] font-semibold text-slate-400">Kaynak: {result.tuition}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">{result.language}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${result.matchStatus === 'matched' ? 'bg-teal-50 text-teal-700' : 'bg-amber-50 text-amber-700'}`}>
                           {result.matchStatus === 'matched' ? 'Eşleşti' : 'Manuel kontrol'}
                         </span>
                         <div className="mt-2 max-w-[220px] text-xs leading-5 text-slate-500">{result.matchNotes}</div>
                       </td>
-                      <td className="px-6 py-4 text-slate-600">{result.faculty}</td>
-                      <td className="px-6 py-4 text-slate-600">{result.duration}</td>
-                      <td className="px-6 py-4 font-semibold text-slate-800">{result.tuition}</td>
-                      <td className="px-6 py-4 text-slate-600">{result.language}</td>
                       <td className="px-6 py-4 text-slate-600">{result.applicationStatus}</td>
                       <td className="px-6 py-4">
                         <a
@@ -654,22 +947,92 @@ const UniversityResearch: React.FC = () => {
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       </td>
-                      <td className="px-6 py-4">
-                        <button
-                          type="button"
-                          onClick={() => openDepartmentMatchingModal(result)}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
-                        >
-                          Eşleştir / Düzenle
-                        </button>
-                      </td>
                     </tr>
                 ))}
+                {filteredResults.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-6 py-10 text-center text-sm font-semibold text-slate-500">
+                      Seçili eşleşme durumunda sonuç bulunamadı.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {detailResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Program Detayı</h3>
+                <p className="mt-1 text-sm text-slate-500">{detailResult.programName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailResultId(null)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                Kapat
+              </button>
+            </div>
+
+            <div className="grid gap-3 py-5 sm:grid-cols-2">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Degree</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{detailResult.degree}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Süre</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatDurationYears(detailResult.durationYears, detailResult.duration)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Danışman Bütçe Aralığı</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">
+                  {[detailResult.tuitionBudgetRange, detailResult.tuitionCurrency].filter(Boolean).join(' ') || '-'}
+                </p>
+                {detailResult.tuition !== '-' && (
+                  <p className="mt-1 text-xs font-semibold text-slate-400">Kaynak ücret: {detailResult.tuition}</p>
+                )}
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Placement</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatBooleanValue(detailResult.placementYear)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Internship</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatBooleanValue(detailResult.internship)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Yurtdışı Yılı</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatBooleanValue(detailResult.studyAbroad)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Foundation</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatBooleanValue(detailResult.foundationRequired)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Portfolio</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{formatBooleanValue(detailResult.portfolioRequired)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Delivery Mode</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{detailResult.deliveryMode}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 p-4">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">Bölüm Eşleşmesi</p>
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                {(detailResult.matchedDepartments || []).length > 0 ? (detailResult.matchedDepartments || []).join(', ') : 'Bölüm eşleşmesi yok'}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{detailResult.matchNotes}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">

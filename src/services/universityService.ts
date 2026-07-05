@@ -2,6 +2,41 @@
 import { supabase } from './supabaseClient';
 import { UniversityData } from '../types';
 
+const formatProgramTuitionRange = (program: any) => [
+  program.tuition_budget_range,
+  program.tuition_currency,
+].filter(Boolean).join(' ').trim();
+
+const mapUniversityRow = (row: any, fallbackPrograms: UniversityData['programs'] = []): UniversityData => ({
+  id: row.id,
+  name: row.name,
+  logo: row.logo,
+  countries: row.countries || [],
+  rankingUrl: row.ranking_url || '',
+  websiteUrl: row.website_url || '',
+  departmentsUrl: row.departments_url || '',
+  parserProfile: row.parser_profile || 'auto',
+  consultingType: row.consulting_type ?? row.consultingType ?? '',
+  universityTypes: row.university_types ?? row.universityTypes ?? [],
+  sharedInstitutionId: row.shared_institution_id ?? row.sharedInstitutionId ?? '',
+  programs: row.university_programs
+    ? row.university_programs.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        link: p.url,
+        type: p.level === 'master' ? 'Master' : 'Bachelor',
+        tuitionRange: p.tuition_range || formatProgramTuitionRange(p),
+        matched_departments: p.matched_departments || [],
+        groupNames: [
+          p.main_degree?.name,
+          p.main_degree2?.name,
+          p.main_degree3?.name,
+          ...(p.matched_departments || [])
+        ].filter(Boolean)
+      }))
+    : fallbackPrograms
+});
+
 export const universityService = {
   async getAll(): Promise<UniversityData[]> {
     if (!supabase) return [];
@@ -15,8 +50,12 @@ export const universityService = {
           id,
           name,
           url,
+          level,
           language,
           tuition_range,
+          tuition_budget_range,
+          tuition_currency,
+          matched_departments,
           main_degree:programs!main_degree_id (name),
           main_degree2:programs!main_degree_2_id (name),
           main_degree3:programs!main_degree_3_id (name)
@@ -29,32 +68,7 @@ export const universityService = {
       throw error;
     }
     
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      logo: row.logo,
-      countries: row.countries || [],
-      rankingUrl: row.ranking_url || '',
-      websiteUrl: row.website_url,
-      departmentsUrl: row.departments_url,
-      parserProfile: row.parser_profile || 'auto',
-      consultingType: row.consulting_type,
-      universityTypes: row.university_types || [],
-      sharedInstitutionId: row.shared_institution_id,
-      // Map relational programs to the UniversityProgram structure
-      programs: (row.university_programs || []).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        link: p.url,
-        type: p.type || 'Bachelor', 
-        tuitionRange: p.tuition_range,
-        groupNames: [
-          p.main_degree?.name,
-          p.main_degree2?.name,
-          p.main_degree3?.name
-        ].filter(Boolean)
-      }))
-    }));
+    return (data || []).map((row: any) => mapUniversityRow(row));
   },
 
   async upsert(university: UniversityData): Promise<UniversityData> {
@@ -70,8 +84,8 @@ export const universityService = {
         website_url: university.websiteUrl,
         departments_url: university.departmentsUrl,
         parser_profile: university.parserProfile || 'auto',
-        consulting_type: university.consultingType,
-        university_types: university.universityTypes || [],
+        consulting_type: university.consultingType || '',
+        university_types: (university.universityTypes || []).filter(Boolean),
         shared_institution_id: university.sharedInstitutionId || null,
         programs: university.programs || []
     };
@@ -94,16 +108,13 @@ export const universityService = {
         throw new Error(`Kayıt oluşturulamadı: ${error.message}`);
       }
       // UI tarafında eski (temp) ID ile eşleştirme yapabilmesi için yeni ID'yi dön
-      return {
-        ...university,
-        id: data.id,
-        ...data
-      };
+      return mapUniversityRow(data, university.programs || []);
     } else {
       // Mevcut ID ile güncelle (Update)
       const { data, error } = await supabase
         .from('universities')
-        .upsert({ ...dbPayload, id: university.id })
+        .update(dbPayload)
+        .eq('id', university.id)
         .select()
         .single();
 
@@ -111,7 +122,7 @@ export const universityService = {
         console.error('University Upsert Failed:', error.message, error.details, error.hint);
         throw new Error(`Güncelleme başarısız: ${error.message}`);
       }
-      return data;
+      return mapUniversityRow(data, university.programs || []);
     }
   },
 

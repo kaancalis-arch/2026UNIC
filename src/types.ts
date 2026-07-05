@@ -130,6 +130,8 @@ export interface AnalysisReport {
     preferredProgramType?: string;
     preferredCountry?: string;
     duration?: string;
+    weekCount?: string;
+    startDate?: string;
     notes?: string;
   };
   highSchoolProgramPreference?: {
@@ -300,6 +302,7 @@ export interface UniversityProgram {
   type: 'Bachelor' | 'Master';
   name: string;
   groupNames: string[]; // Refs to MainDegreeData.name (Selection from Bölüm Tanımları)
+  matched_departments?: string[];
   link: string;
   tuitionRange: string; // Refs to tuition options (Eğitim Bütçesi)
   campusLocation: string;

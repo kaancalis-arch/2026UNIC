@@ -133,12 +133,15 @@ const DepartmentKeywordRules: React.FC = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const keyword = form.keyword.trim();
-    const matchedDepartment = form.matched_department.trim();
+    const departmentName = form.department_name.trim();
+    const majorKeywords = parseCommaSeparated(form.major_keywords);
+    const requiredMatchKeywords = parseCommaSeparated(form.required_match_keywords);
+    const keyword = form.keyword.trim() || majorKeywords[0] || requiredMatchKeywords[0] || departmentName;
+    const matchedDepartment = form.matched_department.trim() || departmentName;
     const priority = Number(form.priority || 100);
 
-    if (!keyword || !matchedDepartment) {
-      setMessage('Keyword ve bölüm alanları zorunludur.');
+    if (!departmentName) {
+      setMessage('Department name zorunludur.');
       return;
     }
 
@@ -148,9 +151,9 @@ const DepartmentKeywordRules: React.FC = () => {
     const payload = {
       keyword,
       matched_department: matchedDepartment,
-      department_name: form.department_name.trim() || null,
-      major_keywords: parseCommaSeparated(form.major_keywords),
-      required_match_keywords: parseCommaSeparated(form.required_match_keywords),
+      department_name: departmentName,
+      major_keywords: majorKeywords,
+      required_match_keywords: requiredMatchKeywords,
       rule_notes: form.rule_notes.trim() || null,
       priority: Number.isFinite(priority) ? priority : 100,
       is_active: form.is_active,
@@ -161,13 +164,13 @@ const DepartmentKeywordRules: React.FC = () => {
     try {
       const { error } = editingRule
         ? await supabase.from('department_keyword_rules').update(payload).eq('id', editingRule.id)
-        : await supabase.from('department_keyword_rules').insert(payload);
+        : await supabase.from('department_keyword_rules').upsert(payload, { onConflict: 'department_name' });
 
       if (error) throw error;
 
       closeModal();
       await loadRules();
-      setMessage(editingRule ? 'Kural güncellendi.' : 'Yeni kural eklendi.');
+      setMessage(editingRule ? 'Kural güncellendi.' : 'Kural department_name üzerinden kaydedildi.');
     } catch (error) {
       console.error('Department keyword rule save failed', error);
       setMessage(error instanceof Error ? error.message : 'Kural kaydedilemedi.');
@@ -494,8 +497,8 @@ const DepartmentKeywordRules: React.FC = () => {
                   value={form.keyword}
                   onChange={(event) => setForm((prev) => ({ ...prev, keyword: event.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-                  required
                 />
+                <p className="mt-1 text-xs font-semibold text-slate-400">Boş bırakılırsa ilk major/required keyword veya department_name kullanılır.</p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-black uppercase tracking-widest text-slate-400">matched_department</label>
@@ -503,8 +506,8 @@ const DepartmentKeywordRules: React.FC = () => {
                   value={form.matched_department}
                   onChange={(event) => setForm((prev) => ({ ...prev, matched_department: event.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
-                  required
                 />
+                <p className="mt-1 text-xs font-semibold text-slate-400">Boş bırakılırsa department_name kullanılır.</p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-black uppercase tracking-widest text-slate-400">department_name</label>
@@ -512,6 +515,7 @@ const DepartmentKeywordRules: React.FC = () => {
                   value={form.department_name}
                   onChange={(event) => setForm((prev) => ({ ...prev, department_name: event.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  required
                 />
               </div>
               <div>

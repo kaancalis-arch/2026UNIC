@@ -9,6 +9,8 @@ import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
 import { visaChecklistService, VisaChecklistItem } from '../services/visaChecklistService';
+import { DEFAULT_PROFILE_BOXES, getVisibleProfileBoxIds, ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
+import { SchoolNameRecord, schoolNameService } from '../services/schoolNameService';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -52,7 +54,13 @@ import {
   Users,
   Coins,
   Flag,
-  FileCheck
+  FileCheck,
+  Search,
+  ExternalLink,
+  Sun,
+  MessageCircle,
+  Star,
+  Briefcase
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -60,6 +68,8 @@ interface StudentDetailProps {
   onBack: () => void;
   isSidebarCollapsed?: boolean;
 }
+
+type StudentDetailTab = 'profile' | 'documents' | 'analysis' | 'roadmap' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
 
 // Options will be loaded from services
 
@@ -99,7 +109,7 @@ const isExamExpired = (dateString?: string): boolean => {
 const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack, isSidebarCollapsed }) => {
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
-  const [activeTab, setActiveTab] = useState<'profile' | 'documents' | 'analysis' | 'roadmap'>('profile');
+  const [activeTab, setActiveTab] = useState<StudentDetailTab>('profile');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [roadmap, setRoadmap] = useState<RoadmapStep[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -136,6 +146,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     educationStatus: student.educationStatus || ''
   });
   const [editContactInfo, setEditContactInfo] = useState({
+      firstName: student.firstName || '',
+      lastName: student.lastName || '',
       phone: student.phone || '',
       email: student.email || '',
       parentName: student.parentInfo?.fullName || '',
@@ -164,7 +176,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [allCountries, setAllCountries] = useState<string[]>([]);
   const [allCountriesData, setAllCountriesData] = useState<CountryData[]>([]);
   const [allUniversities, setAllUniversities] = useState<any[]>([]);
+  const [turkeyHighSchools, setTurkeyHighSchools] = useState<SchoolNameRecord[]>([]);
+  const [turkeyUniversities, setTurkeyUniversities] = useState<SchoolNameRecord[]>([]);
+  const [suggestedUniversityFilter, setSuggestedUniversityFilter] = useState('');
+  const [selectedSuggestedProgramIds, setSelectedSuggestedProgramIds] = useState<string[]>([]);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
+  const [showProgramAddForm, setShowProgramAddForm] = useState(false);
+  const [newTargetProgramName, setNewTargetProgramName] = useState('');
+  const [isSavingTargetProgram, setIsSavingTargetProgram] = useState(false);
+  const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
 
   // Visa Checklist State
   const [visaItems, setVisaItems] = useState<VisaChecklistItem[]>([]);
@@ -177,6 +197,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
   const showsAcademicPreference = normalizedTargetDegree === 'Master' || normalizedTargetDegree === 'Undergraduate';
   const showsHighSchoolProgramPreference = normalizedTargetDegree === 'High School';
+  const selectedProgramTypes = student.targetPrograms || [];
+  const showsLanguageEducationPreference = selectedProgramTypes.some(program => {
+    const normalizedProgram = program.toLocaleLowerCase('tr-TR');
+    return normalizedProgram.includes('dil') || normalizedProgram.includes('language') || normalizedProgram.includes('yaz') || normalizedProgram.includes('summer');
+  });
 
   useEffect(() => {
     setStudent(initialStudent);
@@ -186,20 +211,93 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     loadOptions();
   }, [initialStudent]);
 
+  const getUniqueProgramNames = (programs: Array<{ name?: string }>) => {
+    return Array.from(new Set(programs.map(item => item.name?.trim()).filter(Boolean) as string[]))
+      .sort((a, b) => a.localeCompare(b, 'tr-TR'));
+  };
+
+  const visibleProfileBoxIds = useMemo(
+    () => getVisibleProfileBoxIds(profileBoxes, student.targetPrograms || []),
+    [profileBoxes, student.targetPrograms]
+  );
+
+  const shouldShowProfileBox = (boxId: string) => visibleProfileBoxIds.includes(boxId as any);
+  const showLanguageEducationProfileBox = shouldShowProfileBox('languageEducationPreferences');
+  const shouldShowHighSchoolField = (educationStatus: string, currentGrade: string) => (
+    educationStatus === 'High School' && (currentGrade === '11. Sınıf' || currentGrade === '12. Sınıf')
+  );
+
+  const getSelectedPreferenceCountries = () => Array.from(new Set([
+    ...(student.targetCountries || []),
+    student.analysis?.preferences?.country1,
+    student.analysis?.preferences?.country2,
+    student.analysis?.preferences?.country3,
+    student.analysis?.preferences?.country4,
+    student.analysis?.preferences?.country5,
+  ].map(value => value?.trim()).filter(Boolean) as string[]));
+
+  const getInterestedEducationItems = () => {
+    const countries = getSelectedPreferenceCountries();
+    const programs = Array.from(new Set((student.targetPrograms || []).map(program => program.trim()).filter(Boolean)));
+
+    if (countries.length === 0 || programs.length === 0) return [];
+
+    return programs.map(program => ({ countries, program }));
+  };
+
+  const getReportAcademicSummary = () => {
+    const lines: string[] = [];
+
+    if (student.schoolName) {
+      lines.push(student.schoolName);
+    }
+
+    const detailParts: string[] = [];
+
+    if (student.currentGrade) {
+      const gradeText = student.currentGrade === 'Mezun'
+        ? 'Mezunu'
+        : `${student.currentGrade} öğrencisi`;
+      detailParts.push(gradeText);
+    }
+
+    if (student.analysis?.academic?.educationField) {
+      detailParts.push(`Bölümü ${student.analysis.academic.educationField}`);
+    }
+
+    let detailLine = detailParts.join(' - ');
+
+    if (student.analysis?.academic?.gpa) {
+      detailLine = `${detailLine}${detailLine ? ' ve ' : ''}Yaklaşık Not Ortalaması ${student.analysis.academic.gpa}`;
+    }
+
+    if (detailLine) {
+      lines.push(detailLine);
+    }
+
+    return lines.join(' - ') || 'Okul ve sınıf bilgisi girilmedi';
+  };
+
   const loadOptions = async () => {
     try {
-        const [programs, mainDegs, countries, universities] = await Promise.all([
+        const [programs, mainDegs, countries, universities, profileBoxConfig, turkeyHighSchoolData, turkeyUniversityData] = await Promise.all([
             interestedProgramService.getAll(),
             mainDegreeService.getAll(),
             countryService.getAll(),
-            universityService.getAll()
+            universityService.getAll(),
+            profileBoxService.getAll(),
+            schoolNameService.getAll('high_school'),
+            schoolNameService.getAll('university')
         ]);
-        setAllPrograms(programs.map(p => p.name));
+        setAllPrograms(getUniqueProgramNames(programs));
         setAllMainDegrees(mainDegs.map(d => d.name));
         setMainDegreeDetails(mainDegs);
         setAllCountries(countries.map(c => c.name));
         setAllCountriesData(countries);
         setAllUniversities(universities);
+        setProfileBoxes(profileBoxConfig);
+        setTurkeyHighSchools(turkeyHighSchoolData);
+        setTurkeyUniversities(turkeyUniversityData);
     } catch (error) {
         console.error("Failed to load options", error);
     }
@@ -400,6 +498,119 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
+  const handleAddTargetProgram = async (selectedProgramName = newTargetProgramName) => {
+    const programName = selectedProgramName.trim();
+    if (!programName) return;
+
+    const isKnownProgramType = allPrograms.some(program => program.toLocaleLowerCase('tr-TR') === programName.toLocaleLowerCase('tr-TR'));
+    if (!isKnownProgramType) {
+        alert('Lütfen Program Tanımları listesinden bir program tipi seçin.');
+        return;
+    }
+
+    const currentPrograms = student.targetPrograms || [];
+    const alreadyExists = currentPrograms.some(program => program.toLocaleLowerCase('tr-TR') === programName.toLocaleLowerCase('tr-TR'));
+
+    if (alreadyExists) {
+        setNewTargetProgramName('');
+        setShowProgramAddForm(false);
+        return;
+    }
+
+    const updatedPrograms = [...currentPrograms, programName];
+    setIsSavingTargetProgram(true);
+
+    try {
+        await studentService.update(student.id, { targetPrograms: updatedPrograms });
+        setStudent(prev => ({ ...prev, targetPrograms: updatedPrograms }));
+        setNewTargetProgramName('');
+    } catch (e) {
+        console.error("Failed to add target program", e);
+        alert("Program eklenirken bir hata oluştu.");
+    } finally {
+        setIsSavingTargetProgram(false);
+    }
+  };
+
+  const handleRemoveTargetProgram = async (programName: string) => {
+    const updatedPrograms = (student.targetPrograms || []).filter(program => program !== programName);
+    setIsSavingTargetProgram(true);
+
+    try {
+        await studentService.update(student.id, { targetPrograms: updatedPrograms });
+        setStudent(prev => ({ ...prev, targetPrograms: updatedPrograms }));
+    } catch (e) {
+        console.error("Failed to remove target program", e);
+        alert("Program kaldırılırken bir hata oluştu.");
+    } finally {
+        setIsSavingTargetProgram(false);
+    }
+  };
+
+  const isTurkeyUniversitySelected = (schoolName: string) => {
+    const normalizedSchoolName = schoolName.trim().toLocaleLowerCase('tr-TR');
+    return !!normalizedSchoolName && turkeyUniversities.some(university => university.name.toLocaleLowerCase('tr-TR') === normalizedSchoolName);
+  };
+
+  const isTurkeyHighSchoolSelected = (schoolName: string) => {
+    const normalizedSchoolName = schoolName.trim().toLocaleLowerCase('tr-TR');
+    return !!normalizedSchoolName && turkeyHighSchools.some(school => school.name.toLocaleLowerCase('tr-TR') === normalizedSchoolName);
+  };
+
+  const handleAddTurkeyHighSchoolFromAcademicForm = async () => {
+    const schoolName = editAcademicInfo.schoolName.trim();
+    if (!schoolName) return;
+
+    try {
+      const saved = await schoolNameService.add('high_school', schoolName);
+      setTurkeyHighSchools(prev => prev.some(item => item.name.toLocaleLowerCase('tr-TR') === saved.name.toLocaleLowerCase('tr-TR'))
+        ? prev
+        : [...prev, saved].sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')));
+      setEditAcademicInfo(prev => ({ ...prev, schoolName: saved.name }));
+    } catch (error: any) {
+      alert(error?.message || 'Lise listeye eklenemedi.');
+    }
+  };
+
+  const handleAddTurkeyUniversityFromAcademicForm = async () => {
+    const schoolName = editAcademicInfo.schoolName.trim();
+    if (!schoolName) return;
+
+    try {
+      const saved = await schoolNameService.add('university', schoolName);
+      setTurkeyUniversities(prev => prev.some(item => item.name.toLocaleLowerCase('tr-TR') === saved.name.toLocaleLowerCase('tr-TR'))
+        ? prev
+        : [...prev, saved].sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')));
+      setEditAcademicInfo(prev => ({ ...prev, schoolName: saved.name }));
+    } catch (error: any) {
+      alert(error?.message || 'Üniversite listeye eklenemedi.');
+    }
+  };
+
+  const addSuggestedProgramsAsOffers = async (programOffers: Array<{ id: string; universityName: string; country: string; programName: string }>) => {
+    const existingOfferKeys = new Set((student.applications || []).map(app => `${app.universityName}::${app.programName}`));
+    const applicationsToAdd: UniversityApplication[] = programOffers
+        .filter(offer => !existingOfferKeys.has(`${offer.universityName}::${offer.programName}`))
+        .map(offer => ({
+            id: Math.random().toString(36).substr(2, 9),
+            universityName: offer.universityName,
+            programName: offer.programName,
+            status: 'Başvuru Aşamasında',
+        }));
+
+    if (applicationsToAdd.length === 0) return;
+
+    const updatedApps = [...(student.applications || []), ...applicationsToAdd];
+
+    try {
+        await studentService.update(student.id, { applications: updatedApps });
+        setStudent(prev => ({ ...prev, applications: updatedApps }));
+        setSelectedSuggestedProgramIds(prev => prev.filter(id => !programOffers.some(offer => offer.id === id)));
+    } catch (e) {
+        console.error("Failed to add selected suggested programs", e);
+    }
+  };
+
   const updateAppStatus = async (appId: string, status: ApplicationStatus) => {
     const updatedApps = student.applications?.map(app => 
         app.id === appId ? { ...app, status } : app
@@ -471,6 +682,84 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     } finally {
         setIsGeneratingPDF(false);
     }
+  };
+
+  const handlePrintAnalysisReport = () => {
+    const input = document.getElementById('unic-analysis-report-area');
+    if (!input) return;
+
+    const pageTitle = `${student.firstName} ${student.lastName} - UNIC Öğrenci Analiz Raporu`;
+    const styleMarkup = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+        .map(element => element.outerHTML)
+        .join('\n');
+    const printStyles = `
+      <style>
+        @page { size: A4; margin: 12mm; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; min-height: 100%; background: #ffffff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
+        body { padding: 0; }
+        #print-root { width: 100%; }
+        [data-pdf-hidden="true"], input, button { display: none !important; }
+        a { color: inherit; text-decoration: none; }
+        img { max-width: 100%; }
+        .shadow-sm, .shadow, .shadow-lg, .shadow-xl, .shadow-2xl { box-shadow: none !important; }
+        .print\\:hidden { display: none !important; }
+        @media print {
+          html, body { background: #ffffff !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          #print-root { break-inside: auto; }
+          .rounded-2xl, .rounded-xl, .rounded-lg { break-inside: avoid; }
+        }
+      </style>
+    `;
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+
+    if (!printWindow) {
+        const fallbackStyle = document.createElement('style');
+        fallbackStyle.textContent = `
+          @media print {
+            body * { visibility: hidden !important; }
+            #unic-analysis-report-area, #unic-analysis-report-area * { visibility: visible !important; }
+            #unic-analysis-report-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; padding: 0 !important; background: #ffffff !important; }
+            [data-pdf-hidden="true"], input, button { display: none !important; }
+          }
+        `;
+        document.head.appendChild(fallbackStyle);
+
+        const cleanup = () => {
+            fallbackStyle.remove();
+            window.removeEventListener('afterprint', cleanup);
+        };
+
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+        return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="tr">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${pageTitle}</title>
+          ${styleMarkup}
+          ${printStyles}
+        </head>
+        <body>
+          <div id="print-root">${input.innerHTML}</div>
+          <script>
+            window.addEventListener('load', function () {
+              setTimeout(function () {
+                window.focus();
+                window.print();
+              }, 250);
+            });
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // --- Document Logic Start ---
@@ -602,6 +891,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           educationStatus: student.educationStatus || ''
       });
       setEditContactInfo({
+          firstName: student.firstName || '',
+          lastName: student.lastName || '',
           phone: student.phone || '',
           email: student.email || '',
           parentName: student.parentInfo?.fullName || '',
@@ -668,7 +959,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           return;
       }
 
+      if (!editContactInfo.firstName.trim() || !editContactInfo.lastName.trim()) {
+          alert("Öğrenci adı ve soyadı boş olamaz.");
+          return;
+      }
+
       const updatedData: Partial<Student> = {
+          firstName: editContactInfo.firstName.trim(),
+          lastName: editContactInfo.lastName.trim(),
           schoolName: editAcademicInfo.schoolName,
           currentGrade: editAcademicInfo.currentGrade,
           educationStatus: editAcademicInfo.educationStatus as any,
@@ -1027,17 +1325,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Okul Bilgileri</h4>
             <div className="space-y-4">
-                <div>
-                    <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
-                    <input 
-                        type="text"
-                        value={editAcademicInfo.schoolName}
-                        onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                        placeholder="Örn: Robert Koleji"
-                    />
-                </div>
-
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm text-slate-600 mb-1">Mevcut Eğitimi</label>
@@ -1074,8 +1361,81 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                 </div>
 
+                {editAcademicInfo.currentGrade && (editAcademicInfo.educationStatus === 'High School' ? (
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <div className="min-w-0 flex-1">
+                                <input
+                                    list="student-detail-turkey-high-school-options"
+                                    type="text"
+                                    value={editAcademicInfo.schoolName}
+                                    onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                    placeholder="Türkiye Liseleri içinde ara..."
+                                />
+                                <datalist id="student-detail-turkey-high-school-options">
+                                    {turkeyHighSchools.map(school => (
+                                        <option key={school.id} value={school.name} />
+                                    ))}
+                                </datalist>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleAddTurkeyHighSchoolFromAcademicForm}
+                                disabled={!editAcademicInfo.schoolName.trim() || isTurkeyHighSchoolSelected(editAcademicInfo.schoolName)}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Listede Yok
+                            </button>
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-400">Okul listede yoksa adını yazıp “Listede Yok” butonuyla Türkiye Liseleri listesine ekleyebilirsiniz.</p>
+                    </div>
+                ) : (editAcademicInfo.educationStatus === 'University' || editAcademicInfo.educationStatus === 'Master') ? (
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <div className="min-w-0 flex-1">
+                                <input
+                                    list="student-detail-turkey-university-options"
+                                    type="text"
+                                    value={editAcademicInfo.schoolName}
+                                    onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                    placeholder="Türkiye Üniversiteleri içinde ara..."
+                                />
+                                <datalist id="student-detail-turkey-university-options">
+                                    {turkeyUniversities.map(university => (
+                                        <option key={university.id} value={university.name} />
+                                    ))}
+                                </datalist>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleAddTurkeyUniversityFromAcademicForm}
+                                disabled={!editAcademicInfo.schoolName.trim() || isTurkeyUniversitySelected(editAcademicInfo.schoolName)}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Listede Yok
+                            </button>
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-400">Okul listede yoksa adını yazıp “Listede Yok” butonuyla Türkiye Üniversiteleri listesine ekleyebilirsiniz.</p>
+                    </div>
+                ) : (
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                        <input 
+                            type="text"
+                            value={editAcademicInfo.schoolName}
+                            onChange={(e) => setEditAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                            placeholder="Örn: Robert Koleji"
+                        />
+                    </div>
+                ))}
+
                 {/* Dynamic Field/Department Input */}
-                {editAcademicInfo.educationStatus === 'High School' && (
+                {shouldShowHighSchoolField(editAcademicInfo.educationStatus, editAcademicInfo.currentGrade) && (
                      <div>
                         <label className="block text-sm text-slate-600 mb-1">Bölümü (Alan)</label>
                         <select 
@@ -1088,6 +1448,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             <option value="Eşit Ağırlıklı">Eşit Ağırlıklı</option>
                             <option value="Dil">Dil</option>
                             <option value="IB">IB</option>
+                            <option value="Yurtdışı Eğitim Sınıfı">Yurtdışı Eğitim Sınıfı</option>
                         </select>
                     </div>
                 )}
@@ -1620,7 +1981,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
    const renderEditLanguageProgramPreference = () => (
       <div className="space-y-6 animate-fade-in">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-              <h4 className="text-sm font-semibold text-slate-700 mb-3">Dil Programı Tercihi</h4>
+               <h4 className="text-sm font-semibold text-slate-700 mb-3">Dil Eğitimi Tercihleri</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                       <label className="block text-sm text-slate-600 mb-1">Program Türü</label>
@@ -1629,10 +1990,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                           onChange={(e) => updateEditField('languageProgramPreference', 'preferredProgramType', e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                       >
-                          <option value="">Seçiniz</option>
-                          <option value="Dil Okulu">Dil Okulu</option>
-                          <option value="Yaz Okulu">Yaz Okulu</option>
-                      </select>
+                           <option value="">Seçiniz</option>
+                           <option value="Genel Dil Eğitimi">Genel Dil Eğitimi</option>
+                           <option value="Sınav Hazırlık">Sınav Hazırlık</option>
+                           <option value="Genel Yaz Okulu">Genel Yaz Okulu</option>
+                           <option value="Akademik Yaz Okulu">Akademik Yaz Okulu</option>
+                       </select>
                   </div>
                   <div>
                       <label className="block text-sm text-slate-600 mb-1">Tercih Edilen Ülke</label>
@@ -1645,22 +2008,42 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                           {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                   </div>
-                  <div>
-                      <label className="block text-sm text-slate-600 mb-1">Program Süresi</label>
-                      <select
-                          value={editForm.languageProgramPreference?.duration || ''}
-                          onChange={(e) => updateEditField('languageProgramPreference', 'duration', e.target.value)}
+                   <div>
+                       <label className="block text-sm text-slate-600 mb-1">Süre Aralığı</label>
+                       <select
+                           value={editForm.languageProgramPreference?.duration || ''}
+                           onChange={(e) => updateEditField('languageProgramPreference', 'duration', e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                       >
                           <option value="">Seçiniz</option>
                           <option value="2-4 Hafta">2-4 Hafta</option>
                           <option value="1-3 Ay">1-3 Ay</option>
                           <option value="3-6 Ay">3-6 Ay</option>
-                          <option value="6+ Ay">6+ Ay</option>
-                      </select>
-                  </div>
-              </div>
-          </div>
+                           <option value="6+ Ay">6+ Ay</option>
+                       </select>
+                   </div>
+                   <div>
+                       <label className="block text-sm text-slate-600 mb-1">Hafta Sayısı</label>
+                       <input
+                           type="number"
+                           min="1"
+                           value={editForm.languageProgramPreference?.weekCount || ''}
+                           onChange={(e) => updateEditField('languageProgramPreference', 'weekCount', e.target.value)}
+                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                           placeholder="Örn: 8"
+                       />
+                   </div>
+                   <div>
+                       <label className="block text-sm text-slate-600 mb-1">Başlangıç Tarihi</label>
+                       <input
+                           type="date"
+                           value={editForm.languageProgramPreference?.startDate || ''}
+                           onChange={(e) => updateEditField('languageProgramPreference', 'startDate', e.target.value)}
+                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                       />
+                   </div>
+               </div>
+           </div>
 
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
               <h4 className="text-sm font-semibold text-slate-700 mb-3">Program Notları</h4>
@@ -1842,6 +2225,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                   Öğrenci İletişim
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Adı</label>
+                      <input value={editContactInfo.firstName} onChange={e => setEditContactInfo({...editContactInfo, firstName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
+                  <div>
+                      <label className="block text-sm text-slate-600 mb-1">Soyadı</label>
+                      <input value={editContactInfo.lastName} onChange={e => setEditContactInfo({...editContactInfo, lastName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
+                  </div>
                   <div>
                       <label className="block text-sm text-slate-600 mb-1">Telefon</label>
                       <input value={editContactInfo.phone} onChange={e => setEditContactInfo({...editContactInfo, phone: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"/>
@@ -2069,6 +2460,121 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     </div>
   );
 
+  const getProgramLogo = (programName: string) => {
+    const normalizedName = programName.toLocaleLowerCase('tr-TR');
+
+    if (normalizedName.includes('yaz') || normalizedName.includes('summer') || normalizedName.includes('kamp')) {
+      return { Icon: Sun, bg: 'bg-amber-50', color: 'text-amber-600', border: 'border-amber-100', withStar: false };
+    }
+
+    if (normalizedName.includes('yüksek lisans') || normalizedName.includes('master') || normalizedName.includes('graduate')) {
+      return { Icon: GraduationCap, bg: 'bg-purple-50', color: 'text-purple-600', border: 'border-purple-100', withStar: true };
+    }
+
+    if (normalizedName.includes('dil') || normalizedName.includes('language')) {
+      return { Icon: MessageCircle, bg: 'bg-sky-50', color: 'text-sky-600', border: 'border-sky-100', withStar: false };
+    }
+
+    if (normalizedName.includes('lise') || normalizedName.includes('high school') || normalizedName.includes('secondary')) {
+      return { Icon: School, bg: 'bg-emerald-50', color: 'text-emerald-600', border: 'border-emerald-100', withStar: false };
+    }
+
+    if (normalizedName.includes('üniversite') || normalizedName.includes('universite') || normalizedName.includes('university') || normalizedName.includes('lisans') || normalizedName.includes('undergraduate')) {
+      return { Icon: GraduationCap, bg: 'bg-indigo-50', color: 'text-indigo-600', border: 'border-indigo-100', withStar: false };
+    }
+
+    return { Icon: Briefcase, bg: 'bg-slate-100', color: 'text-slate-600', border: 'border-slate-200', withStar: false };
+  };
+
+  const renderInterestedProgramsCard = () => (
+    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
+                <h3 className="font-bold text-slate-800">İlgilendiği Programlar</h3>
+            </div>
+            <button
+                type="button"
+                onClick={() => setShowProgramAddForm(prev => !prev)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 print:hidden"
+            >
+                {showProgramAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                Program Tanımları
+            </button>
+        </div>
+
+        {(student.targetPrograms || []).length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {(student.targetPrograms || []).map((program, index) => {
+                    const logo = getProgramLogo(program);
+                    const ProgramLogoIcon = logo.Icon;
+
+                    return (
+                    <div key={`${program}-${index}`} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start gap-3 print:bg-white print:border-slate-300">
+                        <div className={`relative w-9 h-9 rounded-xl border ${logo.bg} ${logo.color} ${logo.border} flex items-center justify-center shrink-0 shadow-sm print:bg-white`}>
+                            <ProgramLogoIcon className="w-4.5 h-4.5" />
+                            {logo.withStar && (
+                                <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
+                            )}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight print:text-slate-500">Program</p>
+                            <p className="text-sm font-semibold text-slate-800 break-words">{program}</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => handleRemoveTargetProgram(program)}
+                            disabled={isSavingTargetProgram}
+                            className="ml-auto rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
+                            title="Programı kaldır"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                    );
+                })}
+            </div>
+        )}
+
+        {showProgramAddForm && <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3 print:hidden">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500">Program Tanımları</p>
+                <span className="text-[10px] font-bold text-slate-400">Seçili olmayanlar</span>
+            </div>
+            {allPrograms.filter(program => !(student.targetPrograms || []).some(selected => selected.toLocaleLowerCase('tr-TR') === program.toLocaleLowerCase('tr-TR'))).length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {allPrograms
+                        .filter(program => !(student.targetPrograms || []).some(selected => selected.toLocaleLowerCase('tr-TR') === program.toLocaleLowerCase('tr-TR')))
+                        .map(program => {
+                            const logo = getProgramLogo(program);
+                            const ProgramLogoIcon = logo.Icon;
+
+                            return (
+                                <button
+                                    key={program}
+                                    type="button"
+                                    onClick={() => handleAddTargetProgram(program)}
+                                    disabled={isSavingTargetProgram}
+                                    className="flex min-h-[48px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${logo.bg} ${logo.color} ${logo.border}`}>
+                                        <ProgramLogoIcon className="h-3.5 w-3.5" />
+                                        {logo.withStar && (
+                                            <Star className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
+                                        )}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-700">{program}</span>
+                                </button>
+                            );
+                        })}
+                </div>
+            ) : (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-center text-sm text-slate-400">Tüm program tipleri seçilmiş.</p>
+            )}
+        </div>}
+    </div>
+  );
+
   const getLanguageLevelColor = (level?: string) => {
       if (!level || level === '-') return 'bg-slate-100 text-slate-600 border-slate-200';
       const warningLevels = ['A1', 'A2', 'B1'];
@@ -2268,7 +2774,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       <div className="flex gap-6 border-b border-slate-200 print:hidden">
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
-          { id: 'analysis', label: 'AI Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
+          { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'enrollment', label: 'Kabul & İşlem', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
@@ -2293,11 +2799,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       {/* Content Area */}
       <div id="student-printable-area" className="flex-1 overflow-y-auto pr-2 pb-10 student-content-area">
         {activeTab === 'profile' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in print:block print:space-y-6">
+          <div className="space-y-6 animate-fade-in print:block print:space-y-6">
+            {renderInterestedProgramsCard()}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:block print:space-y-6">
             
             <div className="lg:col-span-2 space-y-6">
                  {/* Academic Info */}
-                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                  {shouldShowProfileBox('academic') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <GraduationCap className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2352,9 +2861,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                         <DisplayField label="Akademik Notlar" value={student.analysis?.academic?.academicNotes} fullWidth />
                     </div>
-                </div>
+                </div>}
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                {shouldShowProfileBox('exams') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <FileText className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2459,14 +2968,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     ) : (
                         <p className="text-sm text-slate-400 italic">Kayıtlı sınav bilgisi yok.</p>
                     )}
-                </div>
+                </div>}
 
                 {/* Preferences */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
+                {shouldShowProfileBox('preferences') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
-                            <h3 className="font-bold text-slate-800">Eğitim Tercihleri</h3>
+                            <h3 className="font-bold text-slate-800">Akademik Eğitim Tercihleri</h3>
                         </div>
                         <button 
                             onClick={() => openEditModal('preferences')}
@@ -2560,7 +3069,31 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.notes}</p>
                         </div>
                     )}
-                </div>
+                </div>}
+
+                {showLanguageEducationProfileBox && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Dil Eğitimi Tercihleri</h3>
+                        </div>
+                        <button 
+                            onClick={() => openEditModal('languageProgramPreference')}
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <DisplayField label="Dil Eğitimi Program Tipi" value={student.analysis?.languageProgramPreference?.preferredProgramType} />
+                        <DisplayField label="Ülke Seçimi" value={student.analysis?.languageProgramPreference?.preferredCountry} />
+                        <DisplayField label="Süre Aralığı" value={student.analysis?.languageProgramPreference?.duration} />
+                        <DisplayField label="Hafta Sayısı" value={student.analysis?.languageProgramPreference?.weekCount ? `${student.analysis.languageProgramPreference.weekCount} hafta` : undefined} />
+                        <DisplayField label="Başlangıç Tarihi" value={formatExamDate(student.analysis?.languageProgramPreference?.startDate)} />
+                        <DisplayField label="Notlar" value={student.analysis?.languageProgramPreference?.notes} fullWidth />
+                    </div>
+                </div>}
             </div>
 
             <div className="space-y-6 print:mt-6">
@@ -2583,7 +3116,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
 
 
-                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                 {shouldShowProfileBox('language') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2690,12 +3223,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             </div>
                         )}
                     </div>
-                </div>
+                </div>}
 
 
 
 
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                {shouldShowProfileBox('budget') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2711,10 +3244,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                     </div>
                     <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
-                </div>
+                </div>}
 
                 {/* Social Activities */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                {shouldShowProfileBox('social') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <Activity className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2735,10 +3268,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         <DisplayField label="Sosyal Çalışmalar" value={student.analysis?.social?.socialWork} />
                         <DisplayField label="Projeler" value={student.analysis?.social?.projects} />
                     </div>
-                </div>
+                </div>}
 
                 {/* Citizenship Info */}
-                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                 {shouldShowProfileBox('citizenship') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <Flag className="w-5 h-5 text-indigo-600 print:text-black" />
@@ -2806,9 +3339,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             )}
                         </div>
                     </div>
-                </div>
+                </div>}
             </div>
 
+          </div>
           </div>
         )}
 
@@ -3245,25 +3779,88 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         Henüz AI Analizi yapılmadı. Lütfen üstteki "Run UNIC Analysis" butonuna tıklayın.
                    </div>
                )}
-               {analysis && (
-                   <>
+                 {analysis && (
+                     <>
+                    <div className="flex justify-end print:hidden">
+                        <button
+                            type="button"
+                            onClick={handlePrintAnalysisReport}
+                            className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-600 shadow-sm ring-1 ring-rose-100 transition hover:bg-rose-100"
+                        >
+                            <Printer className="h-4 w-4" />
+                            Yazdır
+                        </button>
+                    </div>
+
+                    <div id="unic-analysis-report-area" className="space-y-6">
+                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
+                         <p className="text-xs font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
+                         <h2 className="mt-2 text-2xl font-black text-slate-900">{student.firstName} {student.lastName}</h2>
+                        <p className="mt-1 text-sm font-semibold text-slate-700">
+                            {getReportAcademicSummary()}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">Öğrenci ve veli bilgilendirme raporu</p>
+                    </div>
+
+                    {getInterestedEducationItems().length > 0 && (
+                        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm">
+                            <div className="mb-3 flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-indigo-600" />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilenilen Eğitim Tercihleri</h3>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {getInterestedEducationItems().map(item => (
+                                    <span key={`${item.countries.join('-')}-${item.program}`} className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm">
+                                        <span className="flex items-center gap-1">
+                                            {item.countries.map((country, index) => {
+                                                const countryCode = getCountryCode(country);
+
+                                                return (
+                                                <span key={country} className="inline-flex items-center gap-1.5">
+                                                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-[10px]">
+                                                        {countryCode ? (
+                                                            <img
+                                                                src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`}
+                                                                alt={country}
+                                                                className="h-full w-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            getFlagEmoji(country)
+                                                        )}
+                                                    </span>
+                                                    <span>{country}{index < item.countries.length - 1 ? ',' : ''}</span>
+                                                </span>
+                                                );
+                                            })}
+                                        </span>
+                                        <span className="text-indigo-300">-</span>
+                                        <span>{item.program} tercihi</span>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Preferred Degrees Details */}
                     {student.analysis?.preferences && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             {[student.analysis.preferences.program1, student.analysis.preferences.program2]
                                 .filter((p): p is string => !!p)
-                                .map((progName, idx) => {
+                                .map((progName) => {
                                     const degree = mainDegreeDetails.find(d => d.name === progName);
                                     if (!degree) return null;
                                     return (
-                                        <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none h-full">
+                                        <div key={progName} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none h-full">
                                             <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-100">
-                                                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
-                                                    <GraduationCap className="w-5 h-5" />
+                                                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                                    {degree.imageUrl ? (
+                                                        <img src={degree.imageUrl} alt={degree.name} className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <GraduationCap className="w-5 h-5" />
+                                                    )}
                                                 </div>
                                                 <div>
                                                     <h3 className="font-bold text-slate-800">{degree.name}</h3>
-                                                    <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider">Tercih Edilen Program {idx + 1}</p>
                                                 </div>
                                             </div>
                                             <div className="space-y-4">
@@ -3307,6 +3904,36 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         ].filter(Boolean) as string[];
 
                         const prefBudget = student.analysis?.preferences?.budget || student.budget;
+                        const normalizeProgramMatchValue = (value?: string) => (value || '').toLocaleLowerCase('tr-TR').trim();
+                        const normalizedSuggestedFilter = normalizeProgramMatchValue(suggestedUniversityFilter);
+
+                        const programMatchesPreferences = (program: any) => {
+                            if (prefPrograms.length === 0) return true;
+
+                            const programValues = [
+                                program.name,
+                                ...(program.groupNames || []),
+                                ...(program.matched_departments || []),
+                            ].map(normalizeProgramMatchValue);
+
+                            return prefPrograms.some(prefProgram => {
+                                const normalizedPreference = normalizeProgramMatchValue(prefProgram);
+
+                                return programValues.some(value => value === normalizedPreference || value.includes(normalizedPreference));
+                            });
+                        };
+
+                        const programMatchesSuggestedFilter = (program: any) => {
+                            if (!normalizedSuggestedFilter) return true;
+
+                            return [
+                                program.name,
+                                ...(program.groupNames || []),
+                                ...(program.matched_departments || []),
+                                program.type,
+                                program.tuitionRange,
+                            ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
+                        };
 
                         // Parse budget ceiling from student's budget range string
                         const budgetCeiling = (() => {
@@ -3324,8 +3951,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 uniCountries.some(c => prefCountries.includes(c));
 
                             const uniPrograms: any[] = uni.programs || [];
-                            const matchesProgram = prefPrograms.length === 0 ||
-                                uniPrograms.some((p: any) => prefPrograms.includes(p.groupNames?.[0] || p.name));
+                            const matchesProgram = uniPrograms.some(programMatchesPreferences);
 
                             const uniTuition = uni.tuitionRange || '';
                             const matchesBudget = (() => {
@@ -3338,23 +3964,67 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                             return matchesCountry && matchesProgram && matchesBudget;
                         });
+                        const visibleFilteredUnis = normalizedSuggestedFilter
+                            ? filteredUnis.filter((uni: any) => {
+                                const universityMatchesFilter = [
+                                    uni.name,
+                                    ...(uni.countries || []),
+                                ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
+                                const matchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
+
+                                return universityMatchesFilter || matchingPrograms.some(programMatchesSuggestedFilter);
+                            })
+                            : filteredUnis;
+                        const getSuggestedProgramSelectionId = (uni: any, program: any) => `${uni.id || uni.name}::${program.id || program.name}`;
+                        const selectedSuggestedProgramOffers = filteredUnis.flatMap((uni: any) => {
+                            const country = (uni.countries || [])[0] || '';
+
+                            return (uni.programs || [])
+                                .filter(programMatchesPreferences)
+                                .filter((program: any) => selectedSuggestedProgramIds.includes(getSuggestedProgramSelectionId(uni, program)))
+                                .map((program: any) => ({
+                                    id: getSuggestedProgramSelectionId(uni, program),
+                                    universityName: uni.name,
+                                    country,
+                                    programName: program.name,
+                                }));
+                        });
 
                         return (
                             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none">
-                                <div className="flex items-center justify-between mb-5">
-                                    <div>
-                                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                            <GraduationCap className="w-5 h-5 text-indigo-600" />
-                                            Önerilen Üniversiteler
+                                    <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-center lg:justify-between">
+                                     <div>
+                                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                             <GraduationCap className="w-5 h-5 text-indigo-600" />
+                                             Önerilen Üniversiteler
                                         </h3>
                                         <p className="text-xs text-slate-400 mt-0.5">Tercihlerinize uyan partner üniversitelerimiz</p>
                                     </div>
-                                    <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">
-                                        {filteredUnis.length} Okul
-                                    </span>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center" data-pdf-hidden="true">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                                            <input
+                                                value={suggestedUniversityFilter}
+                                                onChange={(event) => setSuggestedUniversityFilter(event.target.value)}
+                                                placeholder="Okul veya bölüm filtrele..."
+                                                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white sm:w-64"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => addSuggestedProgramsAsOffers(selectedSuggestedProgramOffers)}
+                                            disabled={selectedSuggestedProgramOffers.length === 0}
+                                            className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                        >
+                                            Seçilenleri Teklife Ekle ({selectedSuggestedProgramOffers.length})
+                                        </button>
+                                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">
+                                            {visibleFilteredUnis.length}/{filteredUnis.length} Okul
+                                        </span>
+                                    </div>
                                 </div>
 
-                                {filteredUnis.length === 0 ? (
+                                {visibleFilteredUnis.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
                                         <AlertCircle className="w-8 h-8 text-slate-300 mb-2" />
                                         <p className="text-sm text-slate-500 italic">Tercihlerinize uyan üniversite bulunamadı.</p>
@@ -3362,14 +4032,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     </div>
                                 ) : (
                                     <div className="space-y-2">
-                                        {filteredUnis.map((uni: any, idx: number) => {
+                                        {visibleFilteredUnis.map((uni: any, idx: number) => {
                                             const isAdded = student.applications?.some(app => app.universityName === uni.name);
                                             const countryName = (uni.countries || [])[0] || '';
                                             const countryCode = getCountryCode(countryName);
-                                            const programNames = (uni.programs || []).slice(0, 2).map((p: any) => p.name).join(', ');
+                                            const allMatchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
+                                            const universityMatchesFilter = !normalizedSuggestedFilter || [
+                                                uni.name,
+                                                ...(uni.countries || []),
+                                            ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
+                                            const matchingPrograms = universityMatchesFilter
+                                                ? allMatchingPrograms
+                                                : allMatchingPrograms.filter(programMatchesSuggestedFilter);
 
                                             return (
-                                                <div key={idx} className="flex items-center gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
+                                                <div key={idx} className="flex items-start gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
                                                     {/* Flag */}
                                                     <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                                                         {countryCode ? (
@@ -3381,7 +4058,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                                                     {/* Info */}
                                                     <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">{uni.name}</p>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">{uni.name}</p>
+                                                            {uni.rankingUrl && (
+                                                                <a
+                                                                    href={uni.rankingUrl}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    onClick={(event) => event.stopPropagation()}
+                                                                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 hover:underline"
+                                                                >
+                                                                    Ranking <ExternalLink className="h-3 w-3" />
+                                                                </a>
+                                                            )}
+                                                        </div>
                                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                                             {countryName && (
                                                                 <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">{countryName}</span>
@@ -3389,16 +4079,73 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                             {uni.tuitionRange && (
                                                                 <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">💶 {uni.tuitionRange}</span>
                                                             )}
-                                                            {programNames && (
-                                                                <span className="text-[10px] text-slate-400 truncate max-w-[160px]">{programNames}</span>
-                                                            )}
+                                                        </div>
+                                                        <div className="mt-3 rounded-xl border border-indigo-100 bg-white/80 p-3">
+                                                            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                                                                Uyum Sağlayan Bölümler ({matchingPrograms.length})
+                                                            </div>
+                                                            <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                                                                {matchingPrograms.map((program: any) => (
+                                                                    (() => {
+                                                                        const programSelectionId = getSuggestedProgramSelectionId(uni, program);
+                                                                        const isProgramSelected = selectedSuggestedProgramIds.includes(programSelectionId);
+                                                                        const isProgramAdded = student.applications?.some(app => app.universityName === uni.name && app.programName === program.name);
+
+                                                                        return (
+                                                                            <label key={program.id || program.name} className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                                                                                <input
+                                                                                    data-pdf-hidden="true"
+                                                                                    type="checkbox"
+                                                                                    checked={isProgramSelected}
+                                                                                    disabled={isProgramAdded}
+                                                                                    onChange={(event) => {
+                                                                                        const checked = event.target.checked;
+                                                                                        setSelectedSuggestedProgramIds(prev => checked
+                                                                                            ? Array.from(new Set([...prev, programSelectionId]))
+                                                                                            : prev.filter(id => id !== programSelectionId));
+                                                                                    }}
+                                                                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                                                                />
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                                                                        <div className="text-sm font-black leading-snug text-slate-900">{program.name}</div>
+                                                                                        {program.link && (
+                                                                                            <a
+                                                                                                href={program.link}
+                                                                                                target="_blank"
+                                                                                                rel="noreferrer"
+                                                                                                onClick={(event) => event.stopPropagation()}
+                                                                                                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-indigo-600 transition hover:bg-indigo-50 hover:underline"
+                                                                                            >
+                                                                                                Bölüm Linki <ExternalLink className="h-3 w-3" />
+                                                                                            </a>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                                                        <span className={`rounded px-2 py-0.5 text-[9px] font-bold ${program.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                                                            {program.type || 'Bachelor'}
+                                                                                        </span>
+                                                                                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
+                                                                                            Fiyat: {program.tuitionRange || 'Belirtilmedi'}
+                                                                                        </span>
+                                                                                        {isProgramAdded && (
+                                                                                            <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-black text-emerald-700">Eklendi</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </label>
+                                                                        );
+                                                                    })()
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     </div>
 
                                                     {/* Action */}
                                                     <button
-                                                        onClick={() => addSuggestedUniversityAsOffer({ name: uni.name, country: countryName })}
-                                                        disabled={isAdded}
+                                                        data-pdf-hidden="true"
+                                                         onClick={() => addSuggestedUniversityAsOffer({ name: uni.name, country: countryName })}
+                                                         disabled={isAdded}
                                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
                                                             isAdded
                                                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
@@ -3420,8 +4167,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         );
                     })()}
 
+                    </div>
                 </>
-            )}
+             )}
         </div>
     )}
   </div>
@@ -3456,7 +4204,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             { id: 'academic', label: 'Akademik Durum', icon: GraduationCap },
                             { id: 'citizenship', label: 'Vatandaşlık', icon: Flag },
                             { id: 'preferences', label: 'Akademik Tercih', icon: BookOpen, visible: showsAcademicPreference },
-                            { id: 'languageProgramPreference', label: 'Dil Programı Tercihi', icon: BookOpen, visible: showsLanguageProgramPreference },
+                            { id: 'languageProgramPreference', label: 'Dil Eğitimi Tercihleri', icon: BookOpen, visible: showsLanguageProgramPreference || showsLanguageEducationPreference || showLanguageEducationProfileBox },
                             { id: 'highSchoolProgramPreference', label: 'Lise Programı Tercihi', icon: School, visible: showsHighSchoolProgramPreference },
                             { id: 'social', label: 'Sosyal & Spor', icon: Activity },
                             { id: 'budget', label: 'Eğitim Bütçesi', icon: Coins },

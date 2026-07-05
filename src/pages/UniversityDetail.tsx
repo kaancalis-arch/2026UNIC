@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { 
     ArrowLeft, Globe, BookOpen, Star, ExternalLink, 
     MapPin, Edit2, Trash2, Plus, Save, X, GraduationCap,
-    Link as LinkIcon, Loader2, Info, Upload, Download
+    Link as LinkIcon, Loader2, Info, Upload, Download, Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { UniversityData, UniversityProgram } from '../types';
@@ -24,7 +24,26 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [universityTypes, setUniversityTypes] = useState<UniversityType[]>([]);
+    const [programSearchTerm, setProgramSearchTerm] = useState('');
+    const [selectedProgramTag, setSelectedProgramTag] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const normalizeFilterValue = (value?: string) => (value || '').toLocaleLowerCase('tr-TR').trim();
+    const programTagOptions = Array.from(new Set((editedUniversity.programs || []).flatMap(program => [
+        ...(program.groupNames || []),
+        ...(program.matched_departments || []),
+    ]).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'tr-TR'));
+    const normalizedProgramSearchTerm = normalizeFilterValue(programSearchTerm);
+    const filteredPrograms = (editedUniversity.programs || []).filter(program => {
+        const programTags = [
+            ...(program.groupNames || []),
+            ...(program.matched_departments || []),
+        ];
+        const matchesSearch = !normalizedProgramSearchTerm || normalizeFilterValue(program.name).includes(normalizedProgramSearchTerm);
+        const matchesTag = !selectedProgramTag || programTags.some(tag => tag === selectedProgramTag);
+
+        return matchesSearch && matchesTag;
+    });
 
     const exportProgramsToExcel = () => {
         if (!editedUniversity.programs || editedUniversity.programs.length === 0) {
@@ -368,7 +387,7 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                         <GraduationCap className="w-5 h-5 text-indigo-600" />
-                        Bölümler ({editedUniversity.programs?.length || 0})
+                        Bölümler ({filteredPrograms.length}/{editedUniversity.programs?.length || 0})
                     </h2>
                     <div className="flex items-center gap-2">
                         {(editedUniversity.programs && editedUniversity.programs.length > 0) && (
@@ -407,8 +426,32 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                 </div>
 
                 {(editedUniversity.programs && editedUniversity.programs.length > 0) ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {editedUniversity.programs.map((prog, index) => (
+                    <>
+                        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+                            <div className="relative">
+                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={programSearchTerm}
+                                    onChange={(e) => setProgramSearchTerm(e.target.value)}
+                                    placeholder="Bölüm adıyla ara"
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-50"
+                                />
+                            </div>
+                            <select
+                                value={selectedProgramTag}
+                                onChange={(e) => setSelectedProgramTag(e.target.value)}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-50"
+                            >
+                                <option value="">Tüm etiketler</option>
+                                {programTagOptions.map(tag => (
+                                    <option key={tag} value={tag}>{tag}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {filteredPrograms.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {filteredPrograms.map((prog, index) => (
                             <div key={prog.id} className="bg-slate-50 rounded-xl border border-slate-200 p-4">
                                 {isEditing ? (
                                     <div className="space-y-3">
@@ -493,11 +536,9 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${prog.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
                                                 {prog.type}
                                             </span>
-                                            {prog.tuitionRange && (
-                                                <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                                                    {prog.tuitionRange}
-                                                </span>
-                                            )}
+                                            <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                                Ücret: {prog.tuitionRange || 'Belirtilmedi'}
+                                            </span>
                                         </div>
                                         {prog.groupNames && prog.groupNames.length > 0 && (
                                             <div className="flex flex-wrap gap-1">
@@ -511,8 +552,14 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     </div>
                                 )}
                             </div>
-                        ))}
-                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-10 text-center text-sm font-medium text-slate-500">
+                                Arama veya etiket filtresine uyan bölüm bulunamadı.
+                            </div>
+                        )}
+                    </>
                 ) : (
                     <div className="text-center py-12 text-slate-500">
                         <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />

@@ -17,6 +17,9 @@ export interface UniversityProgramResearchResult {
   source_url: string;
   confidence_score: number;
   notes: string;
+  matched_departments?: string[];
+  match_status?: 'matched' | 'needs_manual_review';
+  match_notes?: string;
 }
 
 export const universityProgramResearchAgentPrompt = `
@@ -27,6 +30,7 @@ Your task is to research official university program pages and return structured
 Input:
 - universityName: the target university name supplied by the user
 - programLevel: one of "all", "undergraduate", or "master"
+- availableDepartments: optional list of existing UNIC department names that programs may be matched to
 
 Research rules:
 - Prefer official university domains and official admissions/program pages.
@@ -38,6 +42,9 @@ Research rules:
 - Normalize program_level in each result to "undergraduate" or "master".
 - Return concise values suitable for table display and Excel export.
 - Include a confidence_score between 0 and 1 based on source reliability and completeness.
+- Match each program to availableDepartments only when there is a clear, safe semantic match.
+- If no safe department match exists, set matched_departments to [], match_status to "needs_manual_review", and explain the reason in match_notes.
+- Do not invent department names. matched_departments must only contain names from availableDepartments when that list is supplied.
 
 Output requirements:
 - Return only valid JSON.
@@ -136,6 +143,20 @@ export const universityProgramResearchOutputSchema = {
         type: 'string',
         description: 'Short verification notes, caveats, or missing data explanation.',
       },
+      matched_departments: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Existing UNIC department names matched to this program. Empty when manual review is needed.',
+      },
+      match_status: {
+        type: 'string',
+        enum: ['matched', 'needs_manual_review'],
+        description: 'Whether the department match is safe or requires manual review.',
+      },
+      match_notes: {
+        type: 'string',
+        description: 'Short explanation of the department matching decision.',
+      },
     },
   },
 } as const;
@@ -157,6 +178,9 @@ const mockResults: Omit<UniversityProgramResearchResult, 'university_name'>[] = 
     source_url: 'https://www.example.com/undergraduate/business-management',
     confidence_score: 0.82,
     notes: 'Mock result for UI development. Replace with verified official data when agent integration is added.',
+    matched_departments: ['Business'],
+    match_status: 'matched',
+    match_notes: 'Mock safe match for UI development.',
   },
   {
     official_website: 'https://www.example.com',
@@ -174,6 +198,9 @@ const mockResults: Omit<UniversityProgramResearchResult, 'university_name'>[] = 
     source_url: 'https://www.example.com/undergraduate/computer-science',
     confidence_score: 0.8,
     notes: 'Mock result for UI development. Replace with verified official data when agent integration is added.',
+    matched_departments: ['Computer Science'],
+    match_status: 'matched',
+    match_notes: 'Mock safe match for UI development.',
   },
   {
     official_website: 'https://www.example.com',
@@ -191,6 +218,9 @@ const mockResults: Omit<UniversityProgramResearchResult, 'university_name'>[] = 
     source_url: 'https://www.example.com/postgraduate/data-science',
     confidence_score: 0.84,
     notes: 'Mock result for UI development. Replace with verified official data when agent integration is added.',
+    matched_departments: ['Data Science'],
+    match_status: 'matched',
+    match_notes: 'Mock safe match for UI development.',
   },
   {
     official_website: 'https://www.example.com',
@@ -208,6 +238,9 @@ const mockResults: Omit<UniversityProgramResearchResult, 'university_name'>[] = 
     source_url: 'https://www.example.com/postgraduate/finance',
     confidence_score: 0.81,
     notes: 'Mock result for UI development. Replace with verified official data when agent integration is added.',
+    matched_departments: [],
+    match_status: 'needs_manual_review',
+    match_notes: 'Mock example requiring manual department review.',
   },
 ];
 

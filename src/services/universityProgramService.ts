@@ -2,6 +2,11 @@
 import { supabase } from './supabaseClient';
 import { UniversityProgramData } from '../types';
 
+const formatProgramTuitionRange = (row: any) => [
+  row.tuition_budget_range,
+  row.tuition_currency,
+].filter(Boolean).join(' ').trim();
+
 export const universityProgramService = {
   async getAll(): Promise<UniversityProgramData[]> {
     if (!supabase) return [];
@@ -46,7 +51,7 @@ export const universityProgramService = {
       mainDegree3Id: row.main_degree_3_id,
       mainDegree3Name: (row as any).deg3?.name,
       language: row.language,
-      tuitionRange: row.tuition_range,
+      tuitionRange: row.tuition_range || formatProgramTuitionRange(row),
       created_at: row.created_at
     }));
   },
@@ -65,7 +70,8 @@ export const universityProgramService = {
         main_degree_2_id: program.mainDegree2Id || null,
         main_degree_3_id: program.mainDegree3Id || null,
         language: program.language,
-        tuition_range: program.tuitionRange
+        tuition_range: program.tuitionRange,
+        tuition_budget_range: program.tuitionRange || null
     };
 
     if (program.id && !program.id.startsWith('new-')) {

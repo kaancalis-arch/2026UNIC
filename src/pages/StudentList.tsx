@@ -8,13 +8,14 @@ import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
 import { mainCategoryService } from '../services/mainCategoryService';
+import { SchoolNameRecord, schoolNameService } from '../services/schoolNameService';
 import { Student, PipelineStage, AnalysisReport, ExamDetails, MainCategoryData, MainDegreeData } from '../types';
 import {
     Search, Plus, Filter, ChevronRight, X, ChevronDown, ChevronUp,
     User, Phone, Mail, Calendar, School, Users, Globe, FileCheck,
     ClipboardList, Save, CheckCircle, AlertCircle, Trash2, Sparkles,
     GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag,
-    Download, Upload, FileDown
+    Download, Upload, FileDown, Sun, MessageCircle, Star, Briefcase
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
@@ -48,6 +49,7 @@ const getLanguageLevelColor = (level?: string) => {
 const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter, isSidebarCollapsed }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
+    const UNIC_LOGO_URL = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png';
 
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -173,6 +175,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         educationStatus: ''
     });
     const [studentContactInfo, setStudentContactInfo] = useState({
+        firstName: '',
+        lastName: '',
         phone: '',
         email: '',
         parentName: '',
@@ -187,7 +191,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     const [calculatedAge, setCalculatedAge] = useState<string>('');
     const [duplicateWarning, setDuplicateWarning] = useState<string>('');
     const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
-    const [formErrors, setFormErrors] = useState<{ email?: string; phone?: string; targetPrograms?: string }>({});
+    const [formErrors, setFormErrors] = useState<{ email?: string; phone?: string; parentPhone?: string; parent2Phone?: string; targetPrograms?: string }>({});
+    const [emailMarkedUnavailable, setEmailMarkedUnavailable] = useState(false);
+    const [phoneMarkedUnavailable, setPhoneMarkedUnavailable] = useState(false);
 
     // Dynamic Options
     const [allPrograms, setAllPrograms] = useState<string[]>([]);
@@ -196,6 +202,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     const [allMainCategories, setAllMainCategories] = useState<MainCategoryData[]>([]);
     const [allJunctions, setAllJunctions] = useState<Array<{program_id: string, category_id: string}>>([]);
     const [allCountries, setAllCountries] = useState<string[]>([]);
+    const [turkeyHighSchools, setTurkeyHighSchools] = useState<SchoolNameRecord[]>([]);
+    const [turkeyUniversities, setTurkeyUniversities] = useState<SchoolNameRecord[]>([]);
     const todayIso = new Date().toISOString().split('T')[0];
     const getInitialStage = () => {
         const validStages = Object.values(PipelineStage) as string[];
@@ -253,6 +261,41 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     };
 
     const normalizeSearchValue = (value?: string | null) => (value || '').trim().toLocaleLowerCase('tr-TR');
+
+    const getUniqueProgramNames = (programs: Array<{ name?: string }>) => {
+        return Array.from(new Set(programs.map(item => item.name?.trim()).filter(Boolean) as string[]))
+            .sort((a, b) => a.localeCompare(b, 'tr-TR'));
+    };
+
+    const getProgramLogo = (programName: string) => {
+        const normalizedName = programName.toLocaleLowerCase('tr-TR');
+
+        if (normalizedName.includes('yaz') || normalizedName.includes('summer') || normalizedName.includes('kamp')) {
+            return { Icon: Sun, bg: 'bg-amber-50', color: 'text-amber-600', border: 'border-amber-100', withStar: false };
+        }
+
+        if (normalizedName.includes('yüksek lisans') || normalizedName.includes('master') || normalizedName.includes('graduate')) {
+            return { Icon: GraduationCap, bg: 'bg-purple-50', color: 'text-purple-600', border: 'border-purple-100', withStar: true };
+        }
+
+        if (normalizedName.includes('dil') || normalizedName.includes('language')) {
+            return { Icon: MessageCircle, bg: 'bg-sky-50', color: 'text-sky-600', border: 'border-sky-100', withStar: false };
+        }
+
+        if (normalizedName.includes('lise') || normalizedName.includes('high school') || normalizedName.includes('secondary')) {
+            return { Icon: School, bg: 'bg-emerald-50', color: 'text-emerald-600', border: 'border-emerald-100', withStar: false };
+        }
+
+        if (normalizedName.includes('üniversite') || normalizedName.includes('universite') || normalizedName.includes('university') || normalizedName.includes('lisans') || normalizedName.includes('undergraduate')) {
+            return { Icon: GraduationCap, bg: 'bg-indigo-50', color: 'text-indigo-600', border: 'border-indigo-100', withStar: false };
+        }
+
+        return { Icon: Briefcase, bg: 'bg-slate-100', color: 'text-slate-600', border: 'border-slate-200', withStar: false };
+    };
+
+    const shouldShowHighSchoolField = (educationStatus: string, currentGrade: string) => (
+        educationStatus === 'High School' && (currentGrade === '11. Sınıf' || currentGrade === '12. Sınıf')
+    );
 
     const getReminderMeta = (date?: string) => {
         if (!date) {
@@ -360,19 +403,23 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const loadOptions = async () => {
         try {
-            const [programs, mainDegs, categories, junctions, countries] = await Promise.all([
+            const [programs, mainDegs, categories, junctions, countries, turkeyHighSchoolData, turkeyUniversityData] = await Promise.all([
                 interestedProgramService.getAll(),
                 mainDegreeService.getAll(),
                 mainCategoryService.getAll(),
                 mainCategoryService.getJunctions(),
-                countryService.getAll()
+                countryService.getAll(),
+                schoolNameService.getAll('high_school'),
+                schoolNameService.getAll('university')
             ]);
-            setAllPrograms(programs.map(p => p.name));
+            setAllPrograms(getUniqueProgramNames(programs));
             setAllMainDegreesObjects(mainDegs);
             setAllMainDegrees(mainDegs.map(d => d.name));
             setAllMainCategories(categories);
             setAllJunctions(junctions);
             setAllCountries(countries.map(c => c.name));
+            setTurkeyHighSchools(turkeyHighSchoolData);
+            setTurkeyUniversities(turkeyUniversityData);
         } catch (error) {
             console.error("Failed to load options", error);
         }
@@ -400,6 +447,46 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }
     };
 
+    const isTurkeyUniversitySelected = (schoolName: string) => {
+        const normalizedSchoolName = schoolName.trim().toLocaleLowerCase('tr-TR');
+        return !!normalizedSchoolName && turkeyUniversities.some(university => university.name.toLocaleLowerCase('tr-TR') === normalizedSchoolName);
+    };
+
+    const isTurkeyHighSchoolSelected = (schoolName: string) => {
+        const normalizedSchoolName = schoolName.trim().toLocaleLowerCase('tr-TR');
+        return !!normalizedSchoolName && turkeyHighSchools.some(school => school.name.toLocaleLowerCase('tr-TR') === normalizedSchoolName);
+    };
+
+    const handleAddTurkeyHighSchoolFromAnalysisForm = async () => {
+        const schoolName = studentAcademicInfo.schoolName.trim();
+        if (!schoolName) return;
+
+        try {
+            const saved = await schoolNameService.add('high_school', schoolName);
+            setTurkeyHighSchools(prev => prev.some(item => item.name.toLocaleLowerCase('tr-TR') === saved.name.toLocaleLowerCase('tr-TR'))
+                ? prev
+                : [...prev, saved].sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')));
+            setStudentAcademicInfo(prev => ({ ...prev, schoolName: saved.name }));
+        } catch (error: any) {
+            alert(error?.message || 'Lise listeye eklenemedi.');
+        }
+    };
+
+    const handleAddTurkeyUniversityFromAnalysisForm = async () => {
+        const schoolName = studentAcademicInfo.schoolName.trim();
+        if (!schoolName) return;
+
+        try {
+            const saved = await schoolNameService.add('university', schoolName);
+            setTurkeyUniversities(prev => prev.some(item => item.name.toLocaleLowerCase('tr-TR') === saved.name.toLocaleLowerCase('tr-TR'))
+                ? prev
+                : [...prev, saved].sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')));
+            setStudentAcademicInfo(prev => ({ ...prev, schoolName: saved.name }));
+        } catch (error: any) {
+            alert(error?.message || 'Üniversite listeye eklenemedi.');
+        }
+    };
+
     // Update age when DOB changes
     useEffect(() => {
         if (formData.dob) {
@@ -416,8 +503,16 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }
     }, [formData.dob]);
 
-    const validatePhone = (phone?: string) => {
+    const validatePhone = (phone?: string, isUnavailable = false) => {
         const normalizedPhone = phone?.trim() || '';
+
+        if (isUnavailable && !normalizedPhone) {
+            return '';
+        }
+
+        if (!normalizedPhone || normalizedPhone === '0') {
+            return 'Telefon zorunludur veya Yok seçilmelidir.';
+        }
 
         if (!normalizedPhone || !/^0\d{10}$/.test(normalizedPhone)) {
             return PHONE_ERROR_MESSAGE;
@@ -440,11 +535,15 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         return '';
     };
 
-    const validateEmail = (email?: string) => {
+    const validateEmail = (email?: string, isUnavailable = false) => {
         const normalizedEmail = email?.trim().toLowerCase() || '';
 
+        if (isUnavailable && !normalizedEmail) {
+            return '';
+        }
+
         if (!normalizedEmail) {
-            return 'E-posta zorunludur.';
+            return 'E-posta zorunludur veya Yok seçilmelidir.';
         }
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -467,7 +566,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         resetDuplicateWarning(name);
 
         if (name === 'email') {
-            setFieldError('email', validateEmail(value));
+            setEmailMarkedUnavailable(false);
+            setFieldError('email', validateEmail(value, false));
         }
 
         if (name === 'parentInfo.phone' || name === 'parent2Info.phone') {
@@ -479,11 +579,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
             if (normalizedValue.length > 11) {
                 normalizedValue = normalizedValue.slice(0, 11);
-            }
-
-            const errorMessage = validateOptionalParentPhone(normalizedValue);
-            if (errorMessage) {
-                alert(errorMessage);
             }
 
             const [parent, child] = name.split('.');
@@ -531,6 +626,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let value = e.target.value;
+        setPhoneMarkedUnavailable(false);
 
         // If user tries to delete the starting 0, put it back
         if (!value.startsWith('0')) {
@@ -551,7 +647,34 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }));
 
         resetDuplicateWarning('phone');
-        setFieldError('phone', validatePhone(value));
+        setFieldError('phone', validatePhone(value, false));
+    };
+
+    const markContactUnavailable = (field: 'email' | 'phone') => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: ''
+        }));
+
+        if (field === 'email') {
+            setEmailMarkedUnavailable(true);
+            setFieldError('email', '');
+        } else {
+            setPhoneMarkedUnavailable(true);
+            setFieldError('phone', '');
+        }
+
+        resetDuplicateWarning(field);
+    };
+
+    const clearParentContactField = (parent: 'parentInfo' | 'parent2Info', child: 'phone' | 'email') => {
+        setFormData(prev => ({
+            ...prev,
+            [parent]: {
+                ...(prev as any)[parent],
+                [child]: ''
+            }
+        }));
     };
 
     const handleDobPartChange = (field: 'day' | 'month' | 'year', value: string) => {
@@ -579,8 +702,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     };
 
     const validateRequiredFields = () => {
-        const emailError = validateEmail(formData.email);
-        const phoneError = validatePhone(formData.phone);
+        const emailError = validateEmail(formData.email, emailMarkedUnavailable);
+        const phoneError = validatePhone(formData.phone, phoneMarkedUnavailable);
+        const parentPhoneError = validateOptionalParentPhone(formData.parentInfo?.phone);
+        const parent2PhoneError = validateOptionalParentPhone(formData.parent2Info?.phone);
         const targetProgramsError = !formData.targetPrograms || formData.targetPrograms.length === 0
             ? 'En az bir program seçmelisiniz.'
             : '';
@@ -588,10 +713,16 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         setFormErrors({
             email: emailError || undefined,
             phone: phoneError || undefined,
+            parentPhone: parentPhoneError || undefined,
+            parent2Phone: parent2PhoneError || undefined,
             targetPrograms: targetProgramsError || undefined
         });
 
-        return !emailError && !phoneError && !targetProgramsError;
+        if (parentPhoneError || parent2PhoneError) {
+            alert(parentPhoneError || parent2PhoneError);
+        }
+
+        return !emailError && !phoneError && !parentPhoneError && !parent2PhoneError && !targetProgramsError;
     };
 
     const checkDuplicateContact = async () => {
@@ -692,6 +823,9 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 targetPrograms: []
             });
             setDuplicateWarning('');
+            setFormErrors({});
+            setEmailMarkedUnavailable(false);
+            setPhoneMarkedUnavailable(false);
 
             if (goToAnalysis) {
                 // Open analysis modal for the newly created student
@@ -744,6 +878,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             educationStatus: student.educationStatus || ''
         });
         setStudentContactInfo({
+            firstName: student.firstName || '',
+            lastName: student.lastName || '',
             phone: student.phone || '',
             email: student.email || '',
             parentName: student.parentInfo?.fullName || '',
@@ -781,7 +917,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             return;
         }
 
+        if (!studentContactInfo.firstName.trim() || !studentContactInfo.lastName.trim()) {
+            alert("Öğrenci adı ve soyadı boş olamaz.");
+            return;
+        }
+
+        const parentPhoneError = validateOptionalParentPhone(studentContactInfo.parentPhone);
+        const parent2PhoneError = validateOptionalParentPhone(studentContactInfo.parent2Phone);
+        if (parentPhoneError || parent2PhoneError) {
+            alert(parentPhoneError || parent2PhoneError);
+            return;
+        }
+
         const updatedData: Partial<Student> = {
+            firstName: studentContactInfo.firstName.trim(),
+            lastName: studentContactInfo.lastName.trim(),
             schoolName: studentAcademicInfo.schoolName,
             currentGrade: studentAcademicInfo.currentGrade,
             educationStatus: studentAcademicInfo.educationStatus as any,
@@ -1213,17 +1363,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <h4 className="text-sm font-semibold text-slate-700 mb-3">Okul Bilgileri</h4>
                     <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
-                            <input
-                                type="text"
-                                value={studentAcademicInfo.schoolName}
-                                onChange={(e) => setStudentAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                placeholder="Örn: Robert Koleji"
-                            />
-                        </div>
-
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm text-slate-600 mb-1">Mevcut Eğitimi</label>
@@ -1260,8 +1399,81 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             </div>
                         </div>
 
+                        {studentAcademicInfo.currentGrade && (studentAcademicInfo.educationStatus === 'High School' ? (
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <div className="min-w-0 flex-1">
+                                        <input
+                                            list="student-list-turkey-high-school-options"
+                                            type="text"
+                                            value={studentAcademicInfo.schoolName}
+                                            onChange={(e) => setStudentAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                            placeholder="Türkiye Liseleri içinde ara..."
+                                        />
+                                        <datalist id="student-list-turkey-high-school-options">
+                                            {turkeyHighSchools.map(school => (
+                                                <option key={school.id} value={school.name} />
+                                            ))}
+                                        </datalist>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddTurkeyHighSchoolFromAnalysisForm}
+                                        disabled={!studentAcademicInfo.schoolName.trim() || isTurkeyHighSchoolSelected(studentAcademicInfo.schoolName)}
+                                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Listede Yok
+                                    </button>
+                                </div>
+                                <p className="mt-1.5 text-xs text-slate-400">Okul listede yoksa adını yazıp “Listede Yok” butonuyla Türkiye Liseleri listesine ekleyebilirsiniz.</p>
+                            </div>
+                        ) : (studentAcademicInfo.educationStatus === 'University' || studentAcademicInfo.educationStatus === 'Master') ? (
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <div className="min-w-0 flex-1">
+                                        <input
+                                            list="student-list-turkey-university-options"
+                                            type="text"
+                                            value={studentAcademicInfo.schoolName}
+                                            onChange={(e) => setStudentAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                            placeholder="Türkiye Üniversiteleri içinde ara..."
+                                        />
+                                        <datalist id="student-list-turkey-university-options">
+                                            {turkeyUniversities.map(university => (
+                                                <option key={university.id} value={university.name} />
+                                            ))}
+                                        </datalist>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddTurkeyUniversityFromAnalysisForm}
+                                        disabled={!studentAcademicInfo.schoolName.trim() || isTurkeyUniversitySelected(studentAcademicInfo.schoolName)}
+                                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Listede Yok
+                                    </button>
+                                </div>
+                                <p className="mt-1.5 text-xs text-slate-400">Okul listede yoksa adını yazıp “Listede Yok” butonuyla Türkiye Üniversiteleri listesine ekleyebilirsiniz.</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Okul Adı</label>
+                                <input
+                                    type="text"
+                                    value={studentAcademicInfo.schoolName}
+                                    onChange={(e) => setStudentAcademicInfo(prev => ({ ...prev, schoolName: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                    placeholder="Örn: Robert Koleji"
+                                />
+                            </div>
+                        ))}
+
                         {/* Dynamic Field/Department Input */}
-                        {studentAcademicInfo.educationStatus === 'High School' && (
+                        {shouldShowHighSchoolField(studentAcademicInfo.educationStatus, studentAcademicInfo.currentGrade) && (
                             <div>
                                 <label className="block text-sm text-slate-600 mb-1">Bölümü (Alan)</label>
                                 <select
@@ -1274,6 +1486,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                     <option value="Eşit Ağırlıklı">Eşit Ağırlıklı</option>
                                     <option value="Dil">Dil</option>
                                     <option value="IB">IB</option>
+                                    <option value="Yurtdışı Eğitim Sınıfı">Yurtdışı Eğitim Sınıfı</option>
                                 </select>
                             </div>
                         )}
@@ -1763,6 +1976,14 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
+                        <label className="block text-sm text-slate-600 mb-1">Adı</label>
+                        <input value={studentContactInfo.firstName} onChange={e => setStudentContactInfo({ ...studentContactInfo, firstName: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm" />
+                    </div>
+                    <div>
+                        <label className="block text-sm text-slate-600 mb-1">Soyadı</label>
+                        <input value={studentContactInfo.lastName} onChange={e => setStudentContactInfo({ ...studentContactInfo, lastName: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm" />
+                    </div>
+                    <div>
                         <label className="block text-sm text-slate-600 mb-1">Telefon</label>
                         <input value={studentContactInfo.phone} onChange={e => setStudentContactInfo({ ...studentContactInfo, phone: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm" />
                     </div>
@@ -2118,12 +2339,30 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                         </td>
                                         {/* Programlar Column */}
                                         <td className="py-4">
-                                            <div className="flex flex-col gap-1">
-                                                {student.targetPrograms?.slice(0, 4).map((p, idx) => (
-                                                    <span key={idx} className="w-fit px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-bold truncate max-w-[180px]">
-                                                        {p}
+                                            <div className="flex flex-wrap gap-2">
+                                                {student.targetPrograms?.slice(0, 4).map((p, idx) => {
+                                                    const logo = getProgramLogo(p);
+                                                    const ProgramLogoIcon = logo.Icon;
+
+                                                    return (
+                                                        <span
+                                                            key={`${p}-${idx}`}
+                                                            title={p}
+                                                            aria-label={p}
+                                                            className={`relative inline-flex h-9 w-9 items-center justify-center rounded-xl border ${logo.bg} ${logo.color} ${logo.border}`}
+                                                        >
+                                                            <ProgramLogoIcon className="h-4.5 w-4.5" />
+                                                            {logo.withStar && (
+                                                                <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
+                                                            )}
+                                                        </span>
+                                                    );
+                                                })}
+                                                {(student.targetPrograms?.length || 0) > 4 && (
+                                                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500">
+                                                        +{(student.targetPrograms?.length || 0) - 4}
                                                     </span>
-                                                ))}
+                                                )}
                                                 {(!student.targetPrograms || student.targetPrograms.length === 0) && (
                                                     <span className="text-slate-400 text-xs italic">-</span>
                                                 )}
@@ -2232,6 +2471,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     >
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200/50 animate-fade-in">
                             <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                            <div className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-950 px-5 py-4 text-white">
+                                <img
+                                    src={UNIC_LOGO_URL}
+                                    alt="UNIC Logo"
+                                    className="h-14 w-14 rounded-xl bg-white/95 object-contain p-1.5"
+                                />
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-indigo-200">UNIC</p>
+                                    <h3 className="text-lg font-bold">Yeni Öğrenci Kaydı</h3>
+                                </div>
+                            </div>
                             {/* Personal Info Section */}
                             <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
                                 <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -2266,33 +2516,49 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1.5">E-posta</label>
-                                        <div className="relative">
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                            <input
-                                                required
-                                                type="email"
-                                                name="email"
-                                                value={formData.email}
-                                                onChange={handleInputChange}
-                                                placeholder="ahmet@example.com"
-                                                className={`w-full pl-10 pr-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white ${formErrors.email ? 'border-rose-300' : 'border-slate-300'}`}
-                                            />
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                <input
+                                                    type="email"
+                                                    name="email"
+                                                    value={formData.email}
+                                                    onChange={handleInputChange}
+                                                    placeholder={emailMarkedUnavailable ? 'E-posta yok' : 'ahmet@example.com'}
+                                                    className={`w-full pl-10 pr-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white ${formErrors.email ? 'border-rose-300' : 'border-slate-300'}`}
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => markContactUnavailable('email')}
+                                                className={`px-3 rounded-xl border text-sm font-semibold transition-colors ${emailMarkedUnavailable ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
+                                            >
+                                                Yok
+                                            </button>
                                         </div>
                                         {formErrors.email && <p className="text-xs text-rose-600 mt-1.5">{formErrors.email}</p>}
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1.5">Telefon</label>
-                                        <div className="relative">
-                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                            <input
-                                                required
-                                                name="phone"
-                                                value={formData.phone}
-                                                onChange={handlePhoneChange}
-                                                placeholder="05xx xxx xx xx"
-                                                maxLength={11}
-                                                className={`w-full pl-10 pr-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white font-mono ${formErrors.phone ? 'border-rose-300' : 'border-slate-300'}`}
-                                            />
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                <input
+                                                    name="phone"
+                                                    value={formData.phone}
+                                                    onChange={handlePhoneChange}
+                                                    placeholder={phoneMarkedUnavailable ? 'Telefon yok' : '05xx xxx xx xx'}
+                                                    maxLength={11}
+                                                    className={`w-full pl-10 pr-3 py-2.5 border rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-white font-mono ${formErrors.phone ? 'border-rose-300' : 'border-slate-300'}`}
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => markContactUnavailable('phone')}
+                                                className={`px-3 rounded-xl border text-sm font-semibold transition-colors ${phoneMarkedUnavailable ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
+                                            >
+                                                Yok
+                                            </button>
                                         </div>
                                         {formErrors.phone && <p className="text-xs text-rose-600 mt-1.5">{formErrors.phone}</p>}
                                     </div>
@@ -2443,23 +2709,41 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                                 </div>
                                                 <div>
                                                     <label className="block text-sm font-medium text-slate-700 mb-1">Veli Telefon</label>
-                                                    <input
-                                                        name="parentInfo.phone"
-                                                        value={formData.parentInfo?.phone}
-                                                        onChange={handleInputChange}
-                                                        maxLength={11}
-                                                        placeholder="05xx xxx xx xx"
-                                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                                                    />
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            name="parentInfo.phone"
+                                                            value={formData.parentInfo?.phone}
+                                                            onChange={handleInputChange}
+                                                            maxLength={11}
+                                                            placeholder="05xx xxx xx xx"
+                                                            className={`min-w-0 flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${formErrors.parentPhone ? 'border-rose-300' : 'border-slate-300'}`}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => clearParentContactField('parentInfo', 'phone')}
+                                                            className="px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                                                        >
+                                                            Yok
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-sm font-medium text-slate-700 mb-1">Veli E-posta</label>
-                                                    <input
-                                                        name="parentInfo.email"
-                                                        value={formData.parentInfo?.email}
-                                                        onChange={handleInputChange}
-                                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                                                    />
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            name="parentInfo.email"
+                                                            value={formData.parentInfo?.email}
+                                                            onChange={handleInputChange}
+                                                            className="min-w-0 flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => clearParentContactField('parentInfo', 'email')}
+                                                            className="px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                                                        >
+                                                            Yok
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2489,23 +2773,41 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                                 </div>
                                                 <div>
                                                     <label className="block text-sm font-medium text-slate-700 mb-1">Veli Telefon</label>
-                                                    <input
-                                                        name="parent2Info.phone"
-                                                        value={formData.parent2Info?.phone}
-                                                        onChange={handleInputChange}
-                                                        maxLength={11}
-                                                        placeholder="05xx xxx xx xx"
-                                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                                                    />
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            name="parent2Info.phone"
+                                                            value={formData.parent2Info?.phone}
+                                                            onChange={handleInputChange}
+                                                            maxLength={11}
+                                                            placeholder="05xx xxx xx xx"
+                                                            className={`min-w-0 flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${formErrors.parent2Phone ? 'border-rose-300' : 'border-slate-300'}`}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => clearParentContactField('parent2Info', 'phone')}
+                                                            className="px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                                                        >
+                                                            Yok
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="block text-sm font-medium text-slate-700 mb-1">Veli E-posta</label>
-                                                    <input
-                                                        name="parent2Info.email"
-                                                        value={formData.parent2Info?.email}
-                                                        onChange={handleInputChange}
-                                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                                                    />
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            name="parent2Info.email"
+                                                            value={formData.parent2Info?.email}
+                                                            onChange={handleInputChange}
+                                                            className="min-w-0 flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => clearParentContactField('parent2Info', 'email')}
+                                                            className="px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                                                        >
+                                                            Yok
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

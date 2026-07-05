@@ -26,10 +26,30 @@ const getAI = () => {
 
 const MODEL_NAME = "gemini-2.5-flash";
 
+const uniqueValues = (values: Array<string | undefined | null>) => Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]));
+
+const getInterestedEducationSummary = (student: Student) => {
+  const selectedCountries = uniqueValues([
+    ...(student.targetCountries || []),
+    student.analysis?.preferences?.country1,
+    student.analysis?.preferences?.country2,
+    student.analysis?.preferences?.country3,
+    student.analysis?.preferences?.country4,
+    student.analysis?.preferences?.country5,
+  ]);
+  const selectedPrograms = uniqueValues(student.targetPrograms || []);
+
+  if (selectedCountries.length === 0 || selectedPrograms.length === 0) return '';
+
+  const countrySummary = selectedCountries.join(', ');
+  return selectedPrograms.map(program => `${countrySummary} - ${program} tercihi`).join(', ');
+};
+
 /**
  * Analyzes a student profile to provide program recommendations and risk assessment.
  */
 export const analyzeStudentProfile = async (student: Student): Promise<AnalysisResult> => {
+  const interestedEducationSummary = getInterestedEducationSummary(student);
   const ai = getAI();
   if (!ai) {
     return {
@@ -41,7 +61,7 @@ export const analyzeStudentProfile = async (student: Student): Promise<AnalysisR
         { name: "Technical University of Munich", country: "Germany", matchScore: 95, tuition: 0 },
         { name: "University of Amsterdam", country: "Netherlands", matchScore: 88, tuition: 12000 },
       ],
-      overallAssessment: "The student shows strong potential for European technical universities. Focus on IELTS preparation. (Fallback Data)"
+      overallAssessment: `${interestedEducationSummary ? `${interestedEducationSummary}. ` : ''}The student shows strong potential for European technical universities. Focus on IELTS preparation. (Fallback Data)`
     };
   }
 
@@ -53,6 +73,7 @@ export const analyzeStudentProfile = async (student: Student): Promise<AnalysisR
     ${JSON.stringify(student)}
 
     Task:
+    0. If present, start the overallAssessment with this exact interested education summary: ${interestedEducationSummary || 'Not provided'}
     1. Recommend 3 specific university programs/majors based on interests and background.
     2. Estimate Visa Risk Score (0-100, where 100 is high risk).
     3. Provide reasoning for the risk.
@@ -125,7 +146,7 @@ export const analyzeStudentProfile = async (student: Student): Promise<AnalysisR
         { name: "Technical University of Munich", country: "Germany", matchScore: 95, tuition: 0 },
         { name: "University of Amsterdam", country: "Netherlands", matchScore: 88, tuition: 12000 },
       ],
-      overallAssessment: "The student shows strong potential for European technical universities. Focus on IELTS preparation."
+      overallAssessment: `${interestedEducationSummary ? `${interestedEducationSummary}. ` : ''}The student shows strong potential for European technical universities. Focus on IELTS preparation.`
     };
   }
 };

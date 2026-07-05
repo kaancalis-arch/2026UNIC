@@ -623,7 +623,7 @@ function shouldUseDirectFetchFallback(parserProfile: ParserProfile) {
 function parseProgramsByProfile(markdown: string, html: string, level: ProgramLevel, parserProfile: ParserProfile, courseUrl: string) {
   switch (parserProfile) {
     case 'manchester':
-      return parseManchesterPrograms(markdown, level, courseUrl);
+      return parseGenericPrograms(markdown, level);
     case 'birmingham':
       return parseBirminghamPrograms(markdown, html, level, courseUrl);
     case 'leeds':
@@ -635,10 +635,6 @@ function parseProgramsByProfile(markdown: string, html: string, level: ProgramLe
     default:
       return parseGenericPrograms(markdown || html, level, courseUrl);
   }
-}
-
-function parseManchesterPrograms(markdown: string, level: ProgramLevel, courseUrl: string) {
-  return parseGenericPrograms(markdown, level, courseUrl);
 }
 
 function parseBirminghamPrograms(markdown: string, html: string, level: ProgramLevel, courseUrl: string) {
@@ -653,7 +649,7 @@ function parseSheffieldPrograms(markdown: string, level: ProgramLevel, courseUrl
   return parseGenericPrograms(markdown, level, courseUrl);
 }
 
-function parseGenericPrograms(markdown: string, level: ProgramLevel, courseUrl: string) {
+function parseGenericPrograms(markdown: string, level: ProgramLevel, courseUrl = '') {
   return parseProgramsFromMarkdown(markdown, level, courseUrl, false);
 }
 

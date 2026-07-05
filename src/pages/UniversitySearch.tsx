@@ -15,6 +15,11 @@ import { systemService, BudgetRange } from '../services/systemService';
 import { jsPDF } from 'jspdf';
 import { getCountryCode, getFlagEmoji } from '../utils/countryUtils';
 
+const normalizeDepartment = (value?: string) =>
+    (value || '')
+        .toLocaleLowerCase('tr-TR')
+        .trim();
+
 const UniversitySearch: React.FC = () => {
     const [universities, setUniversities] = useState<UniversityData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +35,10 @@ const UniversitySearch: React.FC = () => {
     
     // Selection
     const [selectedUnis, setSelectedUnis] = useState<string[]>([]);
+    const [expandedProgramsModal, setExpandedProgramsModal] = useState<{
+        universityName: string;
+        programs: UniversityProgram[];
+    } | null>(null);
 
     useEffect(() => {
         loadData();
@@ -56,13 +65,26 @@ const UniversitySearch: React.FC = () => {
 
     const countries = Array.from(new Set(universities.flatMap(u => u.countries || []))).sort();
     const selectedDegreeName = mainDegrees.find(deg => deg.id === selectedDegree)?.name || '';
+    const selectedDepartment = selectedDegreeName;
+
+    useEffect(() => {
+        const programs = universities.flatMap(uni => uni.programs || []);
+        console.log('SELECTED_DEPARTMENT_FILTER:', selectedDepartment);
+        console.log('PROGRAM_MATCHED_DEPARTMENTS_SAMPLE:', programs.slice(0, 20).map(p => p.matched_departments));
+    }, [selectedDepartment, universities]);
 
     const matchesSelectedDegree = (program: UniversityProgram) => {
-        if (!selectedDegreeName) return true;
+        if (!selectedDegree) return true;
+        if (!selectedDepartment) return false;
 
-        const normalizedDegree = selectedDegreeName.toLowerCase();
-        return program.name.toLowerCase().includes(normalizedDegree) ||
-            (program.groupNames || []).some(groupName => groupName.toLowerCase() === normalizedDegree);
+        const normalizedDepartment = normalizeDepartment(selectedDepartment);
+        const programDepartments = [
+            ...(program.groupNames || []),
+            ...(program.matched_departments || []),
+        ];
+
+        return normalizeDepartment(program.name).includes(normalizedDepartment) ||
+            programDepartments.some(department => normalizeDepartment(department) === normalizedDepartment);
     };
 
     const hasAnyFilter = searchTerm.trim() !== '' || 
@@ -643,7 +665,19 @@ const UniversitySearch: React.FC = () => {
                                                             </div>
                                                         ))}
                                                         {filteredPrograms.length > 3 && (
-                                                            <p className="text-[10px] font-medium text-indigo-500 ml-3">+{filteredPrograms.length - 3} more matches</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    setExpandedProgramsModal({
+                                                                        universityName: uni.name,
+                                                                        programs: filteredPrograms,
+                                                                    });
+                                                                }}
+                                                                className="ml-3 text-left text-[10px] font-bold text-indigo-500 transition hover:text-indigo-700 hover:underline"
+                                                            >
+                                                                +{filteredPrograms.length - 3} more matches
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </>
@@ -702,6 +736,67 @@ const UniversitySearch: React.FC = () => {
                 </>
             )}
 
+            {expandedProgramsModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+                    <div className="max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-6">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-900">Tüm Eşleşen Programlar</h3>
+                                <p className="mt-1 text-sm font-semibold text-slate-500">{expandedProgramsModal.universityName}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setExpandedProgramsModal(null)}
+                                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                            >
+                                Kapat
+                            </button>
+                        </div>
+                        <div className="max-h-[65vh] overflow-auto p-6">
+                            <table className="w-full min-w-[760px] text-left text-sm">
+                                <thead className="bg-slate-50 text-xs uppercase tracking-widest text-slate-400">
+                                    <tr>
+                                        <th className="px-4 py-3 font-black">Program</th>
+                                        <th className="px-4 py-3 font-black">Tür</th>
+                                        <th className="px-4 py-3 font-black">Bütçe</th>
+                                        <th className="px-4 py-3 font-black">Bölüm Etiketleri</th>
+                                        <th className="px-4 py-3 font-black">Link</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {expandedProgramsModal.programs.map((program) => (
+                                        <tr key={program.id} className="hover:bg-slate-50/70">
+                                            <td className="px-4 py-3 font-bold text-slate-800">{program.name}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${program.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {program.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-sm font-semibold text-emerald-600">{program.tuitionRange || 'N/A'}</td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {(program.groupNames || []).length > 0 ? program.groupNames.map((groupName) => (
+                                                        <span key={groupName} className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">
+                                                            {groupName}
+                                                        </span>
+                                                    )) : <span className="text-xs italic text-slate-400">Gruplanmamış</span>}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {program.link ? (
+                                                    <a href={program.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:underline">
+                                                        Aç <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                ) : <span className="text-xs text-slate-400">-</span>}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
