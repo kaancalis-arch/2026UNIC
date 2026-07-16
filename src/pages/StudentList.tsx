@@ -20,6 +20,7 @@ import {
 import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { formatTitleCase } from '../lib/utils';
+import LanguageExamFields from '../components/LanguageExamFields';
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
@@ -989,7 +990,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const updateAnalysisField = (section: keyof AnalysisReport, field: string, value: any) => {
         // Only format text fields, exclude IDs and technical selections
-        const technicalFields = ['program1Category', 'program2Category', 'range', 'educationStatus', 'languageStatus', 'examStatus'];
+        const technicalFields = ['program1Category', 'program2Category', 'range', 'educationStatus', 'languageStatus', 'examStatus', 'examType', 'examType2', 'examType3'];
         const formattedValue = (typeof value === 'string' && !technicalFields.includes(field)) ? formatTitleCase(value) : value;
         setAnalysisForm(prev => ({
             ...prev,
@@ -998,6 +999,59 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 [field]: formattedValue
             }
         }));
+    };
+
+    const updateLanguageExamStatus = (hasTakenExam: boolean) => {
+        setAnalysisForm(prev => ({
+            ...prev,
+            language: {
+                ...prev.language,
+                hasTakenExam,
+                estimatedLevel: hasTakenExam ? undefined : prev.language.estimatedLevel,
+                examType: hasTakenExam ? prev.language.examType : undefined,
+                examScore: hasTakenExam ? prev.language.examScore : undefined,
+                examOtherNote: hasTakenExam ? prev.language.examOtherNote : undefined,
+                pastExamDate: hasTakenExam ? prev.language.pastExamDate : undefined,
+                examType2: hasTakenExam ? prev.language.examType2 : undefined,
+                examScore2: hasTakenExam ? prev.language.examScore2 : undefined,
+                examOtherNote2: hasTakenExam ? prev.language.examOtherNote2 : undefined,
+                pastExamDate2: hasTakenExam ? prev.language.pastExamDate2 : undefined,
+                examType3: hasTakenExam ? prev.language.examType3 : undefined,
+                examScore3: hasTakenExam ? prev.language.examScore3 : undefined,
+                examOtherNote3: hasTakenExam ? prev.language.examOtherNote3 : undefined,
+                pastExamDate3: hasTakenExam ? prev.language.pastExamDate3 : undefined,
+            }
+        }));
+    };
+
+    const updateExamPreparationStatus = (isPreparingForExam: boolean) => {
+        setAnalysisForm(prev => ({
+            ...prev,
+            language: {
+                ...prev.language,
+                isPreparingForExam,
+                targetExam: undefined,
+                examDate: undefined,
+                hasRegisteredForExam: undefined,
+                examRegistrationDate: undefined,
+                preparationNotes: undefined,
+                wantsTutoring: undefined,
+            }
+        }));
+    };
+
+    const toggleExamRegistration = () => {
+        setAnalysisForm(prev => {
+            const hasRegisteredForExam = !prev.language.hasRegisteredForExam;
+            return {
+                ...prev,
+                language: {
+                    ...prev.language,
+                    hasRegisteredForExam,
+                    examRegistrationDate: hasRegisteredForExam ? prev.language.examRegistrationDate : undefined,
+                }
+            };
+        });
     };
 
     const updateNestedExam = (key: string, field: string, value: any) => {
@@ -1048,13 +1102,13 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         <label className="block text-sm text-slate-600 mb-2">Dil seviyeni belirleyecek bir sınava girdin mi?</label>
                         <div className="flex gap-4">
                             <button
-                                onClick={() => updateAnalysisField('language', 'hasTakenExam', true)}
+                                onClick={() => updateLanguageExamStatus(true)}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${analysisForm.language.hasTakenExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                             >
                                 Evet, Girdim
                             </button>
                             <button
-                                onClick={() => updateAnalysisField('language', 'hasTakenExam', false)}
+                                onClick={() => updateLanguageExamStatus(false)}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${analysisForm.language.hasTakenExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                             >
                                 Hayır, Girmedim
@@ -1063,69 +1117,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     </div>
 
                     {analysisForm.language.hasTakenExam && (
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">1. Sınav Skoru / Detayı</label>
-                                    <input
-                                        type="text"
-                                        value={analysisForm.language.examScore || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'examScore', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                        placeholder="Örn: IELTS 6.5"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                    <input
-                                        type="date"
-                                        value={analysisForm.language.pastExamDate || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'pastExamDate', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">2. Sınav Skoru (İsteğe Bağlı)</label>
-                                    <input
-                                        type="text"
-                                        value={analysisForm.language.examScore2 || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'examScore2', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                    <input
-                                        type="date"
-                                        value={analysisForm.language.pastExamDate2 || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'pastExamDate2', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">3. Sınav Skoru (İsteğe Bağlı)</label>
-                                    <input
-                                        type="text"
-                                        value={analysisForm.language.examScore3 || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'examScore3', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                    <input
-                                        type="date"
-                                        value={analysisForm.language.pastExamDate3 || ''}
-                                        onChange={(e) => updateAnalysisField('language', 'pastExamDate3', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        <LanguageExamFields
+                            language={analysisForm.language}
+                            onChange={(field, value) => updateAnalysisField('language', field, value)}
+                        />
                     )}
 
                     {analysisForm.language.hasTakenExam === false && (
@@ -1235,13 +1230,13 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         </label>
                         <div className="flex gap-4">
                             <button
-                                onClick={() => updateAnalysisField('language', 'isPreparingForExam', true)}
+                                onClick={() => updateExamPreparationStatus(true)}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${analysisForm.language.isPreparingForExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                             >
                                 Evet
                             </button>
                             <button
-                                onClick={() => updateAnalysisField('language', 'isPreparingForExam', false)}
+                                onClick={() => updateExamPreparationStatus(false)}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${analysisForm.language.isPreparingForExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                             >
                                 Hayır

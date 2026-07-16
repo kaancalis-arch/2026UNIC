@@ -80,16 +80,24 @@ export interface AnalysisReport {
   // 1. Dil Yeterliliği
   language: {
     hasTakenExam?: boolean; // Dil seviyeni belirleyecek bir sınava girdin mi?
-    examScore?: string; // If yes, score/details
+    examType?: string;
+    examScore?: string;
+    examOtherNote?: string;
     pastExamDate?: string; // Sınava girdiği tarih
+    examType2?: string;
     examScore2?: string;
+    examOtherNote2?: string;
     pastExamDate2?: string;
+    examType3?: string;
     examScore3?: string;
+    examOtherNote3?: string;
     pastExamDate3?: string;
     estimatedLevel?: string; // Tahmini İngilizce Seviyen Nedir? (A1-C2, Unknown)
     isPreparingForExam?: boolean; // Hazırlandığın bir dil sınavı var mı? OR Tekrar Sınava girecek misin?
     targetExam?: string; // e.g., IELTS UKVI
     examDate?: string; // Ne zaman sınava girmeyi planlıyorsun? (Future)
+    hasRegisteredForExam?: boolean;
+    examRegistrationDate?: string;
     wantsTutoring?: boolean; // Deneme Sınavına Katılmak ve Özel Ders hakkında bilgi almak ister misin?
     languageNotes?: string; // Bu aşamaya bir not kutucuğu ekle
     otherLanguages?: Array<{ language: string; level: string }>;

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
@@ -12,9 +13,10 @@ import { visaChecklistService, VisaChecklistItem } from '../services/visaCheckli
 import { DEFAULT_PROFILE_BOXES, getVisibleProfileBoxIds, ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, schoolNameService } from '../services/schoolNameService';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { MOCK_TUITION_RANGES } from '../services/mockData';
+import LanguageExamFields from '../components/LanguageExamFields';
 import { 
   ArrowLeft, 
   BrainCircuit, 
@@ -60,7 +62,9 @@ import {
   Sun,
   MessageCircle,
   Star,
-  Briefcase
+  Briefcase,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -68,6 +72,9 @@ interface StudentDetailProps {
   onBack: () => void;
   isSidebarCollapsed?: boolean;
 }
+
+const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
+  active ? createPortal(children, document.body) : <>{children}</>;
 
 type StudentDetailTab = 'profile' | 'documents' | 'analysis' | 'roadmap' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
 
@@ -119,6 +126,24 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   
   // PDF Loading State
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isPrintPreviewOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsPrintPreviewOpen(false);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isPrintPreviewOpen]);
   
   // Tuition Ranges
   const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
@@ -192,6 +217,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [isLoadingVisaItems, setIsLoadingVisaItems] = useState(false);
   const [visaChecklistExpanded, setVisaChecklistExpanded] = useState(false);
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
+  const [hiddenAnalysisReportSections, setHiddenAnalysisReportSections] = useState<Record<string, boolean>>({});
 
   const normalizedTargetDegree = student.targetDegree || '';
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
@@ -238,20 +264,78 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
   const getInterestedEducationItems = () => {
     const countries = getSelectedPreferenceCountries();
-    const programs = Array.from(new Set((student.targetPrograms || []).map(program => program.trim()).filter(Boolean)));
+    const programs: string[] = Array.from(new Set<string>((student.targetPrograms || []).map(program => program.trim()).filter(Boolean)));
 
     if (countries.length === 0 || programs.length === 0) return [];
 
     return programs.map(program => ({ countries, program }));
   };
 
-  const getReportAcademicSummary = () => {
-    const lines: string[] = [];
+  const normalizeDefinitionLookupValue = (value?: string) => (value || '').trim().toLocaleLowerCase('tr-TR');
 
-    if (student.schoolName) {
-      lines.push(student.schoolName);
+  const findCountryDefinition = (countryName: string) => {
+    const normalizedCountryName = normalizeDefinitionLookupValue(countryName);
+    if (!normalizedCountryName) return undefined;
+
+    return allCountriesData.find(country => {
+      const normalizedName = normalizeDefinitionLookupValue(country.name);
+      const normalizedId = normalizeDefinitionLookupValue(country.id);
+
+      return normalizedName === normalizedCountryName || normalizedId === normalizedCountryName;
+    }) || allCountriesData.find(country => {
+      const normalizedName = normalizeDefinitionLookupValue(country.name);
+
+      return normalizedName.length > 2 && (
+        normalizedName.includes(normalizedCountryName) || normalizedCountryName.includes(normalizedName)
+      );
+    });
+  };
+
+  type CountryEducationLevel = 'bachelor' | 'master' | 'general';
+
+  const getCountryEducationLevel = (): CountryEducationLevel => {
+    const valuesToCheck = [student.targetDegree, ...(student.targetPrograms || [])]
+      .map(value => normalizeDefinitionLookupValue(value));
+    const normalizedEducationStatus = normalizeDefinitionLookupValue(student.educationStatus);
+
+    if (valuesToCheck.some(value => value.includes('master') || value.includes('yüksek lisans') || value.includes('yuksek lisans') || value.includes('graduate'))) {
+      return 'master';
     }
 
+    if (valuesToCheck.some(value => value.includes('undergraduate') || value.includes('bachelor') || value.includes('lisans') || value.includes('university') || value.includes('üniversite') || value.includes('universite'))) {
+      return 'bachelor';
+    }
+
+    if (normalizedEducationStatus === 'university' || normalizedEducationStatus === 'master' || normalizedEducationStatus === 'graduate') {
+      return 'master';
+    }
+
+    if (normalizedEducationStatus === 'high school') {
+      return 'bachelor';
+    }
+
+    return 'general';
+  };
+
+  const getCountryEducationLevelLabel = (level: CountryEducationLevel) => {
+    if (level === 'master') return 'Yüksek Lisans';
+    if (level === 'bachelor') return 'Lisans';
+    return student.targetDegree || 'Genel Eğitim';
+  };
+
+  const getCountryEducationReportItems = () => {
+    const educationLevel = getCountryEducationLevel();
+    const selectedPrograms = Array.from(new Set((student.targetPrograms || []).map(program => program.trim()).filter(Boolean)));
+
+    return getSelectedPreferenceCountries().map(countryName => ({
+      countryName,
+      country: findCountryDefinition(countryName),
+      educationLevel,
+      selectedPrograms
+    }));
+  };
+
+  const getReportAcademicSummary = () => {
     const detailParts: string[] = [];
 
     if (student.currentGrade) {
@@ -271,11 +355,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       detailLine = `${detailLine}${detailLine ? ' ve ' : ''}Yaklaşık Not Ortalaması ${student.analysis.academic.gpa}`;
     }
 
-    if (detailLine) {
-      lines.push(detailLine);
-    }
+    return {
+      school: student.schoolName || 'Okul bilgisi girilmedi',
+      detail: detailLine || 'Sınıf ve akademik bilgi girilmedi'
+    };
+  };
 
-    return lines.join(' - ') || 'Okul ve sınıf bilgisi girilmedi';
+  const formatLanguageExamResult = (type?: string, score?: string, otherNote?: string) => {
+    const examName = type === 'Diğer' ? (otherNote || type) : type;
+    return [examName, score].filter(Boolean).join(' - ') || '-';
   };
 
   const loadOptions = async () => {
@@ -684,82 +772,85 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
-  const handlePrintAnalysisReport = () => {
+  const handlePrintAnalysisReport = async () => {
     const input = document.getElementById('unic-analysis-report-area');
     if (!input) return;
 
-    const pageTitle = `${student.firstName} ${student.lastName} - UNIC Öğrenci Analiz Raporu`;
-    const styleMarkup = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-        .map(element => element.outerHTML)
-        .join('\n');
-    const printStyles = `
-      <style>
-        @page { size: A4; margin: 12mm; }
+    setIsGeneratingPDF(true);
+    try {
+      await document.fonts.ready;
+      await Promise.all(Array.from(input.querySelectorAll('img')).map(image => image.decode().catch(() => undefined)));
+
+      const canvas = await html2canvas(input, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: clonedDocument => {
+          clonedDocument
+            .querySelectorAll<HTMLElement>('#unic-analysis-report-area [data-pdf-hidden="true"]')
+            .forEach(element => element.style.display = 'none');
+        },
+      });
+
+      const a4PageHeight = Math.round(canvas.width * (297 / 210));
+      const pageImages: string[] = [];
+
+      for (let offset = 0; offset < canvas.height; offset += a4PageHeight) {
+        const sliceHeight = Math.min(a4PageHeight, canvas.height - offset);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const pageContext = pageCanvas.getContext('2d');
+        if (!pageContext) throw new Error('Baskı görüntüsü oluşturulamadı.');
+
+        pageContext.fillStyle = '#ffffff';
+        pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageContext.drawImage(canvas, 0, offset, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        pageImages.push(pageCanvas.toDataURL('image/png'));
+      }
+
+      const printFrame = document.createElement('iframe');
+      printFrame.setAttribute('title', 'Analiz raporu yazdırma');
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = '0';
+      document.body.appendChild(printFrame);
+
+      const printDocument = printFrame.contentDocument;
+      const printWindow = printFrame.contentWindow;
+      if (!printDocument || !printWindow) {
+        printFrame.remove();
+        throw new Error('Yazdırma penceresi açılamadı.');
+      }
+
+      printDocument.open();
+      printDocument.write(`<!doctype html><html><head><title>UNIC Analiz Raporu</title><style>
+        @page { size: A4 portrait; margin: 0; }
         * { box-sizing: border-box; }
-        html, body { margin: 0; min-height: 100%; background: #ffffff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
-        body { padding: 0; }
-        #print-root { width: 100%; }
-        [data-pdf-hidden="true"], input, button { display: none !important; }
-        a { color: inherit; text-decoration: none; }
-        img { max-width: 100%; }
-        .shadow-sm, .shadow, .shadow-lg, .shadow-xl, .shadow-2xl { box-shadow: none !important; }
-        .print\\:hidden { display: none !important; }
-        @media print {
-          html, body { background: #ffffff !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-          #print-root { break-inside: auto; }
-          .rounded-2xl, .rounded-xl, .rounded-lg { break-inside: avoid; }
-        }
-      </style>
-    `;
-    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+        html, body { margin: 0; padding: 0; background: #fff; }
+        .page { width: 210mm; height: 297mm; overflow: hidden; background: #fff; page-break-after: always; break-after: page; }
+        .page:last-child { page-break-after: auto; break-after: auto; }
+        img { display: block; width: 210mm; height: auto; }
+      </style></head><body>${pageImages.map(image => `<div class="page"><img src="${image}" alt="" /></div>`).join('')}</body></html>`);
+      printDocument.close();
 
-    if (!printWindow) {
-        const fallbackStyle = document.createElement('style');
-        fallbackStyle.textContent = `
-          @media print {
-            body * { visibility: hidden !important; }
-            #unic-analysis-report-area, #unic-analysis-report-area * { visibility: visible !important; }
-            #unic-analysis-report-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; padding: 0 !important; background: #ffffff !important; }
-            [data-pdf-hidden="true"], input, button { display: none !important; }
-          }
-        `;
-        document.head.appendChild(fallbackStyle);
+      await Promise.all(Array.from(printDocument.images).map(image => image.decode().catch(() => undefined)));
 
-        const cleanup = () => {
-            fallbackStyle.remove();
-            window.removeEventListener('afterprint', cleanup);
-        };
-
-        window.addEventListener('afterprint', cleanup);
-        window.print();
-        return;
+      const cleanup = () => printFrame.remove();
+      printWindow.addEventListener('afterprint', cleanup, { once: true });
+      printWindow.focus();
+      printWindow.print();
+      window.setTimeout(cleanup, 60000);
+    } catch (error) {
+      console.error('Analysis report print failed', error);
+      alert('Rapor yazdırmaya hazırlanırken bir hata oluştu.');
+    } finally {
+      setIsGeneratingPDF(false);
     }
-
-    printWindow.document.open();
-    printWindow.document.write(`
-      <!doctype html>
-      <html lang="tr">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>${pageTitle}</title>
-          ${styleMarkup}
-          ${printStyles}
-        </head>
-        <body>
-          <div id="print-root">${input.innerHTML}</div>
-          <script>
-            window.addEventListener('load', function () {
-              setTimeout(function () {
-                window.focus();
-                window.print();
-              }, 250);
-            });
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
   };
 
   // --- Document Logic Start ---
@@ -915,6 +1006,59 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }));
   };
 
+  const updateLanguageExamStatus = (hasTakenExam: boolean) => {
+    setEditForm(prev => ({
+      ...prev,
+      language: {
+        ...prev.language,
+        hasTakenExam,
+        estimatedLevel: hasTakenExam ? undefined : prev.language.estimatedLevel,
+        examType: hasTakenExam ? prev.language.examType : undefined,
+        examScore: hasTakenExam ? prev.language.examScore : undefined,
+        examOtherNote: hasTakenExam ? prev.language.examOtherNote : undefined,
+        pastExamDate: hasTakenExam ? prev.language.pastExamDate : undefined,
+        examType2: hasTakenExam ? prev.language.examType2 : undefined,
+        examScore2: hasTakenExam ? prev.language.examScore2 : undefined,
+        examOtherNote2: hasTakenExam ? prev.language.examOtherNote2 : undefined,
+        pastExamDate2: hasTakenExam ? prev.language.pastExamDate2 : undefined,
+        examType3: hasTakenExam ? prev.language.examType3 : undefined,
+        examScore3: hasTakenExam ? prev.language.examScore3 : undefined,
+        examOtherNote3: hasTakenExam ? prev.language.examOtherNote3 : undefined,
+        pastExamDate3: hasTakenExam ? prev.language.pastExamDate3 : undefined,
+      }
+    }));
+  };
+
+  const updateExamPreparationStatus = (isPreparingForExam: boolean) => {
+    setEditForm(prev => ({
+      ...prev,
+      language: {
+        ...prev.language,
+        isPreparingForExam,
+        targetExam: undefined,
+        examDate: undefined,
+        hasRegisteredForExam: undefined,
+        examRegistrationDate: undefined,
+        preparationNotes: undefined,
+        wantsTutoring: undefined,
+      }
+    }));
+  };
+
+  const toggleExamRegistration = () => {
+    setEditForm(prev => {
+      const hasRegisteredForExam = !prev.language.hasRegisteredForExam;
+      return {
+        ...prev,
+        language: {
+          ...prev.language,
+          hasRegisteredForExam,
+          examRegistrationDate: hasRegisteredForExam ? prev.language.examRegistrationDate : undefined,
+        }
+      };
+    });
+  };
+
   const updateNestedExam = (key: string, field: string, value: any) => {
     setEditForm(prev => {
       const currentExams = prev.academic.exams || {};
@@ -1008,13 +1152,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <label className="block text-sm text-slate-600 mb-2">Dil seviyeni belirleyecek bir sınava girdin mi?</label>
                     <div className="flex gap-4">
                         <button 
-                            onClick={() => updateEditField('language', 'hasTakenExam', true)}
+                            onClick={() => updateLanguageExamStatus(true)}
                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.hasTakenExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                         >
                             Evet, Girdim
                         </button>
                         <button 
-                            onClick={() => updateEditField('language', 'hasTakenExam', false)}
+                            onClick={() => updateLanguageExamStatus(false)}
                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.hasTakenExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                         >
                             Hayır, Girmedim
@@ -1023,69 +1167,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 </div>
 
                 {editForm.language.hasTakenExam && (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">1. Sınav Skoru / Detayı</label>
-                                <input 
-                                    type="text"
-                                    value={editForm.language.examScore || ''}
-                                    onChange={(e) => updateEditField('language', 'examScore', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                    placeholder="Örn: IELTS 6.5"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                <input 
-                                    type="date"
-                                    value={editForm.language.pastExamDate || ''}
-                                    onChange={(e) => updateEditField('language', 'pastExamDate', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">2. Sınav Skoru (İsteğe Bağlı)</label>
-                                <input 
-                                    type="text"
-                                    value={editForm.language.examScore2 || ''}
-                                    onChange={(e) => updateEditField('language', 'examScore2', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                <input 
-                                    type="date"
-                                    value={editForm.language.pastExamDate2 || ''}
-                                    onChange={(e) => updateEditField('language', 'pastExamDate2', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">3. Sınav Skoru (İsteğe Bağlı)</label>
-                                <input 
-                                    type="text"
-                                    value={editForm.language.examScore3 || ''}
-                                    onChange={(e) => updateEditField('language', 'examScore3', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm text-slate-600 mb-1">Sınav Tarihi</label>
-                                <input 
-                                    type="date"
-                                    value={editForm.language.pastExamDate3 || ''}
-                                    onChange={(e) => updateEditField('language', 'pastExamDate3', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    <LanguageExamFields
+                        language={editForm.language}
+                        onChange={(field, value) => updateEditField('language', field, value)}
+                    />
                 )}
 
                 {editForm.language.hasTakenExam === false && (
@@ -1195,13 +1280,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </label>
                     <div className="flex gap-4">
                          <button 
-                            onClick={() => updateEditField('language', 'isPreparingForExam', true)}
+                            onClick={() => updateExamPreparationStatus(true)}
                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.isPreparingForExam === true ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                         >
                             Evet
                         </button>
                         <button 
-                            onClick={() => updateEditField('language', 'isPreparingForExam', false)}
+                            onClick={() => updateExamPreparationStatus(false)}
                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${editForm.language.isPreparingForExam === false ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
                         >
                             Hayır
@@ -2460,6 +2545,204 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     </div>
   );
 
+  const toggleAnalysisReportSection = (sectionKey: string) => {
+    setHiddenAnalysisReportSections(prev => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey]
+    }));
+  };
+
+  const AnalysisReportSection = ({
+    sectionKey,
+    title,
+    className,
+    children
+  }: {
+    key?: string;
+    sectionKey: string;
+    title: string;
+    className: string;
+    children: React.ReactNode;
+  }) => {
+    const isHidden = !!hiddenAnalysisReportSections[sectionKey];
+
+    if (isHidden) {
+      return (
+        <div data-pdf-hidden="true" className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 print:hidden">
+          <span className="text-xs font-bold text-slate-500">{title} gizlendi.</span>
+          <button
+            type="button"
+            onClick={() => toggleAnalysisReportSection(sectionKey)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-600 shadow-sm ring-1 ring-indigo-100 transition hover:bg-indigo-50"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Göster
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`relative ${className}`}>
+        <button
+          data-pdf-hidden="true"
+          type="button"
+          onClick={() => toggleAnalysisReportSection(sectionKey)}
+          className="absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 shadow-sm ring-1 ring-slate-200 transition hover:bg-rose-50 hover:text-rose-600 hover:ring-rose-100 print:hidden"
+        >
+          <EyeOff className="h-3.5 w-3.5" />
+          Gizle
+        </button>
+        {children}
+      </div>
+    );
+  };
+
+  const ReportDefinitionField = ({ label, value }: { label: string, value?: string }) => {
+    if (!value) return null;
+
+    return (
+      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 print:border-slate-300 print:bg-white">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-600">{value}</p>
+      </div>
+    );
+  };
+
+  const renderCountryEducationReport = () => {
+    const reportItems = getCountryEducationReportItems();
+
+    if (reportItems.length === 0) return null;
+
+    return (
+      <AnalysisReportSection
+        sectionKey="country-education"
+        title="Ülke Bazlı Eğitim Bilgileri"
+        className="analysis-print-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none"
+      >
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 font-bold text-slate-800">
+              <Globe className="h-5 w-5 text-indigo-600" />
+              Ülke Bazlı Eğitim Bilgileri
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">System Settings ülke tanımlarından, seçilen eğitim tercihine göre alınır.</p>
+          </div>
+          <span className="inline-flex w-fit rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 ring-1 ring-indigo-100">
+            {reportItems.length} Ülke
+          </span>
+        </div>
+
+        <div className="space-y-4">
+          {reportItems.map(({ countryName, country, educationLevel, selectedPrograms }) => {
+            const displayCountryName = country?.name || countryName;
+            const countryCode = getCountryCode(displayCountryName);
+            const educationTypes = educationLevel === 'master'
+              ? country?.masterTypes || []
+              : educationLevel === 'bachelor'
+                ? country?.bachelorTypes || []
+                : [];
+            const requirementFields = educationLevel === 'bachelor'
+              ? [
+                  { label: 'YKS Şartları', value: country?.yksRequirement },
+                  { label: 'Genel Başvuru Kriterleri', value: country?.generalApplicationRequirements },
+                  { label: 'Sınav ve Belge Şartları', value: country?.examRequirements },
+                  { label: 'Foundation Bilgisi', value: country?.foundationRequirements },
+                ]
+              : educationLevel === 'master'
+                ? [
+                    { label: 'Genel Başvuru Kriterleri', value: country?.generalApplicationRequirements },
+                    { label: 'Sınav ve Belge Şartları', value: country?.examRequirements },
+                  ]
+                : [
+                    { label: 'Öğrenci Çalışma İzni', value: country?.studentWorkPermit },
+                    { label: 'Mezuniyet Sonrası Çalışma', value: country?.postGradWorkPermit },
+                    { label: 'Popüler Sektörler', value: country?.popularSectors },
+                  ];
+
+            return (
+              <AnalysisReportSection
+                key={`${countryName}-${educationLevel}`}
+                sectionKey={`country-${countryName}-${educationLevel}`}
+                title={`${displayCountryName} ${getCountryEducationLevelLabel(educationLevel)} bilgileri`}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:border-slate-300 print:shadow-none"
+              >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="analysis-print-flag inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-lg">
+                      {countryCode ? (
+                        <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} alt={displayCountryName} className="h-full w-full object-cover" />
+                      ) : (
+                        country?.flag || getFlagEmoji(displayCountryName)
+                      )}
+                    </span>
+                    <div>
+                      <h4 className="font-black text-slate-900">{displayCountryName}</h4>
+                      <p className="text-xs font-bold text-indigo-600">{getCountryEducationLevelLabel(educationLevel)} bilgileri</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {selectedPrograms.length > 0 && selectedPrograms.map(program => (
+                      <span key={program} className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-600 ring-1 ring-indigo-100">
+                        {program}
+                      </span>
+                    ))}
+                    {country?.currency && (
+                      <span className="inline-flex rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-100">{country.currency}</span>
+                    )}
+                  </div>
+                </div>
+
+                {!country ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-800">
+                    Bu ülke için System Settings içinde ülke tanımı bulunamadı.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_1.4fr]">
+                      <ReportDefinitionField label="Eğitim Sistemi" value={country.educationSystemDescription} />
+
+                      {educationTypes.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {educationLevel === 'master' ? 'Master Eğitim Türleri' : 'Lisans Eğitim Türleri'}
+                          </p>
+                          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                            {educationTypes.map((type, index) => (
+                              <div key={`${type.duration}-${index}`} className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 print:border-slate-300 print:bg-white">
+                                <p className="text-xs font-black text-slate-800">{type.duration || '-'}</p>
+                                <p className="mt-1 text-xs leading-relaxed text-slate-600">{type.description || '-'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
+                      {requirementFields.map(field => (
+                        <React.Fragment key={field.label}>
+                          <ReportDefinitionField label={field.label} value={field.value} />
+                        </React.Fragment>
+                      ))}
+                    </div>
+
+                    {(educationLevel === 'bachelor' || educationLevel === 'master') && (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <ReportDefinitionField label="Öğrenci Çalışma İzni" value={country.studentWorkPermit} />
+                        <ReportDefinitionField label="Mezuniyet Sonrası Çalışma" value={country.postGradWorkPermit} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </AnalysisReportSection>
+            );
+          })}
+        </div>
+      </AnalysisReportSection>
+    );
+  };
+
   const getProgramLogo = (programName: string) => {
     const normalizedName = programName.toLocaleLowerCase('tr-TR');
 
@@ -3136,22 +3419,22 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         {student.analysis?.language?.hasTakenExam ? (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1 {isExamExpired(student.analysis.language.pastExamDate) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore || '-'}</p>
-                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)}</p>
+                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1</p>
+                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType, student.analysis.language.examScore, student.analysis.language.examOtherNote)}</p>
+                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)} {isExamExpired(student.analysis.language.pastExamDate) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
                                 </div>
-                                {(student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
+                                {(student.analysis.language.examType2 || student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
                                     <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2 {isExamExpired(student.analysis.language.pastExamDate2) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore2 || '-'}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)}</p>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType2, student.analysis.language.examScore2, student.analysis.language.examOtherNote2)}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)} {isExamExpired(student.analysis.language.pastExamDate2) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
                                     </div>
                                 )}
-                                {(student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
+                                {(student.analysis.language.examType3 || student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
                                     <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3 {isExamExpired(student.analysis.language.pastExamDate3) && <span className="text-[9px] bg-red-100 px-1 py-0.5 rounded ml-1 text-red-700">Süresi Doldu</span>}</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{student.analysis.language.examScore3 || '-'}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600 inline-block px-1.5 py-0.5 bg-red-100/50 rounded' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)}</p>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType3, student.analysis.language.examScore3, student.analysis.language.examOtherNote3)}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)} {isExamExpired(student.analysis.language.pastExamDate3) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
                                     </div>
                                 )}
                             </div>
@@ -3779,45 +4062,148 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         Henüz AI Analizi yapılmadı. Lütfen üstteki "Run UNIC Analysis" butonuna tıklayın.
                    </div>
                )}
-                 {analysis && (
-                     <>
-                    <div className="flex justify-end print:hidden">
-                        <button
-                            type="button"
-                            onClick={handlePrintAnalysisReport}
-                            className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-600 shadow-sm ring-1 ring-rose-100 transition hover:bg-rose-100"
-                        >
-                            <Printer className="h-4 w-4" />
-                            Yazdır
-                        </button>
-                    </div>
-
-                    <div id="unic-analysis-report-area" className="space-y-6">
-                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
-                         <p className="text-xs font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
-                         <h2 className="mt-2 text-2xl font-black text-slate-900">{student.firstName} {student.lastName}</h2>
-                        <p className="mt-1 text-sm font-semibold text-slate-700">
-                            {getReportAcademicSummary()}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-500">Öğrenci ve veli bilgilendirme raporu</p>
-                    </div>
-
-                    {getInterestedEducationItems().length > 0 && (
-                        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm">
-                            <div className="mb-3 flex items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-indigo-600" />
-                                <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilenilen Eğitim Tercihleri</h3>
+                  {analysis && (
+                      <>
+                    <FullscreenPortal active={isPrintPreviewOpen}>
+                    <div
+                        className={isPrintPreviewOpen
+                            ? 'fixed !inset-0 !m-0 flex !h-[100dvh] !w-full !max-w-[100vw] flex-col overflow-hidden bg-slate-900/80 backdrop-blur-sm z-[10000] print:static print:block print:h-auto print:w-full print:bg-white'
+                            : ''}
+                        role={isPrintPreviewOpen ? 'dialog' : undefined}
+                        aria-modal={isPrintPreviewOpen ? true : undefined}
+                        aria-label={isPrintPreviewOpen ? 'A4 analiz raporu önizlemesi' : undefined}
+                    >
+                    <div className={isPrintPreviewOpen
+                        ? 'flex shrink-0 items-center justify-between border-b border-white/10 bg-slate-900 px-4 py-3 text-white print:hidden sm:px-6'
+                        : 'flex justify-end print:hidden'}>
+                        {isPrintPreviewOpen && (
+                            <div>
+                                <h3 className="text-sm font-black sm:text-base">A4 Baskı Önizleme</h3>
+                                <p className="text-xs text-slate-400">{student.firstName} {student.lastName} analiz raporu</p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                {getInterestedEducationItems().map(item => (
-                                    <span key={`${item.countries.join('-')}-${item.program}`} className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm">
+                        )}
+                        <div className="flex items-center gap-2">
+                            {isPrintPreviewOpen && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPrintPreviewOpen(false)}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+                                >
+                                    <X className="h-4 w-4" />
+                                    Kapat
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={isPrintPreviewOpen ? handlePrintAnalysisReport : () => setIsPrintPreviewOpen(true)}
+                                disabled={isGeneratingPDF}
+                                className={isPrintPreviewOpen
+                                    ? 'inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-rose-500 disabled:cursor-wait disabled:opacity-60'
+                                    : 'inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-600 shadow-sm ring-1 ring-rose-100 transition hover:bg-rose-100'}
+                            >
+                                {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                                {isGeneratingPDF ? 'Hazırlanıyor...' : 'Yazdır / PDF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className={isPrintPreviewOpen
+                        ? 'flex-1 overflow-auto bg-slate-200 p-3 print:overflow-visible print:bg-white print:p-0 sm:p-8'
+                        : ''}>
+
+                    <div id="unic-analysis-report-area" className={`analysis-print-report space-y-6 ${isPrintPreviewOpen ? 'box-border min-h-[297mm] w-[210mm] max-w-none bg-white p-[12mm] shadow-2xl print:min-h-0 print:w-full print:p-0 print:shadow-none sm:mx-auto' : ''}`}>
+                      <div className="analysis-print-card analysis-print-header rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
+                          <h2 className="mt-2 text-2xl font-black text-slate-900">{student.firstName} {student.lastName}</h2>
+                         <p className="mt-1 text-sm font-bold text-slate-700">{getReportAcademicSummary().school}</p>
+                         <p className="mt-1 text-sm font-semibold text-slate-600">{getReportAcademicSummary().detail}</p>
+                     </div>
+
+                     <AnalysisReportSection
+                         sectionKey="language-proficiency"
+                         title="Dil Yeterliliği"
+                         className="analysis-print-card rounded-2xl border border-sky-100 bg-sky-50/60 p-5 shadow-sm"
+                     >
+                         <div className="mb-4 flex items-center gap-2">
+                             <Globe className="h-5 w-5 text-sky-600" />
+                             <h3 className="text-sm font-black uppercase tracking-widest text-sky-800">Dil Yeterliliği</h3>
+                         </div>
+                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                             {student.analysis?.language?.hasTakenExam && [
+                                 { type: student.analysis.language.examType, score: student.analysis.language.examScore, otherNote: student.analysis.language.examOtherNote, date: student.analysis.language.pastExamDate },
+                                 { type: student.analysis.language.examType2, score: student.analysis.language.examScore2, otherNote: student.analysis.language.examOtherNote2, date: student.analysis.language.pastExamDate2 },
+                                 { type: student.analysis.language.examType3, score: student.analysis.language.examScore3, otherNote: student.analysis.language.examOtherNote3, date: student.analysis.language.pastExamDate3 }
+                             ].filter(exam => exam.type || exam.score || exam.date).map((exam, index) => (
+                                 <div key={index} className={`rounded-xl border bg-white p-3 ${isExamExpired(exam.date) ? 'border-red-200' : 'border-emerald-100'}`}>
+                                     <p className={`text-[10px] font-black uppercase tracking-widest ${isExamExpired(exam.date) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav {index + 1}</p>
+                                     <p className="mt-1 text-sm font-black text-slate-800">{formatLanguageExamResult(exam.type, exam.score, exam.otherNote)}</p>
+                                     {exam.date && (
+                                         <p className={`mt-1 text-xs font-semibold ${isExamExpired(exam.date) ? 'text-red-600' : 'text-slate-500'}`}>
+                                             {formatExamDate(exam.date)}
+                                             {isExamExpired(exam.date) && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-red-700">Süresi Doldu</span>}
+                                         </p>
+                                     )}
+                                 </div>
+                             ))}
+                             {student.analysis?.language?.estimatedLevel && (
+                                 <div className="rounded-xl border border-sky-100 bg-white p-3">
+                                     <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Tahmini İngilizce Seviyesi</p>
+                                     <span className={`mt-2 inline-block rounded-lg border px-3 py-1.5 text-sm font-black ${getLanguageLevelColor(student.analysis.language.estimatedLevel)}`}>
+                                         {student.analysis.language.estimatedLevel}
+                                     </span>
+                                 </div>
+                             )}
+                             {student.analysis?.language?.targetExam && (
+                                 <div className="rounded-xl border border-violet-100 bg-white p-3">
+                                     <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Hedeflenen Sınav</p>
+                                     <p className="mt-1 text-sm font-black text-slate-800">{student.analysis.language.targetExam}</p>
+                                 </div>
+                             )}
+                         </div>
+                         {student.analysis?.language?.otherLanguages && student.analysis.language.otherLanguages.length > 0 && (
+                             <div className="mt-3 flex flex-wrap gap-2">
+                                 {student.analysis.language.otherLanguages.map((language, index) => (
+                                     <span key={`${language.language}-${index}`} className="rounded-full border border-sky-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">
+                                         {language.language}: <span className="text-sky-700">{language.level}</span>
+                                     </span>
+                                 ))}
+                             </div>
+                         )}
+                         {student.analysis?.language?.languageNotes && (
+                             <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
+                                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Dil Yeterliliği Notları</p>
+                                 <p className="mt-1 text-xs leading-relaxed text-slate-700">{student.analysis.language.languageNotes}</p>
+                             </div>
+                         )}
+                         {!student.analysis?.language?.hasTakenExam &&
+                          !student.analysis?.language?.estimatedLevel &&
+                          !student.analysis?.language?.targetExam &&
+                          !student.analysis?.language?.otherLanguages?.length &&
+                          !student.analysis?.language?.languageNotes && (
+                             <p className="rounded-xl border border-dashed border-sky-200 bg-white/70 p-4 text-sm text-slate-500">Dil yeterliliği bilgisi girilmedi.</p>
+                         )}
+                     </AnalysisReportSection>
+
+                      {getInterestedEducationItems().length > 0 && (
+                         <AnalysisReportSection
+                             sectionKey="interested-education"
+                             title="İlgilendiği Eğitim Tercihleri"
+                             className="analysis-print-card analysis-print-preferences rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm"
+                         >
+                             <div className="mb-3 flex items-center gap-2">
+                                 <Sparkles className="h-4 w-4 text-indigo-600" />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilendiği Eğitim Tercihleri</h3>
+                             </div>
+                             <div className="analysis-print-chip-list flex flex-wrap gap-2">
+                                 {getInterestedEducationItems().map(item => (
+                                    <span key={`${item.countries.join('-')}-${item.program}`} className="analysis-print-chip inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm">
                                         <span className="flex items-center gap-1">
                                             {item.countries.map((country, index) => {
                                                 const countryCode = getCountryCode(country);
 
                                                 return (
-                                                <span key={country} className="inline-flex items-center gap-1.5">
-                                                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-[10px]">
+                                                <span key={country} className="analysis-print-country inline-flex items-center gap-1.5">
+                                                    <span className="analysis-print-flag inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-[10px]">
                                                         {countryCode ? (
                                                             <img
                                                                 src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`}
@@ -3832,27 +4218,68 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                 </span>
                                                 );
                                             })}
-                                        </span>
-                                        <span className="text-indigo-300">-</span>
-                                        <span>{item.program} tercihi</span>
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                                         </span>
+                                         <span className="text-indigo-300">-</span>
+                                         <span>{normalizeDefinitionLookupValue(item.program) === 'üniversite' ? 'Üniversite Eğitimi' : `${item.program} tercihi`}</span>
+                                     </span>
+                                 ))}
+                             </div>
+                             {(() => {
+                                 const selectedDegrees: string[] = Array.from(new Set<string>([
+                                     student.analysis?.preferences?.program1,
+                                     student.analysis?.preferences?.program2,
+                                 ].filter((value): value is string => !!value)));
 
-                    {/* Preferred Degrees Details */}
-                    {student.analysis?.preferences && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                 if (selectedDegrees.length === 0) return null;
+
+                                 return (
+                                     <div className="mt-5 border-t border-indigo-100 pt-4">
+                                         <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-indigo-500">İlgilendiği Bölümler</p>
+                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                             {selectedDegrees.map(degreeName => {
+                                                 const degree = mainDegreeDetails.find(item => normalizeDefinitionLookupValue(item.name) === normalizeDefinitionLookupValue(degreeName));
+
+                                                 return (
+                                                     <div key={degreeName} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+                                                         <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg border border-indigo-100 bg-indigo-50">
+                                                             {degree?.imageUrl ? (
+                                                                 <img src={degree.imageUrl} alt={degreeName} className="h-full w-full object-cover" />
+                                                             ) : (
+                                                                 <div className="flex h-full w-full items-center justify-center text-indigo-300">
+                                                                     <GraduationCap className="h-6 w-6" />
+                                                                 </div>
+                                                             )}
+                                                         </div>
+                                                         <h4 className="text-sm font-black leading-snug text-slate-800">{degreeName}</h4>
+                                                     </div>
+                                                 );
+                                             })}
+                                         </div>
+                                     </div>
+                                 );
+                             })()}
+                          </AnalysisReportSection>
+                     )}
+
+                    {renderCountryEducationReport()}
+
+                     {/* Preferred Degrees Details */}
+                     {student.analysis?.preferences && (
+                        <div className="analysis-print-degree-grid grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             {[student.analysis.preferences.program1, student.analysis.preferences.program2]
                                 .filter((p): p is string => !!p)
                                 .map((progName) => {
                                     const degree = mainDegreeDetails.find(d => d.name === progName);
                                     if (!degree) return null;
                                     return (
-                                        <div key={progName} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none h-full">
-                                            <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-100">
-                                                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                        <AnalysisReportSection
+                                            key={progName}
+                                            sectionKey={`degree-${progName}`}
+                                            title={`${progName} bölüm detayları`}
+                                            className="analysis-print-card analysis-print-degree-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none h-full"
+                                        >
+                                            <div className="analysis-print-degree-header flex items-center gap-3 mb-4 pb-2 border-b border-slate-100">
+                                                <div className="analysis-print-degree-image h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 flex items-center justify-center">
                                                     {degree.imageUrl ? (
                                                         <img src={degree.imageUrl} alt={degree.name} className="h-full w-full object-cover" />
                                                     ) : (
@@ -3884,7 +4311,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                      <p className="text-sm text-slate-600">{degree.sectorStatusTR}</p>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </AnalysisReportSection>
                                     );
                                 })}
                         </div>
@@ -3991,7 +4418,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         });
 
                         return (
-                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none">
+                            <AnalysisReportSection
+                                sectionKey="suggested-universities"
+                                title="Önerilen Üniversiteler"
+                                className="analysis-print-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none"
+                            >
                                     <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-center lg:justify-between">
                                      <div>
                                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -4046,9 +4477,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                 : allMatchingPrograms.filter(programMatchesSuggestedFilter);
 
                                             return (
-                                                <div key={idx} className="flex items-start gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
+                                                <div key={idx} className="analysis-print-university-row flex items-start gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
                                                     {/* Flag */}
-                                                    <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                    <div className="analysis-print-flag analysis-print-university-flag w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                                                         {countryCode ? (
                                                             <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} className="w-full h-full object-cover" alt={countryName} />
                                                         ) : (
@@ -4163,11 +4594,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                         })}
                                     </div>
                                 )}
-                            </div>
+                            </AnalysisReportSection>
                         );
                     })()}
 
                     </div>
+                    </div>
+                    </div>
+                    </FullscreenPortal>
                 </>
              )}
         </div>
