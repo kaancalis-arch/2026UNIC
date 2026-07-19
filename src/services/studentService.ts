@@ -1,6 +1,6 @@
 
 import { supabase } from './supabaseClient';
-import { Student, PipelineStage } from '../types';
+import { Student, PipelineStage, UserRole } from '../types';
 import { MOCK_STUDENTS } from './mockData';
 
 // Helpers to map snake_case DB columns to camelCase TS props
@@ -45,8 +45,9 @@ function mapDbToStudent(row: any): Student {
         hasGreenPassport: row.has_green_passport,
         analysis: row.analysis,
         counselorNotes: row.counselor_notes,
-        counselorId: row.counselor_id,
-        representativeId: row.representative_id,
+        branchId: row.branch_id,
+        // counselor_id is retained in the database to avoid a risky column rename.
+        assignedUserId: row.counselor_id || row.representative_id,
         analyseStatus: row.analyse_status,
         applications: row.applications || [],
         visaStatus: row.visa_status,
@@ -94,8 +95,8 @@ function mapStudentToDb(student: Partial<Student>): any {
         has_green_passport: student.hasGreenPassport,
         analysis: student.analysis,
         counselor_notes: student.counselorNotes,
-        counselor_id: student.counselorId,
-        representative_id: student.representativeId,
+        branch_id: student.branchId === '' ? null : student.branchId,
+        counselor_id: student.assignedUserId === '' ? null : student.assignedUserId,
         analyse_status: student.analyseStatus,
         applications: student.applications,
         visa_status: student.visaStatus,
@@ -108,6 +109,38 @@ function mapStudentToDb(student: Partial<Student>): any {
     // Remove undefined keys to avoid overwriting with nulls if using patch
     Object.keys(dbObj).forEach(key => dbObj[key] === undefined && delete dbObj[key]);
     return dbObj;
+}
+
+const ASSIGNABLE_ROLES = new Set<UserRole>([
+    UserRole.CONSULTANT,
+    UserRole.REPRESENTATIVE,
+    UserRole.STUDENT_REPRESENTATIVE
+]);
+
+async function validateAssignment(student: Partial<Student>): Promise<void> {
+    if (!student.assignedUserId) return;
+    if (!student.branchId) {
+        throw new Error('Sorumlu kullanıcı atamak için öğrencinin şubesi belirtilmelidir.');
+    }
+    if (!supabase) return;
+
+    const { data: assignedUser, error } = await supabase
+        .from('system_users')
+        .select('id, role, status, branch_id')
+        .eq('id', student.assignedUserId)
+        .maybeSingle();
+
+    if (error) throw new Error(error.message || 'Sorumlu kullanıcı doğrulanamadı.');
+    if (!assignedUser) throw new Error('Seçilen sorumlu kullanıcı bulunamadı.');
+    if (!ASSIGNABLE_ROLES.has(assignedUser.role as UserRole)) {
+        throw new Error('Öğrenci yalnızca Danışman, Temsilci veya Öğrenci Temsilcisine atanabilir.');
+    }
+    if (assignedUser.status !== 'active') {
+        throw new Error('Öğrenci yalnızca aktif bir kullanıcıya atanabilir.');
+    }
+    if (assignedUser.branch_id !== student.branchId) {
+        throw new Error('Öğrenci ile sorumlu kullanıcı aynı şubede olmalıdır.');
+    }
 }
 
 export const studentService = {
@@ -199,6 +232,8 @@ export const studentService = {
             throw new Error('En az bir program seçilmelidir.');
         }
 
+        await validateAssignment(student);
+
         if (!supabase) {
             return { ...student, id: `local-${Date.now()}` } as Student;
         }
@@ -227,6 +262,20 @@ export const studentService = {
 
     async update(id: string, updates: Partial<Student>): Promise<void> {
         if (!supabase) return;
+
+        if (updates.assignedUserId !== undefined || updates.branchId !== undefined) {
+            const { data: currentStudent, error } = await supabase
+                .from('student_profiles')
+                .select('branch_id, counselor_id')
+                .eq('id', id)
+                .single();
+
+            if (error) throw new Error(error.message || 'Öğrenci atama bilgisi okunamadı.');
+            await validateAssignment({
+                branchId: updates.branchId ?? currentStudent.branch_id,
+                assignedUserId: updates.assignedUserId ?? currentStudent.counselor_id
+            });
+        }
 
         const dbUpdates = mapStudentToDb(updates);
 

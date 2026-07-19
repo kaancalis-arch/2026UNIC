@@ -15,7 +15,7 @@ import { systemService } from '../services/systemService';
 import { studentService } from '../services/studentService';
 import { ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, SchoolNameType, schoolNameService } from '../services/schoolNameService';
-import { supabase } from '../services/supabaseClient';
+import { getPublicStorageUrl, supabase } from '../services/supabaseClient';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
     Shield, CheckCircle, XCircle, Plus, PlusCircle, MoreVertical, Edit2, Trash2, 
@@ -26,6 +26,17 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
+import {
+    getAllowedParentRoles,
+    roleRequiresBranch,
+    roleRequiresSameBranch,
+    validateUserHierarchy,
+    wouldCreateHierarchyCycle
+} from '../auth/userHierarchy';
+import { useAuth } from '../auth/AuthContext';
+
+const DEFAULT_UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
+const DEFAULT_USER_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=UNICUser';
 
 // University Types with Descriptions (default values)
 const DEFAULT_UNIVERSITY_TYPES = [
@@ -136,6 +147,7 @@ const Settings: React.FC<{
     onUniversitySelect?: (university: UniversityData) => void;
     onDepartmentKeywordRulesOpen?: () => void;
 }> = ({ onUniversitySelect, onDepartmentKeywordRulesOpen }) => {
+    const { currentUser } = useAuth();
     const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions'>('users');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
@@ -288,7 +300,7 @@ const Settings: React.FC<{
         email: '',
         phone: '',
         avatarUrl: '',
-        role: UserRole.CONSULTANT,
+        role: undefined,
         branch_id: '',
         status: 'active',
         parent_user_id: ''
@@ -618,8 +630,13 @@ const Settings: React.FC<{
     };
 
     const loadUsers = async () => {
-        const data = await systemService.getSystemUsers();
-        setUsers(data);
+        try {
+            const data = await systemService.getSystemUsers();
+            setUsers(data);
+        } catch (error) {
+            console.error('Kullanıcılar yüklenemedi.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcılar yüklenemedi. Lütfen tekrar deneyin.');
+        }
     };
 
     const getStudentSourceBranchId = (branch: Branch) => {
@@ -632,14 +649,7 @@ const Settings: React.FC<{
 
     const getBranchCrmStudents = (branch: Branch) => {
         const sourceBranchId = getStudentSourceBranchId(branch);
-        const branchUserIds = new Set(users
-            .filter(user => user.branch_id === sourceBranchId)
-            .map(user => user.id));
-
-        return crmStudents.filter(student => {
-            const assignedUserIds = [student.counselorId, student.representativeId].filter(Boolean) as string[];
-            return assignedUserIds.some(userId => branchUserIds.has(userId));
-        });
+        return crmStudents.filter(student => student.branchId === sourceBranchId);
     };
 
     // User Actions
@@ -651,7 +661,7 @@ const Settings: React.FC<{
             email: '',
             phone: '',
             avatarUrl: '',
-            role: UserRole.CONSULTANT,
+            role: undefined,
             branch_id: '',
             status: 'active',
             parent_user_id: ''
@@ -681,16 +691,21 @@ const Settings: React.FC<{
 
     const handleSaveUser = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!newUser.role) {
+            alert('Rol seçimi zorunludur.');
+            return;
+        }
+
         const createdUser: SystemUser = {
             id: editingUserId || `user-${Date.now()}`,
             full_name: newUser.full_name || '',
             email: newUser.email || '',
             phone: newUser.phone || '',
-            role: newUser.role || UserRole.CONSULTANT,
-            branch_id: newUser.branch_id || '',
+            role: newUser.role,
+            branch_id: roleRequiresBranch(newUser.role) ? newUser.branch_id || '' : '',
             parent_user_id: newUser.parent_user_id,
             status: newUser.status || 'active',
-            avatarUrl: newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name}`,
+            avatarUrl: newUser.avatarUrl || DEFAULT_USER_AVATAR_URL,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -698,6 +713,13 @@ const Settings: React.FC<{
         try {
             if (!editingUserId && !newUserPassword) {
                 alert('Sisteme giriş şifresi zorunludur.');
+                return;
+            }
+
+            const parentUser = users.find(user => user.id === createdUser.parent_user_id);
+            const hierarchyValidation = validateUserHierarchy(createdUser, parentUser, users);
+            if (!hierarchyValidation.valid) {
+                alert(hierarchyValidation.error);
                 return;
             }
 
@@ -790,9 +812,9 @@ const Settings: React.FC<{
 
     const toggleUserStatus = async (id: string) => {
         const user = users.find(u => u.id === id);
-        if (!user) return;
+        if (!user || user.status !== 'passive') return;
 
-        const nextStatus = user.status === 'active' ? 'passive' : 'active';
+        const nextStatus = 'active';
         setUsers(users.map(u => u.id === id ? { ...u, status: nextStatus, updated_at: new Date().toISOString() } : u));
 
         try {
@@ -804,37 +826,57 @@ const Settings: React.FC<{
         }
     };
 
-    const deleteUser = async (id: string) => {
-        if(window.confirm('Are you sure you want to delete this user?')) {
-            const previousUsers = users;
-            setUsers(users.filter(u => u.id !== id));
-            try {
-                await systemService.deleteSystemUser(id);
-            } catch (error) {
-                console.error('Failed to delete system_users record', error);
-                alert('Kullanıcı Supabase üzerinden silinemedi.');
-                setUsers(previousUsers);
-            }
+    const deactivateUser = async (user: SystemUser) => {
+        if (user.status === 'passive') return;
+        if (!window.confirm(`${user.full_name} adlı kullanıcıyı kaldırmak istediğinizden emin misiniz? Kullanıcı pasif duruma alınacaktır.`)) return;
+
+        try {
+            await systemService.deactivateSystemUser(user.id);
+            setUsers(current => current.map(item => item.id === user.id
+                ? { ...item, status: 'passive', updated_at: new Date().toISOString() }
+                : item
+            ));
+        } catch (error) {
+            console.error('Kullanıcı pasif duruma alınamadı.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcı kaldırılamadı. Lütfen tekrar deneyin.');
+        }
+    };
+
+    const permanentlyDeleteUser = async (user: SystemUser) => {
+        const confirmed = window.confirm(
+            `${user.full_name} adlı kullanıcı kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?`
+        );
+        if (!confirmed) return;
+
+        const enteredName = window.prompt(
+            `Kalıcı silmeyi onaylamak için kullanıcının tam adını yazın: ${user.full_name}`
+        );
+        if (enteredName !== user.full_name) {
+            if (enteredName !== null) alert('Girilen kullanıcı adı eşleşmedi. Kalıcı silme iptal edildi.');
+            return;
+        }
+
+        try {
+            await systemService.permanentlyDeleteSystemUser(user.id);
+            setUsers(current => current.filter(item => item.id !== user.id));
+        } catch (error) {
+            console.error('Kullanıcı kalıcı olarak silinemedi.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcı kalıcı olarak silinemedi. Lütfen tekrar deneyin.');
         }
     };
 
     const getAvailableParents = (role?: UserRole) => {
-        switch (role) {
-            case UserRole.ADMIN:
-                return users.filter(u => u.role === UserRole.SUPER_ADMIN);
-            case UserRole.BRANCH_MANAGER:
-                return users.filter(u => u.role === UserRole.ADMIN);
-            case UserRole.CONSULTANT:
-                return users.filter(u => u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.REPRESENTATIVE:
-                return users.filter(u => u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.STUDENT_REPRESENTATIVE:
-                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.STUDENT:
-                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            default:
-                return [];
-        }
+        const allowedRoles = getAllowedParentRoles(role);
+        return users
+            .filter(user => allowedRoles.includes(user.role))
+            .filter(user => user.status === 'active')
+            .filter(user => user.id !== editingUserId)
+            .filter(user => {
+                if (roleRequiresSameBranch(role)) return user.branch_id === newUser.branch_id;
+                return !newUser.branch_id || !user.branch_id || user.branch_id === newUser.branch_id;
+            })
+            .filter(user => !wouldCreateHierarchyCycle(editingUserId || undefined, user.id, users))
+            .sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr-TR'));
     };
 
     // --- UNIVERSITY LOGIC ---
@@ -843,7 +885,7 @@ const Settings: React.FC<{
         setUniversityForm({
             id: `uni-${Date.now()}`,
             name: '',
-            logo: 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8',
+            logo: DEFAULT_UNIC_LOGO_URL,
             countries: [],
             rankingUrl: '',
             websiteUrl: '',
@@ -1064,7 +1106,7 @@ const Settings: React.FC<{
 
                 let importedCount = 0;
                 let updatedCount = 0;
-                const defaultLogo = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8';
+                const defaultLogo = DEFAULT_UNIC_LOGO_URL;
 
                 for (const row of jsonData) {
                     const uniName = (row['Üniversite Adı'] || row['University Name'] || '').trim();
@@ -1841,12 +1883,15 @@ const Settings: React.FC<{
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <button 
-                                            onClick={() => toggleUserStatus(user.id)}
-                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                            user.status === 'active'
-                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                         <button
+                                             onClick={() => toggleUserStatus(user.id)}
+                                             disabled={user.status === 'active'}
+                                             title={user.status === 'passive' ? 'Kullanıcıyı yeniden etkinleştir' : 'Kullanıcı aktif'}
+                                             aria-label={user.status === 'passive' ? `${user.full_name} kullanıcısını yeniden etkinleştir` : `${user.full_name} kullanıcısı aktif`}
+                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                             user.status === 'active'
+                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
+                                                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                         }`}>
                                             {user.status === 'active' ? (
                                                 <><CheckCircle className="w-3 h-3" /> Aktif</>
@@ -1857,18 +1902,33 @@ const Settings: React.FC<{
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => openEditUserModal(user)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                             <button
+                                                 onClick={() => openEditUserModal(user)}
+                                                 title="Kullanıcıyı düzenle"
+                                                 aria-label={`${user.full_name} kullanıcısını düzenle`}
+                                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                                             >
                                                 <Edit className="w-4 h-4" />
                                             </button>
-                                            <button 
-                                                onClick={() => deleteUser(user.id)}
-                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                              <button
+                                                  onClick={() => deactivateUser(user)}
+                                                  disabled={user.status === 'passive' || currentUser?.id === user.id}
+                                                  title={currentUser?.id === user.id ? 'Kendi hesabınızı kaldıramazsınız' : user.status === 'passive' ? 'Kullanıcı zaten kaldırılmış' : 'Kullanıcıyı kaldır'}
+                                                 aria-label={`${user.full_name} kullanıcısını kaldır`}
+                                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                             >
+                                                 <Trash2 className="w-4 h-4" />
+                                             </button>
+                                             {currentUser?.role === UserRole.SUPER_ADMIN && currentUser.id !== user.id && (
+                                                 <button
+                                                     onClick={() => permanentlyDeleteUser(user)}
+                                                     title="Kullanıcıyı kalıcı olarak sil"
+                                                     aria-label={`${user.full_name} kullanıcısını kalıcı olarak sil`}
+                                                     className="p-2 text-rose-600 bg-rose-50 hover:text-white hover:bg-rose-600 rounded-lg transition-colors"
+                                                 >
+                                                     <XCircle className="w-4 h-4" />
+                                                 </button>
+                                             )}
                                         </div>
                                     </td>
                                 </tr>
@@ -2400,7 +2460,7 @@ const Settings: React.FC<{
 
                                     <div className="col-span-2 md:col-span-1">
                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Adı</label>
-                                        <input 
+                                        <input
                                             value={allProgramForm.name}
                                             onChange={(e) => setAllProgramForm({...allProgramForm, name: formatTitleCase(e.target.value)})}
                                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
@@ -4654,7 +4714,7 @@ const Settings: React.FC<{
                                 <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Kullanıcı Bilgileri</h3>
                                 <div className="mb-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4">
                                     <img
-                                        src={newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name || 'User'}`}
+                                        src={newUser.avatarUrl || DEFAULT_USER_AVATAR_URL}
                                         alt="Kullanıcı resmi"
                                         className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100 object-cover"
                                     />
@@ -4663,7 +4723,7 @@ const Settings: React.FC<{
                                         <div className="flex flex-wrap items-center gap-2">
                                             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                                                 <Upload className="h-4 w-4" />
-                                                Resim Seç
+                                                 Avatar Seç
                                                 <input
                                                     type="file"
                                                     accept="image/*"
@@ -4689,6 +4749,52 @@ const Settings: React.FC<{
                                         </div>
                                     </div>
                                 </div>
+                                <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+                                        <select
+                                            required
+                                            value={newUser.role || ''}
+                                            onChange={e => {
+                                                const role = e.target.value as UserRole;
+                                                setNewUser({
+                                                    ...newUser,
+                                                    role,
+                                                    branch_id: roleRequiresBranch(role) ? newUser.branch_id : '',
+                                                    parent_user_id: ''
+                                                });
+                                            }}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        >
+                                            <option value="">Rol Seçin</option>
+                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
+                                            <option value={UserRole.ADMIN}>Admin</option>
+                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
+                                            <option value={UserRole.CONSULTANT}>Danışman</option>
+                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
+                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilcisi</option>
+                                            <option value={UserRole.STUDENT}>Öğrenci</option>
+                                        </select>
+                                    </div>
+                                    {newUser.role && roleRequiresBranch(newUser.role) && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
+                                            <select
+                                                required={roleRequiresBranch(newUser.role)}
+                                                value={newUser.branch_id}
+                                                onChange={e => setNewUser({ ...newUser, branch_id: e.target.value, parent_user_id: '' })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            >
+                                                <option value="">Şube Seçin</option>
+                                                {branches.map(branch => (
+                                                    <option key={branch.id} value={branch.id}>
+                                                        {branch.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Ad Soyad</label>
@@ -4701,12 +4807,12 @@ const Settings: React.FC<{
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
-                                        <input 
+                                        <input
                                             required
                                             type="email"
-                                            value={newUser.email} 
+                                            value={newUser.email}
                                             onChange={e => setNewUser({...newUser, email: e.target.value})}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                         />
                                     </div>
                                     {!editingUserId && (
@@ -4723,56 +4829,16 @@ const Settings: React.FC<{
                                             />
                                         </div>
                                     )}
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                                        <select
-                                            value={newUser.role}
-                                            onChange={e => {
-                                                const newRole = e.target.value as UserRole;
-                                                setNewUser({
-                                                    ...newUser,
-                                                    role: newRole,
-                                                    branch_id: newRole === UserRole.SUPER_ADMIN || newRole === UserRole.ADMIN ? '' : newUser.branch_id,
-                                                    parent_user_id: ''
-                                                });
-                                            }}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                        >
-                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
-                                            <option value={UserRole.ADMIN}>Admin</option>
-                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
-                                            <option value={UserRole.CONSULTANT}>Danışman</option>
-                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
-                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilci</option>
-                                            <option value={UserRole.STUDENT}>Öğrenci</option>
-                                        </select>
-                                    </div>
-                                    {newUser.role !== UserRole.SUPER_ADMIN && newUser.role !== UserRole.ADMIN && (
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
-                                            <select
-                                                value={newUser.branch_id}
-                                                onChange={e => setNewUser({...newUser, branch_id: e.target.value})}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                            >
-                                                <option value="">Şube Seçin</option>
-                                                {branches.map(branch => (
-                                                    <option key={branch.id} value={branch.id}>
-                                                        {branch.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                             
-                            {(newUser.role === UserRole.ADMIN || newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT_REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
+                            {newUser.role && getAllowedParentRoles(newUser.role).length > 0 && (
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
                                     <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Bağlı Olduğu Yönetici
                                     </label>
                                     <select
+                                        required
                                         value={newUser.parent_user_id || ''}
                                         onChange={e => setNewUser({...newUser, parent_user_id: e.target.value})}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
@@ -4788,9 +4854,9 @@ const Settings: React.FC<{
                                         {newUser.role === UserRole.ADMIN ? 'Admin kullanıcıları Super Admin altında çalışır.' :
                                          newUser.role === UserRole.BRANCH_MANAGER ? 'Şube Müdürleri Admin altında çalışır.' :
                                          newUser.role === UserRole.CONSULTANT ? 'Danışmanlar Şube Müdürüne bağlıdır.' :
-                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler Danışman veya Şube Müdürüne bağlıdır.' :
-                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri Temsilci, Danışman veya Şube Müdürüne bağlıdır.' :
-                                         'Öğrenciler Temsilci, Danışman veya Şube Müdürüne atanır.'}
+                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler aynı şubedeki Danışman veya Şube Müdürüne bağlıdır.' :
+                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri yalnızca aynı şubedeki Danışmana bağlıdır.' :
+                                         'Öğrenciler aynı şubedeki Danışman, Temsilci veya Öğrenci Temsilcisine bağlıdır.'}
                                     </p>
                                 </div>
                             )}

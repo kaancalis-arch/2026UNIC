@@ -11,6 +11,8 @@ export interface VisaChecklistItem {
   required: boolean;
   translation_required: boolean;
   example_url?: string;
+  applyGlobally?: boolean;
+  applyToCountry?: boolean;
 }
 
 export interface VisaMetadata {

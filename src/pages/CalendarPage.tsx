@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, CalendarEntry, CalendarEvent, EVENT_TYPES, formatEventTime } from '../components/Calendar';
 import { Student, SystemUser, UserRole } from '../types';
 import { studentService } from '../services/studentService';
 import { calendarService } from '../services/calendarService';
-import { MOCK_USERS } from '../services/mockData';
+import { systemService } from '../services/systemService';
 import { motion } from 'framer-motion';
 import { Link2, Palmtree, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -49,14 +49,55 @@ const hasLegacyLocalCalendarData = () => {
   return false;
 };
 
-const CalendarPage: React.FC = () => {
+interface CalendarPageProps {
+  currentUser: SystemUser;
+}
+
+const CalendarPage: React.FC<CalendarPageProps> = ({ currentUser }) => {
   const [students, setStudents] = useState<Student[]>([]);
-  const [users] = useState<SystemUser[]>(MOCK_USERS);
+  const [users, setUsers] = useState<SystemUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(() => new Date().toISOString().split('T')[0]);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+
+  const assignableUsers = useMemo(() => {
+    if (currentUser.role === UserRole.STUDENT) {
+      return [];
+    }
+
+    const activeStaff = users.filter(
+      (user) => user.status === 'active' && user.role !== UserRole.STUDENT
+    );
+    const canSeeAllUsers = currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.ADMIN;
+    const scopedUsers = canSeeAllUsers
+      ? activeStaff
+      : activeStaff.filter((user) => user.branch_id === currentUser.branch_id);
+
+    return scopedUsers.sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr', { sensitivity: 'base' }));
+  }, [currentUser.branch_id, currentUser.role, users]);
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      setUsersLoading(true);
+      setUsersError(null);
+
+      try {
+        setUsers(await systemService.getSystemUsers());
+      } catch (error) {
+        console.error('Failed to load system users', error);
+        setUsers([]);
+        setUsersError('Kullanıcılar yüklenemedi');
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+
+    loadUsers();
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -108,6 +149,7 @@ const CalendarPage: React.FC = () => {
       ...event,
       id: '',
       link: event.link?.trim() || undefined,
+      createdBy: currentUser.id,
     };
 
     try {
@@ -273,8 +315,9 @@ const CalendarPage: React.FC = () => {
                         />
                         <select
                           value={event.assignedUserId || ''}
+                          disabled={usersLoading || Boolean(usersError) || assignableUsers.length === 0}
                           onChange={(e) => {
-                            const selectedUser = users.find((user) => user.id === e.target.value);
+                            const selectedUser = assignableUsers.find((user) => user.id === e.target.value);
                             handleUpdateCalendarEvent({
                               ...event,
                               assignedUserId: e.target.value || undefined,
@@ -283,15 +326,22 @@ const CalendarPage: React.FC = () => {
                           }}
                           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                          <option value="">Atanan kullanıcı seçin</option>
-                          {users
-                            .filter((user) => user.isActive && user.role !== UserRole.STUDENT)
-                            .map((user) => (
+                          <option value="">
+                            {usersLoading
+                              ? 'Kullanıcılar yükleniyor'
+                              : usersError
+                                ? 'Kullanıcılar yüklenemedi'
+                                : assignableUsers.length === 0
+                                  ? 'Atanabilir kullanıcı bulunamadı'
+                                  : 'Atanan kullanıcı seçin'}
+                          </option>
+                          {assignableUsers.map((user) => (
                               <option key={user.id} value={user.id}>
                                 {`${user.full_name} - ${user.role}`}
                               </option>
                             ))}
                         </select>
+                        {usersError && <p className="text-xs font-medium text-rose-600">{usersError}</p>}
                         <input
                           type="url"
                           value={event.link || ''}
@@ -334,7 +384,9 @@ const CalendarPage: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         <Calendar
           students={students}
-          users={users}
+          users={assignableUsers}
+          usersLoading={usersLoading}
+          usersError={usersError}
           entries={calendarEntries}
           events={calendarEvents}
           onAddEvent={handleAddCalendarEvent}

@@ -145,7 +145,8 @@ export const MOCK_STUDENTS: Student[] = [
     schoolName: "Tech University Berlin",
     currentGrade: "4. Sınıf",
     educationStatus: "University",
-    counselorId: "consultant-1",
+    branchId: "branch-1",
+    assignedUserId: "consultant-1",
     documents: [
       { id: 'passport', type: 'Pasaport', uploadedAt: '2023-09-01', expiryDate: '2024-05-15' }, // Expiring soon
       { id: 'transcript', type: 'Transkript', uploadedAt: '2023-09-05' }
@@ -169,8 +170,8 @@ export const MOCK_STUDENTS: Student[] = [
     schoolName: "Shanghai Int. High School",
     currentGrade: "12. Sınıf",
     educationStatus: "High School",
-    counselorId: "consultant-1",
-    representativeId: "rep-1",
+    branchId: "branch-1",
+    assignedUserId: "consultant-1",
     documents: [
       { id: 'passport', type: 'Pasaport', uploadedAt: '2023-01-01', expiryDate: '2028-01-01' } // Valid
     ]
@@ -193,7 +194,8 @@ export const MOCK_STUDENTS: Student[] = [
     schoolName: "Lagos State University",
     currentGrade: "Mezun",
     educationStatus: "Graduate",
-    counselorId: "consultant-1"
+    branchId: "branch-1",
+    assignedUserId: "consultant-1"
   }
 ];
 

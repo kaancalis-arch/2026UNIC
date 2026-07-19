@@ -1,235 +1,134 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { Student, AnalysisResult, RoadmapStep } from "../types";
+import { FunctionsHttpError } from '@supabase/supabase-js';
+import { AnalysisResult, RoadmapStep, Student } from '../types';
+import { supabase } from './supabaseClient';
 
-// Initialize Gemini Client
-// NOTE: In a real production app, these calls might happen via a backend proxy (Supabase Edge Functions)
-// to protect the API Key, but for this frontend-focused architecture, we call direct.
-// Initialize Gemini Client lazily to prevent crash if API key is missing
-let aiInstance: GoogleGenAI | null = null;
+const SESSION_EXPIRED_MESSAGE = 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.';
+const AI_UNAVAILABLE_MESSAGE = 'AI hizmeti şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.';
+const AI_REQUEST_FAILED_MESSAGE = 'AI isteği tamamlanamadı. Lütfen tekrar deneyin.';
 
-const getAI = () => {
-  if (!aiInstance) {
-    // Priority: 1. localStorage (user configured) 2. environment variable
-    const localKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
-    const envKey = process.env.GEMINI_API_KEY;
-    
-    const apiKey = localKey || envKey;
-
-    if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-      console.warn("GEMINI_API_KEY is missing. AI features will use fallback data.");
-      return null;
-    }
-    aiInstance = new GoogleGenAI({ apiKey });
-  }
-  return aiInstance;
+const AI_ERROR_MESSAGES: Record<string, string> = {
+  UNAUTHORIZED: SESSION_EXPIRED_MESSAGE,
+  INVALID_TOKEN: SESSION_EXPIRED_MESSAGE,
+  AI_UNAVAILABLE: AI_UNAVAILABLE_MESSAGE,
+  CONFIGURATION_ERROR: AI_UNAVAILABLE_MESSAGE,
+  AI_RESPONSE_INVALID: AI_UNAVAILABLE_MESSAGE,
+  INTERNAL_ERROR: AI_UNAVAILABLE_MESSAGE,
+  FORBIDDEN: 'Bu öğrenci için AI işlemi yapma yetkiniz bulunmuyor.',
+  RATE_LIMITED: 'AI istek limiti aşıldı. Lütfen daha sonra tekrar deneyin.',
+  STUDENT_NOT_FOUND: 'Öğrenci bulunamadı.',
+  INVALID_REQUEST: 'AI isteği geçersiz. Lütfen bilgileri kontrol edip tekrar deneyin.',
+  VALIDATION_ERROR: 'AI isteği geçersiz. Lütfen bilgileri kontrol edip tekrar deneyin.',
 };
 
-const MODEL_NAME = "gemini-2.5-flash";
-
-const uniqueValues = (values: Array<string | undefined | null>) => Array.from(new Set(values.map(value => value?.trim()).filter(Boolean) as string[]));
-
-const getInterestedEducationSummary = (student: Student) => {
-  const selectedCountries = uniqueValues([
-    ...(student.targetCountries || []),
-    student.analysis?.preferences?.country1,
-    student.analysis?.preferences?.country2,
-    student.analysis?.preferences?.country3,
-    student.analysis?.preferences?.country4,
-    student.analysis?.preferences?.country5,
-  ]);
-  const selectedPrograms = uniqueValues(student.targetPrograms || []);
-
-  if (selectedCountries.length === 0 || selectedPrograms.length === 0) return '';
-
-  const countrySummary = selectedCountries.join(', ');
-  return selectedPrograms.map(program => `${countrySummary} - ${program} tercihi`).join(', ');
-};
-
-/**
- * Analyzes a student profile to provide program recommendations and risk assessment.
- */
-export const analyzeStudentProfile = async (student: Student): Promise<AnalysisResult> => {
-  const interestedEducationSummary = getInterestedEducationSummary(student);
-  const ai = getAI();
-  if (!ai) {
-    return {
-      recommendedPrograms: ["Computer Science", "Data Analytics", "Software Engineering"],
-      visaRiskScore: 25,
-      visaRiskReasoning: "Solid academic background and sufficient budget reduce risk. (Fallback Data)",
-      scholarshipProbability: 60,
-      suggestedUniversities: [
-        { name: "Technical University of Munich", country: "Germany", matchScore: 95, tuition: 0 },
-        { name: "University of Amsterdam", country: "Netherlands", matchScore: 88, tuition: 12000 },
-      ],
-      overallAssessment: `${interestedEducationSummary ? `${interestedEducationSummary}. ` : ''}The student shows strong potential for European technical universities. Focus on IELTS preparation. (Fallback Data)`
-    };
-  }
-
-  const prompt = `
-    You are UNIC, an expert university counselor AI. 
-    Analyze the following student profile and provide a structured assessment.
-    
-    Student Data:
-    ${JSON.stringify(student)}
-
-    Task:
-    0. If present, start the overallAssessment with this exact interested education summary: ${interestedEducationSummary || 'Not provided'}
-    1. Recommend 3 specific university programs/majors based on interests and background.
-    2. Estimate Visa Risk Score (0-100, where 100 is high risk).
-    3. Provide reasoning for the risk.
-    4. Suggest 3 specific universities (mock real names) with estimated tuition.
-    5. Write a brief professional summary/overall assessment.
-
-    Return strictly JSON.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            recommendedPrograms: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "List of 3 recommended majors/programs"
-            },
-            visaRiskScore: {
-              type: Type.NUMBER,
-              description: "0 to 100 integer representing risk"
-            },
-            visaRiskReasoning: {
-              type: Type.STRING,
-              description: "Explanation of the risk score"
-            },
-            scholarshipProbability: {
-              type: Type.NUMBER,
-              description: "0 to 100 probability"
-            },
-            suggestedUniversities: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  country: { type: Type.STRING },
-                  matchScore: { type: Type.NUMBER },
-                  tuition: { type: Type.NUMBER }
-                }
-              }
-            },
-            overallAssessment: {
-              type: Type.STRING,
-              description: "A 2-3 sentence professional summary."
-            }
-          }
-        }
-      }
-    });
-
-    if (response.text) {
-      return JSON.parse(response.text) as AnalysisResult;
-    }
-    throw new Error("No response text generated");
-  } catch (error) {
-    console.error("Gemini Analysis Error:", error);
-    // Fallback mock data if API fails or key is missing
-    return {
-      recommendedPrograms: ["Computer Science", "Data Analytics", "Software Engineering"],
-      visaRiskScore: 25,
-      visaRiskReasoning: "Solid academic background and sufficient budget reduce risk.",
-      scholarshipProbability: 60,
-      suggestedUniversities: [
-        { name: "Technical University of Munich", country: "Germany", matchScore: 95, tuition: 0 },
-        { name: "University of Amsterdam", country: "Netherlands", matchScore: 88, tuition: 12000 },
-      ],
-      overallAssessment: `${interestedEducationSummary ? `${interestedEducationSummary}. ` : ''}The student shows strong potential for European technical universities. Focus on IELTS preparation.`
-    };
-  }
-};
-
-/**
- * Generates a personalized roadmap for the student.
- */
-export const generateStudentRoadmap = async (student: Student): Promise<RoadmapStep[]> => {
-  const ai = getAI();
-  if (!ai) return [];
-
-  const prompt = `
-    Create a step-by-step application roadmap for this student:
-    Target: ${student.targetDegree} in ${student.targetCountries.join(', ')}.
-    Current Stage: ${student.pipelineStage}.
-    
-    Include steps for Documents, Application submission, and Visa.
-    Assign realistic relative deadlines (e.g., "2024-05-01").
-    
-    Return strictly JSON.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            steps: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  deadline: { type: Type.STRING },
-                  status: { type: Type.STRING, enum: ['pending', 'in_progress', 'completed'] },
-                  category: { type: Type.STRING, enum: ['document', 'application', 'visa', 'financial'] }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (response.text) {
-      const data = JSON.parse(response.text) as { steps: RoadmapStep[] };
-      return data.steps;
-    }
-    throw new Error("No roadmap generated");
-  } catch (error) {
-    console.error("Gemini Roadmap Error:", error);
-    return [];
-  }
-};
-
-/**
- * Chat bot functionality for the Counselor to ask questions about the database/rules.
- */
-export const askUNIC = async (question: string, context: string): Promise<string> => {
-    const ai = getAI();
-    if (!ai) return "AI is currently unavailable. Please check configuration.";
-
-    const prompt = `
-      You are UNIC, the logic engine of this platform.
-      Context: ${context}
-      User Question: ${question}
-      
-      Answer briefly and professionally. If suggesting an action, mention that you can trigger an n8n workflow.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt
-        });
-        return response.text || "I couldn't process that request.";
-    } catch (error) {
-        return "System is currently offline. Please check API keys.";
-    }
+interface EdgeErrorBody {
+  success: false;
+  code: string;
+  error: string;
 }
+
+interface EdgeSuccessBody {
+  success: true;
+  data: unknown;
+}
+
+const isEdgeErrorBody = (value: unknown): value is EdgeErrorBody => {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return body.success === false && typeof body.code === 'string' && typeof body.error === 'string';
+};
+
+const isEdgeSuccessBody = (value: unknown): value is EdgeSuccessBody => {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return body.success === true && 'data' in body;
+};
+
+const safeErrorMessage = (code?: string): string =>
+  (code && AI_ERROR_MESSAGES[code]) || AI_REQUEST_FAILED_MESSAGE;
+
+async function requireAccessToken(): Promise<string> {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    const session = data.session;
+    const isExpired = session?.expires_at !== undefined && session.expires_at * 1000 <= Date.now();
+    if (error || !session?.access_token || isExpired) throw new Error(SESSION_EXPIRED_MESSAGE);
+    return session.access_token;
+  } catch {
+    throw new Error(SESSION_EXPIRED_MESSAGE);
+  }
+}
+
+async function throwSafeEdgeError(error: unknown, data?: unknown): Promise<never> {
+  if (error instanceof FunctionsHttpError && error.context instanceof Response) {
+    let body: unknown;
+    try {
+      body = await error.context.clone().json();
+    } catch {}
+    if (isEdgeErrorBody(body)) throw new Error(safeErrorMessage(body.code));
+  }
+
+  if (isEdgeErrorBody(data)) throw new Error(safeErrorMessage(data.code));
+  throw new Error(AI_REQUEST_FAILED_MESSAGE);
+}
+
+async function invokeAI<T>(
+  body: Record<string, string>,
+  isValidData: (value: unknown) => value is T,
+): Promise<T> {
+  const accessToken = await requireAccessToken();
+  const { data, error } = await supabase.functions.invoke('ai-counselor', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body,
+  });
+
+  if (error) await throwSafeEdgeError(error, data);
+  if (isEdgeErrorBody(data)) await throwSafeEdgeError(undefined, data);
+  if (!isEdgeSuccessBody(data) || !isValidData(data.data)) {
+    throw new Error(AI_REQUEST_FAILED_MESSAGE);
+  }
+
+  return data.data;
+}
+
+const isAnalysisResult = (value: unknown): value is AnalysisResult => {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Record<string, unknown>;
+  return Array.isArray(result.recommendedPrograms)
+    && typeof result.visaRiskScore === 'number'
+    && typeof result.visaRiskReasoning === 'string'
+    && typeof result.scholarshipProbability === 'number'
+    && Array.isArray(result.suggestedUniversities)
+    && typeof result.overallAssessment === 'string';
+};
+
+const isRoadmapResult = (value: unknown): value is { steps: RoadmapStep[] } => {
+  if (!value || typeof value !== 'object') return false;
+  return Array.isArray((value as Record<string, unknown>).steps);
+};
+const isAnswer = (value: unknown): value is string => typeof value === 'string';
+
+export const analyzeStudentProfile = async (student: Student): Promise<AnalysisResult> =>
+  invokeAI(
+    { operation: 'analyze_student', student_id: student.id },
+    isAnalysisResult,
+  );
+
+export const generateStudentRoadmap = async (student: Student): Promise<RoadmapStep[]> => {
+  const result = await invokeAI(
+    { operation: 'generate_roadmap', student_id: student.id },
+    isRoadmapResult,
+  );
+  return result.steps;
+};
+
+export const askUNIC = async (question: string, student: Student): Promise<string> => {
+  const normalizedQuestion = question.trim();
+  if (!normalizedQuestion || normalizedQuestion.length > 2000) {
+    throw new Error('Soru boş olmamalı ve en fazla 2000 karakter içermelidir.');
+  }
+
+  return invokeAI(
+    { operation: 'ask_unic', student_id: student.id, question: normalizedQuestion },
+    isAnswer,
+  );
+};

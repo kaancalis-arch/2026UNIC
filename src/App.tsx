@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import StudentList from './pages/StudentList';
@@ -16,8 +16,10 @@ import UniversityDetail from './pages/UniversityDetail';
 import CalendarPage from './pages/CalendarPage';
 import Statistics from './pages/Statistics';
 import Login from './pages/Login';
-import { Student, SystemUser, UserRole, UniversityData } from './types';
-import { MOCK_USERS } from './services/mockData';
+import ResetPassword from './pages/ResetPassword';
+import { Student, UniversityData } from './types';
+import { useAuth } from './auth/AuthContext';
+import { canAccessPage } from './auth/permissions';
 
 const getStageFromHash = () => {
   if (typeof window === 'undefined') {
@@ -36,15 +38,17 @@ const getStageFromHash = () => {
 };
 
 const App: React.FC = () => {
+  const { currentUser, isAuthenticated, isLoading, isPasswordRecovery, signOut } = useAuth();
+  const { pathname } = useLocation();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
-  
-  // Auth state
-  const [currentUser, setCurrentUser] = useState<SystemUser | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) setCurrentPage('dashboard');
+  }, [isAuthenticated]);
 
   const handleStudentSelect = (student: Student) => {
     setSelectedStudent(student);
@@ -66,51 +70,35 @@ const App: React.FC = () => {
     setCurrentPage('settings');
   };
 
-  // Demo: Switch between Admin, Consultant, Rep, Student
-  const rotateUser = () => {
-    if (!currentUser) return;
-    const currentIndex = MOCK_USERS.findIndex(u => u.id === currentUser.id);
-    const nextIndex = (currentIndex + 1) % MOCK_USERS.length;
-    setCurrentUser(MOCK_USERS[nextIndex]);
-    // Reset page to dashboard to avoid permission conflicts on current page
-    setCurrentPage('dashboard');
-  };
-
-  const handleLogin = (user: SystemUser) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setCurrentPage('dashboard');
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Oturum kapatma isteği tamamlanamadı.', error);
+    } finally {
+      setCurrentPage('dashboard');
+    }
   };
 
   const renderContent = () => {
+    if (!canAccessPage(currentUser!.role, currentPage)) {
+      return <div className="p-10 text-red-500">Access Denied.</div>;
+    }
+
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
       case 'students':
-        if (currentUser && currentUser.role === UserRole.STUDENT) {
-          return <div className="p-10 text-slate-500">Access Denied. Students cannot view the CRM list.</div>;
-        }
         return <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'student-detail':
         return selectedStudent ? (
           <StudentDetail student={selectedStudent} onBack={handleBackToStudents} isSidebarCollapsed={isSidebarCollapsed} />
         ) : (
-            currentUser && currentUser.role !== UserRole.STUDENT ? <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} /> : <Dashboard />
+            <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} />
           );
       case 'settings':
-        if (!currentUser || (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN)) {
-          return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
-        }
         return <Settings onUniversitySelect={handleUniversitySelect} onDepartmentKeywordRulesOpen={() => setCurrentPage('department-keyword-rules')} />;
       case 'department-keyword-rules':
-        if (!currentUser || (currentUser.role !== UserRole.SUPER_ADMIN && currentUser.role !== UserRole.ADMIN)) {
-          return <div className="p-10 text-red-500">Access Denied: Admin only.</div>;
-        }
         return <DepartmentKeywordRules />;
       case 'universities':
         return <UniversitySearch />;
@@ -136,7 +124,7 @@ const App: React.FC = () => {
       case 'visa-control':
         return <VisaControl currentUser={currentUser!} />;
       case 'calendar':
-        return <CalendarPage />;
+        return <CalendarPage currentUser={currentUser!} />;
       case 'statistics':
         return <Statistics />;
       default:
@@ -144,12 +132,20 @@ const App: React.FC = () => {
     }
   };
 
-  if (!isAuthenticated || !currentUser) {
+  if (isPasswordRecovery || pathname === '/reset-password' || pathname === '/reset-password/') {
+    return <ResetPassword />;
+  }
+
+  if (isLoading) {
     return (
-      <Routes>
-        <Route path="/*" element={<Login onLogin={handleLogin} />} />
-      </Routes>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
+        Loading...
+      </div>
     );
+  }
+
+  if (!isAuthenticated || !currentUser) {
+    return <Login />;
   }
 
   return (
@@ -158,7 +154,6 @@ const App: React.FC = () => {
         currentPage={currentPage} 
         setPage={setCurrentPage} 
         currentUser={currentUser}
-        onSwitchUser={rotateUser}
         onLogout={handleLogout}
         isCollapsed={isSidebarCollapsed}
         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}

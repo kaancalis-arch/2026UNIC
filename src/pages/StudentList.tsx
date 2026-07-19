@@ -21,6 +21,9 @@ import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { formatTitleCase } from '../lib/utils';
 import LanguageExamFields from '../components/LanguageExamFields';
+import { getPublicStorageUrl } from '../services/supabaseClient';
+
+const UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
@@ -50,7 +53,6 @@ const getLanguageLevelColor = (level?: string) => {
 const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter, isSidebarCollapsed }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
-    const UNIC_LOGO_URL = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png';
 
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);

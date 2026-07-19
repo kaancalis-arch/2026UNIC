@@ -100,6 +100,7 @@ export interface AnalysisReport {
     examRegistrationDate?: string;
     wantsTutoring?: boolean; // Deneme Sınavına Katılmak ve Özel Ders hakkında bilgi almak ister misin?
     languageNotes?: string; // Bu aşamaya bir not kutucuğu ekle
+    preparationNotes?: string;
     otherLanguages?: Array<{ language: string; level: string }>;
 
   };
@@ -133,6 +134,7 @@ export interface AnalysisReport {
     country5?: string;
     notes?: string;
     wantsCoaching?: boolean;
+    budget?: number | string;
   };
   languageProgramPreference?: {
     preferredProgramType?: string;
@@ -206,7 +208,7 @@ export interface Student {
   // System/Pipeline Fields
   pipelineStage: PipelineStage;
   gpa?: number;
-  targetDegree?: 'Summer Course' | 'Language Course' | 'High School' | 'Undergraduate' | 'Master';
+  targetDegree?: 'Summer Course' | 'Language Course' | 'High School' | 'Undergraduate' | 'Master' | 'PhD';
   targetCountries: string[];
   budget: number;
   englishLevel?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
@@ -215,9 +217,9 @@ export interface Student {
   avatarUrl?: string;
   counselorNotes?: string;
 
-  // Hierarchy
-  counselorId?: string; // The ID of the Consultant managing this student
-  representativeId?: string; // The ID of the Representative (if applicable)
+  // Assignment (stored in the legacy student_profiles.counselor_id column)
+  branchId?: string;
+  assignedUserId?: string;
 
   // Stage Specific Data
   analyseStatus?: AnalyseStatus;
@@ -283,6 +285,7 @@ export interface CountryData {
   id: string;
   name: string;
   flag: string;
+  imageUrl?: string;
   capital: string;
   currency: string;
   educationSystemDescription: string;
@@ -311,6 +314,7 @@ export interface UniversityProgram {
   name: string;
   groupNames: string[]; // Refs to MainDegreeData.name (Selection from Bölüm Tanımları)
   matched_departments?: string[];
+  educationType?: string;
   link: string;
   tuitionRange: string; // Refs to tuition options (Eğitim Bütçesi)
   campusLocation: string;

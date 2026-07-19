@@ -2501,7 +2501,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       
       setActiveTab('analysis');
     } catch (e) {
-      console.error(e);
+      alert(e instanceof Error ? e.message : 'AI analizi tamamlanamadı. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -2525,17 +2525,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       setRoadmap(result);
       setActiveTab('roadmap');
     } catch (e) {
-        console.error(e);
+        alert(e instanceof Error ? e.message : 'AI yol haritası oluşturulamadı. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleAskUNIC = async () => {
-    if(!chatQuery) return;
+    if(!chatQuery.trim()) return;
     setChatResponse("Thinking...");
-    const res = await askUNIC(chatQuery, JSON.stringify(student));
-    setChatResponse(res);
+    try {
+      const res = await askUNIC(chatQuery, student);
+      setChatResponse(res);
+    } catch (e) {
+      setChatResponse(e instanceof Error ? e.message : 'AI isteği tamamlanamadı. Lütfen tekrar deneyin.');
+    }
   };
 
   const DisplayField = ({ label, value, fullWidth = false }: { label: string, value?: string | number, fullWidth?: boolean }) => (
