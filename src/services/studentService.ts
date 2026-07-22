@@ -66,7 +66,7 @@ function mapStudentToDb(student: Partial<Student>): any {
         email: student.email,
         phone: student.phone,
         dob: (student.dob && /^\d{4}-\d{2}-\d{2}$/.test(student.dob)) ? student.dob : null,
-        reminder_date: student.reminderDate,
+        reminder_date: student.reminderDate === '' ? null : student.reminderDate,
         pipeline_stage: student.pipelineStage,
         gpa: student.gpa,
         target_degree: student.targetDegree,

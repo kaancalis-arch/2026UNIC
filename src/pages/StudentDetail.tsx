@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
+import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, StudentProfileNote, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
+import { useAuth } from '../auth/AuthContext';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
 import { studentDocumentService } from '../services/studentDocumentService';
@@ -117,6 +118,14 @@ const formatExamDate = (dateString?: string): string => {
     return `${d} ${m} ${y}`;
 };
 
+const formatNoteDateTime = (dateString: string): string => new Intl.DateTimeFormat('tr-TR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+}).format(new Date(dateString));
+
 const convertImageBlobToPng = async (blob: Blob): Promise<ArrayBuffer> => {
     const image = await createImageBitmap(blob);
     const canvas = document.createElement('canvas');
@@ -145,6 +154,7 @@ const isExamExpired = (dateString?: string): boolean => {
     return date < twoYearsAgo;
 };
 const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack, isSidebarCollapsed }) => {
+  const { currentUser } = useAuth();
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
   const [activeTab, setActiveTab] = useState<StudentDetailTab>('profile');
@@ -242,6 +252,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [newTargetProgramName, setNewTargetProgramName] = useState('');
   const [isSavingTargetProgram, setIsSavingTargetProgram] = useState(false);
   const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
+  const [newProfileNote, setNewProfileNote] = useState('');
+  const [isSavingProfileNote, setIsSavingProfileNote] = useState(false);
+  const [isSavingReminderDate, setIsSavingReminderDate] = useState(false);
   const [isGeneratingDocumentsPdf, setIsGeneratingDocumentsPdf] = useState(false);
 
   // Visa Checklist State
@@ -251,6 +264,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [visaChecklistExpanded, setVisaChecklistExpanded] = useState(false);
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
   const [hiddenAnalysisReportSections, setHiddenAnalysisReportSections] = useState<Record<string, boolean>>({});
+  const hasAnalysisReport = analysis !== null || student.analysis !== undefined;
 
   const normalizedTargetDegree = student.targetDegree || '';
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
@@ -677,6 +691,83 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         alert("Program kaldırılırken bir hata oluştu.");
     } finally {
         setIsSavingTargetProgram(false);
+    }
+  };
+
+  const getAnalysisWithProfileNotes = (profileNotes: StudentProfileNote[]): AnalysisReport => ({
+    ...(student.analysis || {
+      language: {},
+      academic: { exams: {} },
+      social: {},
+      preferences: {},
+      budget: {}
+    }),
+    profileNotes
+  });
+
+  const handleAddProfileNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const text = newProfileNote.trim();
+    if (!text || !currentUser || isSavingProfileNote) return;
+
+    const note: StudentProfileNote = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      text,
+      authorId: currentUser.id,
+      authorName: currentUser.full_name,
+      createdAt: new Date().toISOString(),
+      completed: false
+    };
+    const updatedAnalysis = getAnalysisWithProfileNotes([note, ...(student.analysis?.profileNotes || [])]);
+    setIsSavingProfileNote(true);
+
+    try {
+      await studentService.update(student.id, { analysis: updatedAnalysis });
+      setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+      setNewProfileNote('');
+    } catch (error) {
+      console.error('Failed to add profile note', error);
+      alert('Not eklenirken bir hata oluştu.');
+    } finally {
+      setIsSavingProfileNote(false);
+    }
+  };
+
+  const handleToggleProfileNote = async (noteId: string) => {
+    if (isSavingProfileNote) return;
+
+    const updatedNotes = (student.analysis?.profileNotes || []).map(note =>
+      note.id === noteId ? { ...note, completed: !note.completed } : note
+    );
+    const updatedAnalysis = getAnalysisWithProfileNotes(updatedNotes);
+    setIsSavingProfileNote(true);
+
+    try {
+      await studentService.update(student.id, { analysis: updatedAnalysis });
+      setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+    } catch (error) {
+      console.error('Failed to update profile note', error);
+      alert('Not durumu güncellenirken bir hata oluştu.');
+    } finally {
+      setIsSavingProfileNote(false);
+    }
+  };
+
+  const handleReminderDateChange = async (reminderDate: string) => {
+    if (isSavingReminderDate) return;
+
+    const previousReminderDate = student.reminderDate;
+    setStudent(prev => ({ ...prev, reminderDate: reminderDate || undefined }));
+    setIsSavingReminderDate(true);
+
+    try {
+      await studentService.update(student.id, { reminderDate });
+    } catch (error) {
+      console.error('Failed to update reminder date', error);
+      setStudent(prev => ({ ...prev, reminderDate: previousReminderDate }));
+      alert('Hatırlatma tarihi güncellenirken bir hata oluştu.');
+    } finally {
+      setIsSavingReminderDate(false);
     }
   };
 
@@ -1508,7 +1599,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
              <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
                 <ClipboardList className="w-4 h-4 text-slate-400" />
-                Dil Yeterliliği Notları
+                 Dil Yeterliliği Danışman Notları
              </label>
              <textarea 
                 value={editForm.language.languageNotes || ''}
@@ -1691,6 +1782,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         />
                     </div>
                 )}
+
             </div>
         </div>
 
@@ -2915,54 +3007,48 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const renderInterestedProgramsCard = () => (
-    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-2">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:border-slate-300 print:shadow-none">
+        <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
-                <h3 className="font-bold text-slate-800">İlgilendiği Programlar</h3>
-            </div>
-            <button
-                type="button"
-                onClick={() => setShowProgramAddForm(prev => !prev)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 print:hidden"
-            >
-                {showProgramAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                Program Tanımları
-            </button>
-        </div>
-
-        {(student.targetPrograms || []).length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <h3 className="mr-1 font-bold text-slate-800">İlgilendiği Programlar</h3>
                 {(student.targetPrograms || []).map((program, index) => {
                     const logo = getProgramLogo(program);
                     const ProgramLogoIcon = logo.Icon;
 
                     return (
-                    <div key={`${program}-${index}`} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start gap-3 print:bg-white print:border-slate-300">
-                        <div className={`relative w-9 h-9 rounded-xl border ${logo.bg} ${logo.color} ${logo.border} flex items-center justify-center shrink-0 shadow-sm print:bg-white`}>
-                            <ProgramLogoIcon className="w-4.5 h-4.5" />
-                            {logo.withStar && (
-                                <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
-                            )}
+                        <div key={`${program}-${index}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1 pl-1.5 pr-1 print:bg-white print:border-slate-300">
+                            <span className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${logo.bg} ${logo.color} ${logo.border} print:bg-white`}>
+                                <ProgramLogoIcon className="h-3.5 w-3.5" />
+                                {logo.withStar && (
+                                    <Star className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
+                                )}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-700">{program}</span>
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveTargetProgram(program)}
+                                disabled={isSavingTargetProgram}
+                                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
+                                title="Programı kaldır"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                            </button>
                         </div>
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight print:text-slate-500">Program</p>
-                            <p className="text-sm font-semibold text-slate-800 break-words">{program}</p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => handleRemoveTargetProgram(program)}
-                            disabled={isSavingTargetProgram}
-                            className="ml-auto rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
-                            title="Programı kaldır"
-                        >
-                            <X className="h-4 w-4" />
-                        </button>
-                    </div>
                     );
                 })}
             </div>
-        )}
+            <button
+                type="button"
+                onClick={() => setShowProgramAddForm(prev => !prev)}
+                className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-sm transition-all hover:bg-indigo-700 print:hidden ${showProgramAddForm ? 'bg-indigo-700' : 'bg-indigo-600'}`}
+                title="Program Tanımları"
+                aria-label="Program Tanımları"
+                aria-expanded={showProgramAddForm}
+            >
+                <Plus className={`h-4 w-4 transition-transform ${showProgramAddForm ? 'rotate-45' : ''}`} />
+            </button>
+        </div>
 
         {showProgramAddForm && <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3 print:hidden">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -3203,7 +3289,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
           { id: 'documents', label: 'Belgeler', icon: FileCheck, visible: true },
-          { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
+          { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: hasAnalysisReport || currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'enrollment', label: 'Kabul & İşlem', icon: CheckCircle, visible: currentStage === PipelineStage.ENROLLMENT },
@@ -3271,24 +3357,134 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                         {student.schoolName}
                                     </>
                                 )}
-                                {student.currentGrade && (
-                                    <>
-                                        <span className="mx-1">&nbsp;&nbsp;</span>
-                                        {student.currentGrade}
-                                    </>
-                                )}
-                                {student.analysis?.academic?.educationField && (
-                                    <>
-                                        <span className="mx-1">&nbsp;&nbsp;</span>
-                                        {student.analysis.academic.educationField}
-                                    </>
-                                )}
                             </div>
-                            <div className="text-[13px] text-slate-600 flex items-center gap-1 flex-wrap">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-600">
+                                {student.currentGrade && <span className="font-medium text-slate-800">{student.currentGrade}</span>}
+                                {student.analysis?.academic?.educationField && <span className="font-medium text-slate-800">{student.analysis.academic.educationField}</span>}
                                 <span>Yaklaşık Not Ortalaması: <strong className="text-slate-800">{student.analysis?.academic?.gpa || '-'}</strong></span>
                             </div>
                         </div>
-                        <DisplayField label="Akademik Notlar" value={student.analysis?.academic?.academicNotes} fullWidth />
+                        {student.analysis?.academic?.academicNotes?.trim() && (
+                            <DisplayField label="Akademik Notlar" value={student.analysis.academic.academicNotes} fullWidth />
+                        )}
+                    </div>
+                </div>}
+
+                {shouldShowProfileBox('language') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                            <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
+                        </div>
+                        <button
+                            onClick={() => openEditModal('language')}
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
+                            title="Düzenle"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+
+                        {student.analysis?.language?.hasTakenExam ? (
+                            <div className="flex flex-wrap gap-3">
+                                <div className={`min-w-[150px] p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType, student.analysis.language.examScore, student.analysis.language.examOtherNote)}</p>
+                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)} {isExamExpired(student.analysis.language.pastExamDate) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
+                                </div>
+                                {(student.analysis.language.examType2 || student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
+                                    <div className={`min-w-[150px] p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType2, student.analysis.language.examScore2, student.analysis.language.examOtherNote2)}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)} {isExamExpired(student.analysis.language.pastExamDate2) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
+                                    </div>
+                                )}
+                                {(student.analysis.language.examType3 || student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
+                                    <div className={`min-w-[150px] p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3</p>
+                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType3, student.analysis.language.examScore3, student.analysis.language.examOtherNote3)}</p>
+                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)} {isExamExpired(student.analysis.language.pastExamDate3) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
+                                    </div>
+                                )}
+                                {(student.analysis.language.otherLanguages || []).map((lang, i) => (
+                                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
+                                        <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
+                                            <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
+                                        </div>
+                                        <div className="w-px h-6 bg-slate-100 mx-1" />
+                                        <div className="flex flex-col text-right">
+                                            <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                             <div>
+                                 <label className="mb-1 block text-xs font-medium uppercase text-slate-500">Tahmini Dil Seviyesi</label>
+                                 <div className="flex flex-wrap gap-2">
+                                     <div className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:shadow-indigo-500/5">
+                                         <div className="rounded-lg bg-slate-50 p-2 transition-colors group-hover:bg-indigo-50">
+                                             <Globe className="h-4 w-4 text-slate-400 transition-colors group-hover:text-indigo-500" />
+                                         </div>
+                                         <div className="flex flex-col">
+                                             <span className="text-base font-bold leading-none text-slate-700">İngilizce</span>
+                                         </div>
+                                         <div className="mx-1 h-8 w-px bg-slate-100" />
+                                         <div className="flex flex-col text-right">
+                                             <span className={`rounded-md border px-2 py-1 text-base font-extrabold leading-none ${getLanguageLevelColor(student.analysis?.language?.estimatedLevel)}`}>{student.analysis?.language?.estimatedLevel || '-'}</span>
+                                         </div>
+                                     </div>
+                                     {(student.analysis?.language?.otherLanguages || []).map((lang, i) => (
+                                         <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
+                                             <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
+                                                 <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                             </div>
+                                             <div className="flex flex-col">
+                                                 <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
+                                             </div>
+                                             <div className="w-px h-6 bg-slate-100 mx-1" />
+                                             <div className="flex flex-col text-right">
+                                                 <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
+                                             </div>
+                                         </div>
+                                     ))}
+                                 </div>
+                             </div>
+                        )}
+
+                        {student.analysis?.language?.isPreparingForExam && (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                                <p className="text-[10px] font-bold uppercase text-indigo-600">Sınav Hazırlığı</p>
+                                {student.analysis.language.targetExam && (
+                                    <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
+                                )}
+                                {student.analysis.language.preparationNotes && (
+                                    <p className="text-xs italic leading-relaxed text-slate-700">{student.analysis.language.preparationNotes}</p>
+                                )}
+                            </div>
+                        )}
+
+                        {student.analysis?.language?.languageNotes && (
+                            <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 mt-2">
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Dil Yeterliliği Danışman Notları</p>
+                                <p className="text-xs text-indigo-900 leading-relaxed">{student.analysis.language.languageNotes}</p>
+                            </div>
+                        )}
+
+                        {student.analysis?.language?.wantsTutoring && (
+                            <div className="p-4 bg-violet-50 border border-violet-100 rounded-xl flex items-start gap-3 print:bg-white print:border-slate-300 shadow-sm ring-1 ring-violet-500/10">
+                                <div className="p-1.5 bg-white rounded-lg shadow-sm text-violet-600">
+                                    <Sparkles className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                     <p className="text-sm text-violet-900 font-bold leading-tight">Deneme Sınavına Katılmak ve Özel Ders istiyor</p>
+                                 </div>
+                            </div>
+                        )}
                     </div>
                 </div>}
 
@@ -3399,114 +3595,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     )}
                 </div>}
 
-                {/* Preferences */}
-                {shouldShowProfileBox('preferences') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
-                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                            <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
-                            <h3 className="font-bold text-slate-800">Akademik Eğitim Tercihleri</h3>
-                        </div>
-                        <button 
-                            onClick={() => openEditModal('preferences')}
-                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
-                            title="Düzenle"
-                        >
-                            <Edit2 className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Bölüm Tercihleri</label>
-                            <div className="space-y-2.5">
-                                {student.analysis?.preferences?.program1 ? (
-                                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-3 print:bg-transparent print:border-slate-300">
-                                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm">1</div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight">1. Tercih</span>
-                                            <span className="font-medium">{student.analysis.preferences.program1}</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-slate-400 italic">Bölüm tercihi girilmedi.</p>
-                                )}
-                                {student.analysis?.preferences?.program2 && (
-                                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-3 print:bg-transparent print:border-slate-300">
-                                        <div className="w-6 h-6 rounded-lg bg-slate-400 text-white flex items-center justify-center text-[10px] font-bold shadow-sm">2</div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">2. Tercih</span>
-                                            <span className="font-medium">{student.analysis.preferences.program2}</span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ülke Tercihleri</label>
-                              <div className="grid grid-cols-1 gap-2.5">
-                                {student.analysis?.preferences?.country1 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country1) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country1)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country1} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country1)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">1. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country1}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {student.analysis?.preferences?.country2 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country2) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country2)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country2} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country2)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">2. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country2}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {student.analysis?.preferences?.country3 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country3) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country3)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country3} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country3)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">3. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country3}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {!student.analysis?.preferences?.country1 && <p className="text-xs text-slate-400 italic">Ülke tercihi girilmedi.</p>}
-                              </div>
-                        </div>
-                    </div>
-                    {student.analysis?.preferences?.notes && (
-                        <div className="mt-6 pt-4 border-t border-slate-100">
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Tercih Notları</label>
-                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.notes}</p>
-                        </div>
-                    )}
-                </div>}
-
                 {showLanguageEducationProfileBox && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                             <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
                             <h3 className="font-bold text-slate-800">Dil Eğitimi Tercihleri</h3>
                         </div>
-                        <button 
+                        <button
                             onClick={() => openEditModal('languageProgramPreference')}
                             className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
                             title="Düzenle"
@@ -3545,113 +3640,105 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
 
 
-                 {shouldShowProfileBox('language') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                 {/* Preferences */}
+                 {shouldShowProfileBox('preferences') && <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+                     <div className="flex items-center justify-between mb-3 pb-1.5 border-b border-slate-100">
                         <div className="flex items-center gap-2">
-                            <Globe className="w-5 h-5 text-indigo-600 print:text-black" />
-                            <h3 className="font-bold text-slate-800">Dil Yeterliliği</h3>
+                            <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
+                            <h3 className="font-bold text-slate-800">Akademik Eğitim Tercihleri</h3>
                         </div>
-                        <button 
-                            onClick={() => openEditModal('language')}
+                        <button
+                            onClick={() => openEditModal('preferences')}
                             className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
                             title="Düzenle"
                         >
                             <Edit2 className="w-4 h-4" />
                         </button>
                     </div>
-
-                    <div className="space-y-4">
-
-                        {student.analysis?.language?.hasTakenExam ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                    <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 1</p>
-                                    <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType, student.analysis.language.examScore, student.analysis.language.examOtherNote)}</p>
-                                    <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate)} {isExamExpired(student.analysis.language.pastExamDate) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
-                                </div>
-                                {(student.analysis.language.examType2 || student.analysis.language.examScore2 || student.analysis.language.pastExamDate2) && (
-                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 2</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType2, student.analysis.language.examScore2, student.analysis.language.examOtherNote2)}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate2) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate2)} {isExamExpired(student.analysis.language.pastExamDate2) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
+                    <div className="grid grid-cols-1 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Bölüm Tercihleri</label>
+                            <div className="space-y-2">
+                                {student.analysis?.preferences?.program1 ? (
+                                    <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-2.5 print:bg-transparent print:border-slate-300">
+                                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm shrink-0">1</div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight">1. Tercih</span>
+                                            <span className="font-medium break-words">{student.analysis.preferences.program1}</span>
+                                        </div>
                                     </div>
+                                ) : (
+                                    <p className="text-xs text-slate-400 italic">Bölüm tercihi girilmedi.</p>
                                 )}
-                                {(student.analysis.language.examType3 || student.analysis.language.examScore3 || student.analysis.language.pastExamDate3) && (
-                                    <div className={`p-3 rounded-lg border print:bg-white print:border-slate-300 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                                        <p className={`text-[10px] font-bold uppercase mb-1 print:text-slate-600 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>Sınav 3</p>
-                                        <p className={`text-sm font-bold print:text-black ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-800' : 'text-emerald-800'}`}>{formatLanguageExamResult(student.analysis.language.examType3, student.analysis.language.examScore3, student.analysis.language.examOtherNote3)}</p>
-                                        <p className={`text-xs mt-1 print:text-slate-500 ${isExamExpired(student.analysis.language.pastExamDate3) ? 'text-red-600' : 'text-emerald-600'}`}>{formatExamDate(student.analysis.language.pastExamDate3)} {isExamExpired(student.analysis.language.pastExamDate3) && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">Süresi Doldu</span>}</p>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                             <div>
-                                 <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
-                                 <span className={`inline-block px-3 py-1.5 font-bold rounded-lg border shadow-sm transition-all ${getLanguageLevelColor(student.analysis?.language?.estimatedLevel)}`}>
-                                     {student.analysis?.language?.estimatedLevel || '-'}
-                                 </span>
-                             </div>
-                        )}
-
-                        {student.analysis?.language?.otherLanguages && student.analysis.language.otherLanguages.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-4 pb-2">
-                                {student.analysis.language.otherLanguages.map((lang, i) => (
-                                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
-                                        <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
-                                            <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                {student.analysis?.preferences?.program2 && (
+                                    <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-2.5 print:bg-transparent print:border-slate-300">
+                                        <div className="w-6 h-6 rounded-lg bg-slate-400 text-white flex items-center justify-center text-[10px] font-bold shadow-sm shrink-0">2</div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">2. Tercih</span>
+                                            <span className="font-medium break-words">{student.analysis.preferences.program2}</span>
                                         </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">DİL</span>
-                                            <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
-                                        </div>
-                                        <div className="w-px h-6 bg-slate-100 mx-1" />
-                                        <div className="flex flex-col text-right">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">SEVİYE</span>
-                                            <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {student.analysis?.language?.isPreparingForExam && (
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mt-2">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 text-indigo-600">Sınav Hazırlığı</p>
-                                <div className="flex flex-wrap gap-4">
-                                    {student.analysis.language.targetExam && (
-                                        <div>
-                                            <p className="text-[10px] text-slate-500 uppercase">Hedeflenen Sınav</p>
-                                            <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
-                                        </div>
-                                    )}
-                                </div>
-                                {student.analysis.language.preparationNotes && (
-                                    <div className="mt-2 pt-2 border-t border-slate-200/60">
-                                        <p className="text-[10px] text-slate-500 uppercase">Hazırlık Notları</p>
-                                        <p className="text-xs text-slate-700 leading-relaxed italic">{student.analysis.language.preparationNotes}</p>
                                     </div>
                                 )}
                             </div>
-                        )}
-
-                        {student.analysis?.language?.languageNotes && (
-                            <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 mt-2">
-                                <p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Dil Yeterliliği Notları</p>
-                                <p className="text-xs text-indigo-900 leading-relaxed">{student.analysis.language.languageNotes}</p>
-                            </div>
-                        )}
-
-                        {student.analysis?.language?.wantsTutoring && (
-                            <div className="p-4 bg-violet-50 border border-violet-100 rounded-xl flex items-start gap-3 print:bg-white print:border-slate-300 shadow-sm ring-1 ring-violet-500/10">
-                                <div className="p-1.5 bg-white rounded-lg shadow-sm text-violet-600">
-                                    <Sparkles className="w-4 h-4" />
-                                </div>
-                                <div className="flex-1">
-                                     <p className="text-sm text-violet-900 font-bold leading-tight">Deneme Sınavına Katılmak ve Özel Ders istiyor</p>
-                                 </div>
-                            </div>
-                        )}
+                        </div>
+                        <div>
+                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ülke Tercihleri</label>
+                              <div className="grid grid-cols-1 gap-2">
+                                {student.analysis?.preferences?.country1 && (
+                                    <div className="flex items-center gap-2.5 px-2.5 py-2 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
+                                        <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country1) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country1)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country1} />
+                                            ) : (
+                                                <span className="text-lg">{getFlagEmoji(student.analysis.preferences.country1)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">1. Ülke</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country1}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {student.analysis?.preferences?.country2 && (
+                                    <div className="flex items-center gap-2.5 px-2.5 py-2 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
+                                        <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country2) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country2)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country2} />
+                                            ) : (
+                                                <span className="text-lg">{getFlagEmoji(student.analysis.preferences.country2)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">2. Ülke</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country2}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {student.analysis?.preferences?.country3 && (
+                                    <div className="flex items-center gap-2.5 px-2.5 py-2 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
+                                        <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
+                                            {getCountryCode(student.analysis.preferences.country3) ? (
+                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country3)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country3} />
+                                            ) : (
+                                                <span className="text-lg">{getFlagEmoji(student.analysis.preferences.country3)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">3. Ülke</span>
+                                            <span className="font-bold truncate">{student.analysis.preferences.country3}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {!student.analysis?.preferences?.country1 && <p className="text-xs text-slate-400 italic">Ülke tercihi girilmedi.</p>}
+                              </div>
+                        </div>
                     </div>
+                    {student.analysis?.preferences?.notes && (
+                        <div className="mt-4 pt-3 border-t border-slate-100">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Tercih Notları</label>
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.notes}</p>
+                        </div>
+                    )}
                 </div>}
 
 
@@ -3771,6 +3858,75 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 </div>}
             </div>
 
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:border-slate-300 print:shadow-none">
+            <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-indigo-600 print:text-black" />
+                <h3 className="font-bold text-slate-800">TO-DO</h3>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <Calendar className="h-4 w-4 text-indigo-500" />
+                <span>Hatırlatma Tarihi</span>
+                <input
+                  type="date"
+                  value={student.reminderDate || ''}
+                  onChange={(event) => void handleReminderDateChange(event.target.value)}
+                  disabled={isSavingReminderDate}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
+                />
+                {isSavingReminderDate && <Loader2 className="h-4 w-4 animate-spin text-indigo-500 print:hidden" />}
+              </label>
+            </div>
+
+            <form onSubmit={handleAddProfileNote} className="mb-4 flex flex-col gap-3 sm:flex-row print:hidden">
+              <textarea
+                value={newProfileNote}
+                onChange={(event) => setNewProfileNote(event.target.value)}
+                rows={2}
+                className="min-h-[64px] flex-1 resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                placeholder="Yeni not ekleyin..."
+                disabled={isSavingProfileNote}
+              />
+              <button
+                type="submit"
+                disabled={!newProfileNote.trim() || !currentUser || isSavingProfileNote}
+                className="inline-flex items-center justify-center gap-2 self-stretch rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+              >
+                {isSavingProfileNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Not Ekle
+              </button>
+            </form>
+
+            {(student.analysis?.profileNotes || []).length > 0 ? (
+              <div className="space-y-2.5">
+                {(student.analysis?.profileNotes || []).map(note => (
+                  <div key={note.id} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 print:bg-white print:border-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleProfileNote(note.id)}
+                      disabled={isSavingProfileNote}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 print:hidden ${note.completed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200 hover:text-emerald-700'}`}
+                      aria-pressed={note.completed}
+                    >
+                      {note.completed ? <CheckCircle className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                      Tamamlandı
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={`whitespace-pre-wrap text-sm leading-relaxed transition-colors ${note.completed ? 'font-medium text-emerald-700' : 'text-slate-700'}`}>
+                        {note.text}
+                      </p>
+                      <p className={`mt-1.5 text-[11px] font-medium ${note.completed ? 'text-emerald-600/80' : 'text-slate-400'}`}>
+                        {note.authorName} · {formatNoteDateTime(note.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm italic text-slate-400">Henüz not eklenmedi.</p>
+            )}
           </div>
           </div>
         )}
@@ -4236,12 +4392,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
         {activeTab === 'analysis' && (
            <div className="space-y-6 animate-fade-in">
-               {!analysis && (
+               {!hasAnalysisReport && (
                    <div className="p-10 text-center text-slate-400">
                         Henüz AI Analizi yapılmadı. Lütfen üstteki "Run UNIC Analysis" butonuna tıklayın.
                    </div>
                )}
-                  {analysis && (
+                  {hasAnalysisReport && (
                       <>
                     <FullscreenPortal active={isPrintPreviewOpen}>
                     <div
@@ -4350,7 +4506,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                          )}
                          {student.analysis?.language?.languageNotes && (
                              <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
-                                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Dil Yeterliliği Notları</p>
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Dil Yeterliliği Danışman Notları</p>
                                  <p className="mt-1 text-xs leading-relaxed text-slate-700">{student.analysis.language.languageNotes}</p>
                              </div>
                          )}

@@ -885,6 +885,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             social: student.analysis?.social || {},
             preferences: prefs,
             budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
+            citizenship: student.analysis?.citizenship || {},
             documents
         });
         setStudentAcademicInfo({
@@ -1365,7 +1366,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-slate-400" />
-                    Dil Yeterliliği Notları
+                    Dil Yeterliliği Danışman Notları
                 </label>
                 <textarea
                     value={analysisForm.language.languageNotes || ''}
@@ -1548,6 +1549,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 />
                             </div>
                         )}
+
                     </div>
                 </div>
 
