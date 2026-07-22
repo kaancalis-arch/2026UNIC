@@ -1,8 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
-import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
+import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { studentService } from '../services/studentService';
 import { studentDocumentService } from '../services/studentDocumentService';
 import { documentTypeService, type DocumentTypeDefinition } from '../services/documentTypeService';
@@ -20,6 +19,7 @@ import { jsPDF } from 'jspdf';
 import { MOCK_TUITION_RANGES } from '../services/mockData';
 import LanguageExamFields from '../components/LanguageExamFields';
 import DocumentUploadField from '../components/DocumentUploadField';
+import AIAdvisorPanel from '../components/AIAdvisorPanel';
 import { 
   ArrowLeft, 
   BrainCircuit, 
@@ -88,7 +88,7 @@ interface RequiredDocumentDefinition {
 const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
   active ? createPortal(children, document.body) : <>{children}</>;
 
-type StudentDetailTab = 'profile' | 'documents' | 'analysis' | 'roadmap' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
+type StudentDetailTab = 'profile' | 'documents' | 'ai-advisor' | 'analysis' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
 
 // Options will be loaded from services
 
@@ -148,11 +148,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
   const [activeTab, setActiveTab] = useState<StudentDetailTab>('profile');
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [roadmap, setRoadmap] = useState<RoadmapStep[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [chatQuery, setChatQuery] = useState("");
-  const [chatResponse, setChatResponse] = useState("");
   const [currentStage, setCurrentStage] = useState<PipelineStage>(student.pipelineStage);
   
   // PDF Loading State
@@ -2627,27 +2622,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     </div>
   );
 
-  const handleAnalyze = async () => {
-    setLoading(true);
-    try {
-      const result = await analyzeStudentProfile(student);
-      setAnalysis(result);
-      
-      // Automatic Transition to Analyse Stage
-      if (currentStage === PipelineStage.FOLLOW) {
-          await studentService.update(student.id, { pipelineStage: PipelineStage.ANALYSE });
-          setStudent(prev => ({ ...prev, pipelineStage: PipelineStage.ANALYSE }));
-          setCurrentStage(PipelineStage.ANALYSE);
-      }
-      
-      setActiveTab('analysis');
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'AI analizi tamamlanamadı. Lütfen tekrar deneyin.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRegisterRecord = async () => {
       try {
           await studentService.update(student.id, { pipelineStage: PipelineStage.PROCESS });
@@ -2657,30 +2631,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       } catch (e) {
           console.error("Failed to register record", e);
       }
-  };
-
-  const handleGenerateRoadmap = async () => {
-    setLoading(true);
-    try {
-      const result = await generateStudentRoadmap(student);
-      setRoadmap(result);
-      setActiveTab('roadmap');
-    } catch (e) {
-        alert(e instanceof Error ? e.message : 'AI yol haritası oluşturulamadı. Lütfen tekrar deneyin.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAskUNIC = async () => {
-    if(!chatQuery.trim()) return;
-    setChatResponse("Thinking...");
-    try {
-      const res = await askUNIC(chatQuery, student);
-      setChatResponse(res);
-    } catch (e) {
-      setChatResponse(e instanceof Error ? e.message : 'AI isteği tamamlanamadı. Lütfen tekrar deneyin.');
-    }
   };
 
   const DisplayField = ({ label, value, fullWidth = false }: { label: string, value?: string | number, fullWidth?: boolean }) => (
@@ -3161,12 +3111,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
 
                  <button 
-                    onClick={handleAnalyze}
-                    disabled={loading}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm text-xs font-bold"
+                    onClick={() => setActiveTab('ai-advisor')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition-colors shadow-sm text-xs font-bold"
                 >
-                {loading ? <span className="animate-spin text-sm">⟳</span> : <BrainCircuit className="w-4 h-4" />}
-                UNIC Analizi Yap
+                <BrainCircuit className="w-4 h-4" />
+                AI Danışman
               </button>
              </div>
 
@@ -3203,6 +3152,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
           { id: 'documents', label: 'Belgeler', icon: FileCheck, visible: true },
+          { id: 'ai-advisor', label: 'AI Danışman', icon: BrainCircuit, visible: true },
           { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
@@ -3227,6 +3177,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Content Area */}
       <div id="student-printable-area" className="flex-1 overflow-y-auto pr-2 pb-10 student-content-area">
+        {activeTab === 'ai-advisor' && <AIAdvisorPanel student={student} />}
+
         {activeTab === 'profile' && (
           <div className="space-y-6 animate-fade-in print:block print:space-y-6">
             {renderInterestedProgramsCard()}
@@ -4236,13 +4188,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
         {activeTab === 'analysis' && (
            <div className="space-y-6 animate-fade-in">
-               {!analysis && (
-                   <div className="p-10 text-center text-slate-400">
-                        Henüz AI Analizi yapılmadı. Lütfen üstteki "Run UNIC Analysis" butonuna tıklayın.
-                   </div>
-               )}
-                  {analysis && (
-                      <>
                     <FullscreenPortal active={isPrintPreviewOpen}>
                     <div
                         className={isPrintPreviewOpen
@@ -4781,8 +4726,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                     </div>
                     </FullscreenPortal>
-                </>
-             )}
         </div>
     )}
   </div>

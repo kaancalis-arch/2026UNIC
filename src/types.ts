@@ -251,42 +251,10 @@ export interface Student {
   visaReports?: any[];
 }
 
-export interface AnalysisResult {
-  recommendedPrograms: string[];
-  visaRiskScore: number; // 0-100
-  visaRiskReasoning: string;
-  scholarshipProbability: number; // 0-100
-  suggestedUniversities: Array<{
-    name: string;
-    country: string;
-    matchScore: number;
-    tuition: number;
-  }>;
-  overallAssessment: string;
-}
-
-export interface RoadmapStep {
-  id: string;
-  title: string;
-  description: string;
-  deadline: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
-  category: 'document' | 'application' | 'visa' | 'financial';
-}
-
 export interface CareerTestResult {
   type: 'BigFive' | 'Holland';
   scores: Record<string, number>;
   summary: string;
-}
-
-// Gemini Response Schema Types
-export interface AIAnalysisResponse {
-  analysis: AnalysisResult;
-}
-
-export interface AIRoadmapResponse {
-  steps: RoadmapStep[];
 }
 
 // System Definitions Types
@@ -426,33 +394,3 @@ export interface SubProgramData {
   description?: string;
   sortOrder?: number;
 }
-
-export interface AIAgent {
-  id: string;
-  name: string;
-  jobTitle: string;
-  workDescription: string;
-  aiModel: string;
-  apiKey: string;
-  permissions: string[];
-  avatar?: string;
-}
-
-export const AVATAR_OPTIONS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16',
-];

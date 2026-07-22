@@ -18,6 +18,7 @@ import Statistics from './pages/Statistics';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import SharedStudentDocument from './pages/SharedStudentDocument';
+import SharedAIAdvisorReport from './pages/SharedAIAdvisorReport';
 import { Student, UniversityData } from './types';
 import { useAuth } from './auth/AuthContext';
 import { canAccessPage } from './auth/permissions';
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
   const shareTokenMatch = pathname.match(/^\/share\/document\/([^/]+)\/?$/);
+  const reportShareTokenMatch = pathname.match(/^\/share\/report\/([^/]+)\/?$/);
 
   useEffect(() => {
     if (!isAuthenticated) setCurrentPage('dashboard');
@@ -136,6 +138,10 @@ const App: React.FC = () => {
 
   if (shareTokenMatch) {
     return <SharedStudentDocument token={shareTokenMatch[1]} />;
+  }
+
+  if (reportShareTokenMatch) {
+    return <SharedAIAdvisorReport token={reportShareTokenMatch[1]} />;
   }
 
   if (isPasswordRecovery || pathname === '/reset-password' || pathname === '/reset-password/') {

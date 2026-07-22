@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent, UniversityProgramData, Branch, Student } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, UniversityProgramData, Branch, Student } from '../types';
 import { MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
@@ -16,6 +16,7 @@ import { studentService } from '../services/studentService';
 import { ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, SchoolNameType, schoolNameService } from '../services/schoolNameService';
 import { DocumentTypeDefinition, documentTypeService } from '../services/documentTypeService';
+import AIAdvisorSettings from '../components/AIAdvisorSettings';
 import { getPublicStorageUrl, supabase } from '../services/supabaseClient';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
@@ -23,7 +24,7 @@ import {
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen, Edit,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2, ClipboardList,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload,
-    Sun, MessageCircle, School
+    Sun, MessageCircle, School, Bot
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
@@ -149,7 +150,7 @@ const Settings: React.FC<{
     onDepartmentKeywordRulesOpen?: () => void;
 }> = ({ onUniversitySelect, onDepartmentKeywordRulesOpen }) => {
     const { currentUser } = useAuth();
-    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor'>('users');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
     const [crmStudents, setCrmStudents] = useState<Student[]>([]);
@@ -215,18 +216,6 @@ const Settings: React.FC<{
     const [departmentKeywordRules, setDepartmentKeywordRules] = useState<DepartmentKeywordRule[]>([]);
     const [departmentKeywordRuleForm, setDepartmentKeywordRuleForm] = useState<DepartmentKeywordRuleForm>(emptyDepartmentKeywordRuleForm);
     
-    // AI Agents State
-    const [aiAgents, setAiAgents] = useState<AIAgent[]>([
-        { id: 'agent-1', name: 'Danışman Asistanı', jobTitle: 'Senior Advisor', workDescription: 'Öğrencilere üniversite başvuru süreçlerinde rehberlik eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'universities.read'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Danışman1' },
-        { id: 'agent-2', name: 'Belge Analisti', jobTitle: 'Document Analyst', workDescription: 'Başvuru belgelerini analiz eder ve değerlendirir.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['documents.read', 'documents.write'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Belge1' },
-        { id: 'agent-3', name: 'Kariyer Koçu', jobTitle: 'Career Coach', workDescription: 'Öğrencilere kariyer planlaması konusunda rehberlik eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'universities.read'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kariyer1' },
-        { id: 'agent-4', name: 'Başvuru Uzmanı', jobTitle: 'Application Specialist', workDescription: 'Üniversite başvuru süreçlerini yönetir ve takip eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'documents.write'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Başvuru1' }
-    ]);
-    const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
-    const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
-    const [agentForm, setAgentForm] = useState<AIAgent>({
-        id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: []
-    });
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
 
     const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
@@ -969,47 +958,6 @@ const Settings: React.FC<{
             setUniversities(prev => prev.filter(u => u.id !== id));
         } catch (error) {
             console.error("Failed to delete", error);
-        }
-    };
-
-    // --- AI AGENT LOGIC ---
-    const handleAddAgent = () => {
-        setAgentForm({
-            id: `agent-${Date.now()}`,
-            name: '',
-            jobTitle: '',
-            workDescription: '',
-            aiModel: 'gemini-2.5-flash',
-            apiKey: '',
-            permissions: []
-        });
-        setEditingAgentId(null);
-        setIsAgentModalOpen(true);
-    };
-
-    const handleEditAgent = (agentId: string) => {
-        const agent = aiAgents.find(a => a.id === agentId);
-        if (agent) {
-            setAgentForm(agent);
-            setEditingAgentId(agentId);
-            setIsAgentModalOpen(true);
-        }
-    };
-
-    const handleSaveAgent = () => {
-        if (editingAgentId) {
-            setAiAgents(prev => prev.map(a => a.id === editingAgentId ? agentForm : a));
-        } else {
-            setAiAgents(prev => [...prev, agentForm]);
-        }
-        setIsAgentModalOpen(false);
-        setAgentForm({ id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: [] });
-        setEditingAgentId(null);
-    };
-
-    const handleDeleteAgent = (agentId: string) => {
-        if (window.confirm('Bu agenti silmek istediğinize emin misiniz?')) {
-            setAiAgents(prev => prev.filter(a => a.id !== agentId));
         }
     };
 
@@ -4570,6 +4518,7 @@ const Settings: React.FC<{
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
                             { id: 'institutions', label: 'Kurumlar', icon: Building },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
+                            { id: 'ai-advisor', label: 'AI Danışman', icon: Bot },
                             { id: 'data', label: 'DATA', icon: Database },
                         ].map((tab) => (
                             <button
@@ -4592,6 +4541,8 @@ const Settings: React.FC<{
             {activeTab === 'users' && !selectedDefinitionType && renderUserManagement()}
 
             {activeTab === 'institutions' && renderInstitutions()}
+
+            {activeTab === 'ai-advisor' && <AIAdvisorSettings />}
 
             {activeTab === 'definitions' && (
                 <>
@@ -5708,138 +5659,6 @@ const Settings: React.FC<{
                             <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
                                 <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">Vazgeç</button>
                                 <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Kaydet</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* AI Agent Modal */}
-            {isAgentModalOpen && (
-                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-fade-in overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                {editingAgentId ? 'AI Agent Düzenle' : 'Yeni AI Agent Ekle'}
-                            </h3>
-                            <button onClick={() => setIsAgentModalOpen(false)}>
-                                <XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" />
-                            </button>
-                        </div>
-                        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }} className="p-4 space-y-3">
-                            {/* Avatar Bucket Selection */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Avatar Seç</label>
-                                <div className="grid grid-cols-8 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
-                                    {['https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16'].map((avatar, idx) => (
-                                        <div 
-                                            key={idx}
-                                            onClick={() => setAgentForm({...agentForm, avatar})}
-                                            className={`w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 ${agentForm.avatar === avatar ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-transparent'}`}
-                                        >
-                                            <img src={avatar} alt="" className="w-full h-full object-cover" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Name</label>
-                                <input
-                                    required
-                                    value={agentForm.name}
-                                    onChange={(e) => setAgentForm({...agentForm, name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="örn: Danışman Asistanı"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
-                                <input
-                                    required
-                                    value={agentForm.jobTitle}
-                                    onChange={(e) => setAgentForm({...agentForm, jobTitle: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="örn: Senior Advisor"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Work Description</label>
-                                <textarea
-                                    required
-                                    value={agentForm.workDescription}
-                                    onChange={(e) => setAgentForm({...agentForm, workDescription: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="Agentin görevlerini açıklayın..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">AI Model</label>
-                                <select
-                                    value={agentForm.aiModel}
-                                    onChange={(e) => setAgentForm({...agentForm, aiModel: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                >
-                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                    <option value="gpt-4o">GPT-4o</option>
-                                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">API Key</label>
-                                <input
-                                    type="password"
-                                    value={agentForm.apiKey}
-                                    onChange={(e) => setAgentForm({...agentForm, apiKey: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono text-sm"
-                                    placeholder="API anahtarınızı giriniz..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-2">Yetki Alanları</label>
-                                <div className="grid grid-cols-2 gap-1">
-                                    {['students.read', 'students.write', 'universities.read', 'universities.write', 'documents.read', 'documents.write', 'applications.read', 'applications.write'].map(perm => (
-                                        <label key={perm} className="flex items-center gap-1 p-1.5 border border-slate-200 rounded hover:bg-slate-50 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={agentForm.permissions?.includes(perm) || false}
-                                                onChange={(e) => {
-                                                    const isChecked = e.target.checked;
-                                                    setAgentForm(prev => ({
-                                                        ...prev,
-                                                        permissions: isChecked
-                                                            ? [...(prev.permissions || []), perm]
-                                                            : (prev.permissions || []).filter(p => p !== perm)
-                                                    }));
-                                                }}
-                                                className="w-3 h-3 text-indigo-600 rounded border-slate-300"
-                                            />
-                                            <span className="text-[10px] text-slate-700">{perm}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="pt-3 flex justify-between">
-                                {editingAgentId && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { handleDeleteAgent(editingAgentId); setIsAgentModalOpen(false); }}
-                                        className="px-3 py-1.5 text-rose-600 font-medium hover:bg-rose-50 rounded-lg text-sm"
-                                    >
-                                        Sil
-                                    </button>
-                                )}
-                                <div className="flex gap-2 ml-auto">
-                                    <button type="button" onClick={() => setIsAgentModalOpen(false)} className="px-3 py-1.5 text-slate-600 font-medium text-sm">İptal</button>
-                                    <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 text-sm">Kaydet</button>
-                                </div>
                             </div>
                         </form>
                     </div>
