@@ -166,12 +166,32 @@ export interface AnalysisReport {
     hasForeignCitizenship?: boolean;
     foreignCitizenshipNote?: string;
   };
+  documents?: StudentDocument[];
 }
 
 export interface StudentDocument {
-  id: string; // e.g., 'passport', 'transcript'
-  type: string; // Display name
+  id: string;
+  studentId?: string;
+  documentTypeId?: string;
+  groupId?: string; // Legacy analysis.documents grouping only
+  type: string;
+  originalName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  checksumSha256?: string;
+  version?: number;
+  status?: 'uploaded' | 'approved' | 'rejected' | 'archived';
+  archivedAt?: string;
+  activeShare?: {
+    id: string;
+    expiresAt: string;
+    maxViews: number | null;
+    viewCount: number;
+  };
+  // Legacy fields are read-only compatibility for analysis.documents.
   url?: string;
+  fileName?: string;
+  storagePath?: string;
   uploadedAt: string;
   expiryDate?: string; // ISO Date string YYYY-MM-DD
 }

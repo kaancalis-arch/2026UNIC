@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import { Student, AnalysisResult, RoadmapStep, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { analyzeStudentProfile, generateStudentRoadmap, askUNIC } from '../services/geminiService';
 import { studentService } from '../services/studentService';
+import { studentDocumentService } from '../services/studentDocumentService';
+import { documentTypeService, type DocumentTypeDefinition } from '../services/documentTypeService';
 import { systemService } from '../services/systemService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
@@ -17,6 +19,7 @@ import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { MOCK_TUITION_RANGES } from '../services/mockData';
 import LanguageExamFields from '../components/LanguageExamFields';
+import DocumentUploadField from '../components/DocumentUploadField';
 import { 
   ArrowLeft, 
   BrainCircuit, 
@@ -73,6 +76,15 @@ interface StudentDetailProps {
   isSidebarCollapsed?: boolean;
 }
 
+interface RequiredDocumentDefinition {
+  id: string;
+  label: string;
+  englishName?: string;
+  description?: string;
+  allowMultiple: boolean;
+  isRequired: boolean;
+}
+
 const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
   active ? createPortal(children, document.body) : <>{children}</>;
 
@@ -103,6 +115,25 @@ const formatExamDate = (dateString?: string): string => {
     const m = months[date.getMonth()];
     const y = date.getFullYear().toString().slice(-2);
     return `${d} ${m} ${y}`;
+};
+
+const convertImageBlobToPng = async (blob: Blob): Promise<ArrayBuffer> => {
+    const image = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      image.close();
+      throw new Error('Görsel PDF için hazırlanamadı.');
+    }
+    context.drawImage(image, 0, 0);
+    image.close();
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(result => result ? resolve(result) : reject(new Error('Görsel dönüştürülemedi.')), 'image/png');
+    });
+    return pngBlob.arrayBuffer();
 };
 
 const isExamExpired = (dateString?: string): boolean => {
@@ -149,7 +180,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [tuitionRanges, setTuitionRanges] = useState<string[]>([]);
 
   // Document State
-  const [studentDocuments, setStudentDocuments] = useState<StudentDocument[]>(student.documents || []);
+  const [studentDocuments, setStudentDocuments] = useState<StudentDocument[]>(student.documents || student.analysis?.documents || []);
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>([]);
 
   // Analysis Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -210,6 +242,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [newTargetProgramName, setNewTargetProgramName] = useState('');
   const [isSavingTargetProgram, setIsSavingTargetProgram] = useState(false);
   const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
+  const [isGeneratingDocumentsPdf, setIsGeneratingDocumentsPdf] = useState(false);
 
   // Visa Checklist State
   const [visaItems, setVisaItems] = useState<VisaChecklistItem[]>([]);
@@ -232,9 +265,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   useEffect(() => {
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
-    setStudentDocuments(initialStudent.documents || []);
+    setStudentDocuments(initialStudent.documents || initialStudent.analysis?.documents || []);
+    let cancelled = false;
+    void Promise.all([
+      studentDocumentService.list(initialStudent.id),
+      documentTypeService.getAll(),
+    ]).then(([documents, definitions]) => {
+      if (cancelled) return;
+      setStudentDocuments(documents);
+      setDocumentTypes(definitions.filter(definition => definition.isActive));
+    }).catch(error => {
+      console.error('Öğrenci belgeleri yüklenemedi.', error);
+    });
     loadTuitionRanges();
     loadOptions();
+    return () => { cancelled = true; };
   }, [initialStudent]);
 
   const getUniqueProgramNames = (programs: Array<{ name?: string }>) => {
@@ -855,20 +900,36 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
   // --- Document Logic Start ---
   
-  // Helper to simulate uploading/toggling a document
-  const handleToggleDocument = (docId: string, docLabel: string) => {
-    const exists = studentDocuments.find(d => d.id === docId);
-    if (exists) {
-        // Remove
-        setStudentDocuments(prev => prev.filter(d => d.id !== docId));
-    } else {
-        // Add (Upload simulation)
-        setStudentDocuments(prev => [
-            ...prev,
-            { id: docId, type: docLabel, uploadedAt: new Date().toISOString().split('T')[0] }
-        ]);
-    }
-    // In a real app, this would trigger an API call
+  const refreshDocuments = async () => {
+    setStudentDocuments(await studentDocumentService.list(student.id));
+  };
+
+  const uploadDocument = async (documentTypeId: string, file: File) => {
+    await studentDocumentService.upload(student.id, documentTypeId, file);
+    await refreshDocuments();
+  };
+
+  const viewDocument = async (document: StudentDocument) => {
+    const url = await studentDocumentService.createViewUrl(student.id, document.id);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const archiveDocument = async (document: StudentDocument) => {
+    if (!window.confirm(`${document.originalName || document.type} arşivlensin mi?`)) return;
+    await studentDocumentService.archive(document.id);
+    await refreshDocuments();
+  };
+
+  const createDocumentShare = async (document: StudentDocument, hours: 24 | 72 | 168) => {
+    const share = await studentDocumentService.createShareLink(document.id, hours);
+    await refreshDocuments();
+    return share.url;
+  };
+
+  const revokeDocumentShare = async (document: StudentDocument) => {
+    if (!document.activeShare) return;
+    await studentDocumentService.revokeShareLink(document.activeShare.id);
+    await refreshDocuments();
   };
 
   const handleDocDateChange = (docId: string, date: string) => {
@@ -895,39 +956,118 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const documentStatus = useMemo(() => {
-    const required = [
-      { id: 'passport', label: 'Pasaport', category: 'Identity', hasExpiry: true },
-      { id: 'transcript', label: 'Transkript (Not Dökümü)', category: 'Academic' }
-    ];
-
-    if (student.targetDegree === 'Master' || student.targetDegree === 'PhD' || student.educationStatus === 'University' || student.educationStatus === 'Graduate') {
-        required.push({ id: 'cv', label: 'CV / Özgeçmiş', category: 'Academic' });
-        required.push({ id: 'diploma', label: 'Mezuniyet Belgesi / Diploma', category: 'Academic' });
-        required.push({ id: 'ref_letters', label: 'Referans Mektupları (2 Adet)', category: 'Academic' });
-    }
-
-    const targets = [
-        ...(student.targetCountries || []),
-        student.analysis?.preferences?.country1,
-        student.analysis?.preferences?.country2
-    ].join(' ').toLowerCase();
-
-    if (targets.includes('usa') || targets.includes('uk') || targets.includes('kanada') || targets.includes('canada') || targets.includes('amerika') || targets.includes('ingiltere')) {
-        required.push({ id: 'sop', label: 'Niyet Mektubu (SoP)', category: 'Essay' });
-    }
-
-    if (student.analysis?.language?.hasTakenExam || student.englishLevel) {
-        required.push({ id: 'ielts_result', label: 'Dil Yeterlilik Belgesi', category: 'Language', hasExpiry: true });
-    }
-
+    const definitions: RequiredDocumentDefinition[] = documentTypes.map(definition => ({
+      id: definition.id,
+      label: definition.name,
+      englishName: definition.englishName,
+      description: definition.note,
+      allowMultiple: definition.allowMultiple,
+      isRequired: definition.isRequired,
+    }));
+    const required = definitions.filter(definition => definition.isRequired);
     const total = required.length;
-    const uploadedIds = studentDocuments.map(d => d.id);
+    const uploadedIds = studentDocuments.filter(document => document.status !== 'archived').map(document => document.documentTypeId);
     const completed = required.filter(r => uploadedIds.includes(r.id)).length;
     const missing = required.filter(r => !uploadedIds.includes(r.id));
-    const percentage = Math.round((completed / total) * 100);
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 100;
 
-    return { required, completed, total, percentage, missing };
-  }, [student, studentDocuments]);
+    return { definitions, required, completed, total, percentage, missing };
+  }, [documentTypes, studentDocuments]);
+
+  const whatsAppDocumentMessage = [
+    `${student.firstName} ${student.lastName} - Başvuru Belgeleri`,
+    `Tamamlanan: ${documentStatus.completed}`,
+    `Eksik: ${documentStatus.missing.length}`,
+    '',
+    ...documentStatus.required.map(document => {
+      const isUploaded = studentDocuments.some(uploaded => uploaded.documentTypeId === document.id && uploaded.status !== 'archived');
+      return `${isUploaded ? '✓' : '✗'} ${document.label}`;
+    })
+  ].join('\n');
+  const missingDocumentsWhatsAppUrl = `https://wa.me/?text=${encodeURIComponent(whatsAppDocumentMessage)}`;
+
+  const handleViewAllDocumentsAsPdf = async () => {
+    if (isGeneratingDocumentsPdf) return;
+
+    const documentsByRequiredOrder = documentStatus.definitions.flatMap(required =>
+      studentDocuments.filter(document => document.documentTypeId === required.id && document.status !== 'archived')
+    );
+    const listedIds = new Set(documentsByRequiredOrder.map(document => document.id));
+    const orderedDocuments = [
+      ...documentsByRequiredOrder,
+      ...studentDocuments.filter(document => !listedIds.has(document.id) && document.status !== 'archived')
+    ];
+
+    if (orderedDocuments.length === 0) {
+      alert('PDF olarak görüntülenecek yüklenmiş belge bulunmuyor.');
+      return;
+    }
+
+    const previewWindow = window.open('about:blank', '_blank');
+    if (previewWindow) {
+      previewWindow.opener = null;
+      previewWindow.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 24px;">Belgeler PDF olarak hazırlanıyor...</p>';
+    }
+    setIsGeneratingDocumentsPdf(true);
+
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const mergedPdf = await PDFDocument.create();
+
+      for (const documentItem of orderedDocuments) {
+        const documentUrl = await studentDocumentService.createViewUrl(student.id, documentItem.id);
+        const response = await fetch(documentUrl);
+        if (!response.ok) throw new Error(`${documentItem.type} indirilemedi.`);
+
+        const blob = await response.blob();
+        const fileName = (documentItem.originalName || documentItem.fileName || '').toLocaleLowerCase('tr-TR');
+        const isPdf = blob.type === 'application/pdf' || fileName.endsWith('.pdf');
+
+        if (isPdf) {
+          const sourcePdf = await PDFDocument.load(await blob.arrayBuffer());
+          const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+          pages.forEach(page => mergedPdf.addPage(page));
+          continue;
+        }
+
+        const imageBytes = blob.type === 'image/jpeg' || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')
+          ? await blob.arrayBuffer()
+          : await convertImageBlobToPng(blob);
+        const embeddedImage = blob.type === 'image/jpeg' || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')
+          ? await mergedPdf.embedJpg(imageBytes)
+          : await mergedPdf.embedPng(imageBytes);
+        const page = mergedPdf.addPage([595.28, 841.89]);
+        const availableWidth = page.getWidth() - 48;
+        const availableHeight = page.getHeight() - 48;
+        const scale = Math.min(availableWidth / embeddedImage.width, availableHeight / embeddedImage.height, 1);
+        const width = embeddedImage.width * scale;
+        const height = embeddedImage.height * scale;
+        page.drawImage(embeddedImage, {
+          x: (page.getWidth() - width) / 2,
+          y: (page.getHeight() - height) / 2,
+          width,
+          height
+        });
+      }
+
+      const pdfBytes = await mergedPdf.save();
+      const pdfBlob = new Blob([pdfBytes.slice().buffer as ArrayBuffer], { type: 'application/pdf' });
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      if (previewWindow) {
+        previewWindow.location.href = pdfUrl;
+      } else {
+        window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+      }
+      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+    } catch (error) {
+      previewWindow?.close();
+      console.error('Documents PDF preview failed', error);
+      alert('Belgeler PDF olarak hazırlanırken bir hata oluştu.');
+    } finally {
+      setIsGeneratingDocumentsPdf(false);
+    }
+  };
 
   const getProgressColor = (percent: number) => {
       if (percent === 100) return 'text-emerald-600 bg-emerald-600';
@@ -974,7 +1114,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           preferences: student.analysis?.preferences || {},
           languageProgramPreference: student.analysis?.languageProgramPreference || {},
           highSchoolProgramPreference: student.analysis?.highSchoolProgramPreference || {},
-          budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
+          budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
+          documents: student.analysis?.documents
       });
       setEditAcademicInfo({
           schoolName: student.schoolName || '',
@@ -3061,6 +3202,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       <div className="flex gap-6 border-b border-slate-200 print:hidden">
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
+          { id: 'documents', label: 'Belgeler', icon: FileCheck, visible: true },
           { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
@@ -3607,7 +3749,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         )}
 
                         <div className="pt-3 border-t border-slate-100 mt-4 print:hidden">
-                            {studentDocuments.find(d => d.id === 'passport') ? (
+                            {studentDocuments.some(document => document.status !== 'archived' && document.documentTypeId === documentTypes.find(type => type.englishName.toLocaleLowerCase('tr-TR') === 'passport')?.id) ? (
                                 <button 
                                     onClick={() => setActiveTab('documents')}
                                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors rounded-xl text-sm font-bold border border-emerald-200 shadow-sm"
@@ -3634,30 +3776,63 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         )}
 
         {activeTab === 'documents' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in print:block">
-                 <div className="lg:col-span-2">
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:shadow-none print:border-slate-300">
-                        <h3 className="font-bold text-slate-800 mb-4">Required Documents</h3>
-                        <div className="space-y-3">
-                            {documentStatus.required.map((req, i) => {
-                                const doc = studentDocuments.find(d => d.id === req.id);
-                                const isCompleted = !!doc;
-                                return (
-                                    <div key={i} className={`flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl border transition-all duration-300 print:bg-white print:border-slate-200 ${isCompleted ? 'border-slate-200' : 'border-dashed border-slate-300'}`}>
-                                        <div className="flex items-start gap-3">
-                                            <div className="hidden print:block p-1">
-                                                 {isCompleted ? <CheckCircle className="w-4 h-4 text-black" /> : <FileText className="w-4 h-4 text-slate-300" />}
-                                            </div>
-                                            <div>
-                                                <span className={`block text-sm font-medium ${isCompleted ? 'text-slate-800' : 'text-slate-500'}`}>{req.label}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })}
+            <div className="animate-fade-in">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
+                    <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 className="font-bold text-slate-800">Başvuru İçin Gerekli Belgeler</h3>
+                            <p className="mt-1 text-sm text-slate-500">Eksik belgeleri buradan yükleyebilir veya mevcut dosyayı değiştirebilirsiniz.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 print:hidden">
+                            <button
+                                type="button"
+                                onClick={() => void handleViewAllDocumentsAsPdf()}
+                                disabled={isGeneratingDocumentsPdf || studentDocuments.length === 0}
+                                className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isGeneratingDocumentsPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                                Tüm Belgeleri PDF Gör
+                            </button>
+                            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                                Tamamlanan: {documentStatus.completed}
+                            </span>
+                            <span className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">
+                                Eksik: {documentStatus.missing.length}
+                            </span>
+                            <a
+                                href={missingDocumentsWhatsAppUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => void navigator.clipboard?.writeText(whatsAppDocumentMessage)}
+                                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
+                            >
+                                <MessageCircle className="h-4 w-4" />
+                                WhatsApp Gönder
+                            </a>
                         </div>
                     </div>
-                 </div>
+                    <div className="space-y-3">
+                        {documentStatus.definitions.map(req => (
+                                <DocumentUploadField
+                                    key={req.id}
+                                    documentTypeId={req.id}
+                                    label={req.label}
+                                    description={req.description}
+                                    required={req.isRequired}
+                                    multiple={req.allowMultiple}
+                                    documents={studentDocuments}
+                                    onUpload={(file) => uploadDocument(req.id, file)}
+                                    onView={viewDocument}
+                                    onArchive={archiveDocument}
+                                    onCreateShare={createDocumentShare}
+                                    onRevokeShare={revokeDocumentShare}
+                                />
+                        ))}
+                        {documentStatus.definitions.length === 0 && (
+                            <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">Aktif evrak türü tanımlanmamış.</p>
+                        )}
+                    </div>
+                </div>
             </div>
         )}
 

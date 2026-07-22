@@ -15,6 +15,7 @@ import { systemService } from '../services/systemService';
 import { studentService } from '../services/studentService';
 import { ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, SchoolNameType, schoolNameService } from '../services/schoolNameService';
+import { DocumentTypeDefinition, documentTypeService } from '../services/documentTypeService';
 import { getPublicStorageUrl, supabase } from '../services/supabaseClient';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
@@ -253,6 +254,23 @@ const Settings: React.FC<{
     const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>([]);
     const [isLoadingProfileBoxes, setIsLoadingProfileBoxes] = useState(false);
 
+    // Document Types State
+    const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>([]);
+    const [isLoadingDocumentTypes, setIsLoadingDocumentTypes] = useState(false);
+    const [isDocumentTypeModalOpen, setIsDocumentTypeModalOpen] = useState(false);
+    const [isSavingDocumentType, setIsSavingDocumentType] = useState(false);
+    const [documentTypeForm, setDocumentTypeForm] = useState<DocumentTypeDefinition>({
+        id: '',
+        name: '',
+        englishName: '',
+        note: '',
+        fileType: '',
+        allowMultiple: false,
+        isActive: true,
+        isRequired: false,
+        sortOrder: 0
+    });
+
     // Shared Institutions State (New)
     const [sharedInstitutions, setSharedInstitutions] = useState<SharedInstitutionData[]>([]);
     const [isLoadingSharedInstitutions, setIsLoadingSharedInstitutions] = useState(false);
@@ -357,6 +375,8 @@ const Settings: React.FC<{
         } else if (selectedDefinitionType === 'profile_boxes') {
             loadInterestedPrograms();
             loadProfileBoxes();
+        } else if (selectedDefinitionType === 'docs') {
+            loadDocumentTypes();
         } else if (selectedDefinitionType === 'shared_institutions') {
             loadSharedInstitutions();
         } else if (selectedDefinitionType === 'all_programs') {
@@ -389,6 +409,7 @@ const Settings: React.FC<{
             loadSharedInstitutions();
             loadUniversityTypes();
             loadBudgetRangesList();
+            loadDocumentTypes();
         } else if (activeTab === 'data' && !selectedDefinitionType) {
             loadCountries();
             loadUniversities();
@@ -650,6 +671,18 @@ const Settings: React.FC<{
     const getBranchCrmStudents = (branch: Branch) => {
         const sourceBranchId = getStudentSourceBranchId(branch);
         return crmStudents.filter(student => student.branchId === sourceBranchId);
+    };
+
+    const loadDocumentTypes = async () => {
+        setIsLoadingDocumentTypes(true);
+        try {
+            setDocumentTypes(await documentTypeService.getAll());
+        } catch (error) {
+            console.error('Failed to load document types', error);
+            setDocumentTypes([]);
+        } finally {
+            setIsLoadingDocumentTypes(false);
+        }
     };
 
     // User Actions
@@ -1605,6 +1638,49 @@ const Settings: React.FC<{
             await interestedProgramService.delete(id);
             setInterestedPrograms(prev => prev.filter(p => p.id !== id));
         } catch (error) { console.error(error); }
+    };
+
+    // --- DOCUMENT TYPE LOGIC ---
+    const handleAddDocumentType = () => {
+        setDocumentTypeForm({ id: '', name: '', englishName: '', note: '', fileType: '', allowMultiple: false, isActive: true, isRequired: false, sortOrder: 0 });
+        setIsDocumentTypeModalOpen(true);
+    };
+
+    const handleEditDocumentType = (documentType: DocumentTypeDefinition) => {
+        setDocumentTypeForm(documentType);
+        setIsDocumentTypeModalOpen(true);
+    };
+
+    const handleSaveDocumentType = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSavingDocumentType(true);
+        try {
+            const savedDocumentType = await documentTypeService.save(documentTypeForm);
+            setDocumentTypes(prev => {
+                const exists = prev.some(item => item.id === savedDocumentType.id);
+                const next = exists
+                    ? prev.map(item => item.id === savedDocumentType.id ? savedDocumentType : item)
+                    : [...prev, savedDocumentType];
+                return next.sort((a, b) => a.name.localeCompare(b.name, 'tr-TR'));
+            });
+            setIsDocumentTypeModalOpen(false);
+        } catch (error: any) {
+            console.error('Failed to save document type', error);
+            alert(error?.code === '23505' ? 'Bu evrak adı zaten tanımlı.' : `Evrak türü kaydedilemedi: ${error?.message || 'Bilinmeyen hata'}`);
+        } finally {
+            setIsSavingDocumentType(false);
+        }
+    };
+
+    const handleDeleteDocumentType = async (id: string) => {
+        if (!window.confirm('Bu evrak türünü silmek istediğinize emin misiniz?')) return;
+        try {
+            await documentTypeService.delete(id);
+            setDocumentTypes(prev => prev.filter(item => item.id !== id));
+        } catch (error: any) {
+            console.error('Failed to delete document type', error);
+            alert(`Evrak türü silinemedi: ${error?.message || 'Bilinmeyen hata'}`);
+        }
     };
 
     const handleToggleProfileBoxProgram = async (boxId: string, programName: string) => {
@@ -2605,6 +2681,91 @@ const Settings: React.FC<{
                                     );
                                 })
                             )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderDocumentTypeManager = () => (
+        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+            <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-slate-600" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Evrak Türleri</h3>
+                        <p className="text-sm text-slate-500">Sistemde kullanılacak evrakları ve yükleme biçimlerini tanımlayın.</p>
+                    </div>
+                </div>
+                <button
+                    onClick={handleAddDocumentType}
+                    className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-colors shadow-lg shadow-rose-500/20"
+                >
+                    <Plus className="w-4 h-4" />
+                    Yeni Evrak Tanımı
+                </button>
+            </div>
+
+            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left">
+                        <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                <th className="px-6 py-4 font-semibold">Evrak Adı</th>
+                                <th className="px-6 py-4 font-semibold">İngilizce Adı</th>
+                                <th className="px-6 py-4 font-semibold">Evrak Notu</th>
+                                <th className="px-6 py-4 font-semibold">Dosya Türü</th>
+                                <th className="px-6 py-4 font-semibold">Evrak Adedi</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {isLoadingDocumentTypes ? (
+                                <tr>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">
+                                        <Loader2 className="inline-block w-5 h-5 mr-2 animate-spin" />
+                                        Evrak türleri yükleniyor...
+                                    </td>
+                                </tr>
+                            ) : documentTypes.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">Henüz evrak türü tanımlanmadı.</td>
+                                </tr>
+                            ) : documentTypes.map(documentType => (
+                                <tr key={documentType.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                                                <FileText className="h-5 w-5" />
+                                            </div>
+                                            <span className="font-bold text-slate-800">{documentType.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{documentType.englishName}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-500 max-w-xs">
+                                        <p className="line-clamp-2">{documentType.note || '-'}</p>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{documentType.fileType}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${documentType.allowMultiple ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                            {documentType.allowMultiple ? 'Birden Çok Evrak' : 'Tek Evrak'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button onClick={() => handleEditDocumentType(documentType)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" aria-label="Evrak türünü düzenle">
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleDeleteDocumentType(documentType.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" aria-label="Evrak türünü sil">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -4486,11 +4647,11 @@ const Settings: React.FC<{
                                     <DefinitionCard 
                                         id="docs"
                                         title="Evrak Türleri" 
-                                        icon={Shield} 
-                                        count={18} 
+                                        icon={FileText}
+                                        count={documentTypes.length || 0}
                                         color="text-rose-600"
                                         bg="bg-rose-50"
-                                        onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
                                     />
                                     <DefinitionCard 
                                         id="department_keyword_rules"
@@ -4512,6 +4673,7 @@ const Settings: React.FC<{
                     {selectedDefinitionType === 'shared_institutions' && renderSharedInstitutionManager()}
                     {selectedDefinitionType === 'budget' && renderBudgetManager()}
                     {selectedDefinitionType === 'university_types' && renderUniversityTypesManager()}
+                    {selectedDefinitionType === 'docs' && renderDocumentTypeManager()}
                 </>
             )}
 
@@ -5338,6 +5500,132 @@ const Settings: React.FC<{
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsInterestedProgramModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
                                 <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20">Kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Document Type Modal */}
+            {isDocumentTypeModalOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
+                    <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-fade-in">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/60 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">
+                                    {documentTypeForm.id ? 'Evrak Tanımını Düzenle' : 'Yeni Evrak Tanımı'}
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">Evrak bilgilerini ve izin verilen yükleme adedini belirleyin.</p>
+                            </div>
+                            <button type="button" onClick={() => setIsDocumentTypeModalOpen(false)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                                <XCircle className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveDocumentType} className="p-6 space-y-5">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Evrak Adı</label>
+                                <input
+                                    required
+                                    autoFocus
+                                    value={documentTypeForm.name}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, name: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: Pasaport"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">İngilizce Adı</label>
+                                <input
+                                    required
+                                    value={documentTypeForm.englishName}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, englishName: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: Passport"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Evrak Notu</label>
+                                <textarea
+                                    rows={3}
+                                    value={documentTypeForm.note}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, note: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all resize-none"
+                                    placeholder="Evrakla ilgili açıklama veya dikkat edilmesi gerekenler..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Dosya Türü</label>
+                                <input
+                                    required
+                                    value={documentTypeForm.fileType}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, fileType: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: PDF, JPG, PNG"
+                                />
+                            </div>
+                            <fieldset>
+                                <legend className="block text-sm font-bold text-slate-700 mb-3">Evrak Adedi</legend>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${!documentTypeForm.allowMultiple ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentQuantity"
+                                            checked={!documentTypeForm.allowMultiple}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, allowMultiple: false })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">TEK EVRAK</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Bu tür için yalnızca bir dosya yüklenir.</span>
+                                    </label>
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${documentTypeForm.allowMultiple ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentQuantity"
+                                            checked={documentTypeForm.allowMultiple}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, allowMultiple: true })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">BİRDEN ÇOK EVRAK</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Aynı türde birden fazla dosya yüklenebilir.</span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={documentTypeForm.isActive}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, isActive: event.target.checked })}
+                                        className="h-4 w-4 rounded border-slate-300 text-rose-600"
+                                    />
+                                    <span className="text-sm font-bold text-slate-700">Aktif</span>
+                                </label>
+                                <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={documentTypeForm.isRequired}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, isRequired: event.target.checked })}
+                                        className="h-4 w-4 rounded border-slate-300 text-rose-600"
+                                    />
+                                    <span className="text-sm font-bold text-slate-700">Zorunlu</span>
+                                </label>
+                                <label className="block rounded-xl border border-slate-200 p-3">
+                                    <span className="text-xs font-bold text-slate-500">Sıra</span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={documentTypeForm.sortOrder}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, sortOrder: Math.max(0, Number(event.target.value) || 0) })}
+                                        className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                                    />
+                                </label>
+                            </div>
+                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+                                <button type="button" onClick={() => setIsDocumentTypeModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" disabled={isSavingDocumentType} className="flex items-center gap-2 px-8 py-2.5 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 shadow-lg shadow-rose-500/20 transition-all">
+                                    {isSavingDocumentType && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    Kaydet
+                                </button>
                             </div>
                         </form>
                     </div>

@@ -44,6 +44,7 @@ function mapDbToStudent(row: any): Student {
         foreignCitizenshipNote: row.foreign_citizenship_note,
         hasGreenPassport: row.has_green_passport,
         analysis: row.analysis,
+        documents: row.analysis?.documents || [],
         counselorNotes: row.counselor_notes,
         branchId: row.branch_id,
         // counselor_id is retained in the database to avoid a risky column rename.
@@ -93,7 +94,18 @@ function mapStudentToDb(student: Partial<Student>): any {
         has_foreign_citizenship: student.hasForeignCitizenship,
         foreign_citizenship_note: student.foreignCitizenshipNote,
         has_green_passport: student.hasGreenPassport,
-        analysis: student.analysis,
+        analysis: student.analysis || student.documents !== undefined
+            ? {
+                ...(student.analysis || {}),
+                ...(student.documents !== undefined ? {
+                    documents: student.documents.map(document => {
+                        if (!document.storagePath) return document;
+                        const { url: _signedUrl, ...storedDocument } = document;
+                        return storedDocument;
+                    })
+                } : {})
+            }
+            : undefined,
         counselor_notes: student.counselorNotes,
         branch_id: student.branchId === '' ? null : student.branchId,
         counselor_id: student.assignedUserId === '' ? null : student.assignedUserId,

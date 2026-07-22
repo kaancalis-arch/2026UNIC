@@ -17,6 +17,7 @@ import CalendarPage from './pages/CalendarPage';
 import Statistics from './pages/Statistics';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
+import SharedStudentDocument from './pages/SharedStudentDocument';
 import { Student, UniversityData } from './types';
 import { useAuth } from './auth/AuthContext';
 import { canAccessPage } from './auth/permissions';
@@ -45,6 +46,7 @@ const App: React.FC = () => {
   const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
+  const shareTokenMatch = pathname.match(/^\/share\/document\/([^/]+)\/?$/);
 
   useEffect(() => {
     if (!isAuthenticated) setCurrentPage('dashboard');
@@ -131,6 +133,10 @@ const App: React.FC = () => {
         return <Dashboard />;
     }
   };
+
+  if (shareTokenMatch) {
+    return <SharedStudentDocument token={shareTokenMatch[1]} />;
+  }
 
   if (isPasswordRecovery || pathname === '/reset-password' || pathname === '/reset-password/') {
     return <ResetPassword />;

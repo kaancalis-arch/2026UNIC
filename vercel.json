@@ -7,6 +7,14 @@
     {
       "source": "/reset-password/",
       "destination": "/index.html"
+    },
+    {
+      "source": "/share/document/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/document/:token/",
+      "destination": "/index.html"
     }
   ]
 }
