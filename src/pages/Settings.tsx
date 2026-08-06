@@ -171,6 +171,7 @@ const Settings: React.FC<{
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [newUserPassword, setNewUserPassword] = useState('');
+    const [updatingUserStatusId, setUpdatingUserStatusId] = useState<string | null>(null);
     
     // Definitions State
     const [selectedDefinitionType, setSelectedDefinitionType] = useState<string | null>(null);
@@ -832,35 +833,25 @@ const Settings: React.FC<{
         }
     };
 
-    const toggleUserStatus = async (id: string) => {
-        const user = users.find(u => u.id === id);
-        if (!user || user.status !== 'passive') return;
+    const toggleUserStatus = async (user: SystemUser) => {
+        if (currentUser?.id === user.id || updatingUserStatusId) return;
 
-        const nextStatus = 'active';
-        setUsers(users.map(u => u.id === id ? { ...u, status: nextStatus, updated_at: new Date().toISOString() } : u));
+        const nextStatus = user.status === 'active' ? 'passive' : 'active';
+        const action = nextStatus === 'passive' ? 'pasife almak' : 'yeniden aktifleştirmek';
+        if (!window.confirm(`${user.full_name} adlı kullanıcıyı ${action} istediğinizden emin misiniz?`)) return;
 
+        setUpdatingUserStatusId(user.id);
         try {
-            await systemService.updateSystemUserStatus(id, nextStatus);
-        } catch (error) {
-            console.error('Failed to update system_users status', error);
-            alert('Kullanıcı durumu Supabase üzerinde güncellenemedi.');
-            setUsers(users);
-        }
-    };
-
-    const deactivateUser = async (user: SystemUser) => {
-        if (user.status === 'passive') return;
-        if (!window.confirm(`${user.full_name} adlı kullanıcıyı kaldırmak istediğinizden emin misiniz? Kullanıcı pasif duruma alınacaktır.`)) return;
-
-        try {
-            await systemService.deactivateSystemUser(user.id);
+            await systemService.updateSystemUserStatus(user.id, nextStatus);
             setUsers(current => current.map(item => item.id === user.id
-                ? { ...item, status: 'passive', updated_at: new Date().toISOString() }
+                ? { ...item, status: nextStatus, updated_at: new Date().toISOString() }
                 : item
             ));
         } catch (error) {
-            console.error('Kullanıcı pasif duruma alınamadı.', error);
-            alert(error instanceof Error ? error.message : 'Kullanıcı kaldırılamadı. Lütfen tekrar deneyin.');
+            console.error('Kullanıcı durumu güncellenemedi.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcı durumu güncellenemedi. Lütfen tekrar deneyin.');
+        } finally {
+            setUpdatingUserStatusId(null);
         }
     };
 
@@ -1875,6 +1866,8 @@ const Settings: React.FC<{
                     <tbody className="divide-y divide-slate-100">
                         {users.map(user => {
                             const parent = users.find(u => u.id === user.parent_user_id);
+                            const isCurrentUser = currentUser?.id === user.id;
+                            const isUpdatingStatus = updatingUserStatusId === user.id;
                             return (
                                 <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
@@ -1908,18 +1901,20 @@ const Settings: React.FC<{
                                     </td>
                                     <td className="px-6 py-4">
                                          <button
-                                             onClick={() => toggleUserStatus(user.id)}
-                                             disabled={user.status === 'active'}
-                                             title={user.status === 'passive' ? 'Kullanıcıyı yeniden etkinleştir' : 'Kullanıcı aktif'}
-                                             aria-label={user.status === 'passive' ? `${user.full_name} kullanıcısını yeniden etkinleştir` : `${user.full_name} kullanıcısı aktif`}
-                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                             user.status === 'active'
-                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
-                                                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                                        }`}>
-                                            {user.status === 'active' ? (
-                                                <><CheckCircle className="w-3 h-3" /> Aktif</>
-                                            ) : (
+                                             onClick={() => toggleUserStatus(user)}
+                                             disabled={isCurrentUser || isUpdatingStatus}
+                                             title={isCurrentUser ? 'Kendi hesabınızın durumunu değiştiremezsiniz' : user.status === 'active' ? 'Kullanıcıyı pasife al' : 'Kullanıcıyı yeniden aktifleştir'}
+                                             aria-label={isCurrentUser ? `${user.full_name} kullanıcısının durumu değiştirilemez` : user.status === 'active' ? `${user.full_name} kullanıcısını pasife al` : `${user.full_name} kullanıcısını yeniden aktifleştir`}
+                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                                              user.status === 'active'
+                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                         }`}>
+                                             {isUpdatingStatus ? (
+                                                 <><Loader2 className="w-3 h-3 animate-spin" /> Güncelleniyor</>
+                                             ) : user.status === 'active' ? (
+                                                 <><CheckCircle className="w-3 h-3" /> Aktif</>
+                                             ) : (
                                                 <><XCircle className="w-3 h-3" /> Pasif</>
                                             )}
                                         </button>
@@ -1934,16 +1929,7 @@ const Settings: React.FC<{
                                             >
                                                 <Edit className="w-4 h-4" />
                                             </button>
-                                              <button
-                                                  onClick={() => deactivateUser(user)}
-                                                  disabled={user.status === 'passive' || currentUser?.id === user.id}
-                                                  title={currentUser?.id === user.id ? 'Kendi hesabınızı kaldıramazsınız' : user.status === 'passive' ? 'Kullanıcı zaten kaldırılmış' : 'Kullanıcıyı kaldır'}
-                                                 aria-label={`${user.full_name} kullanıcısını kaldır`}
-                                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                             >
-                                                 <Trash2 className="w-4 h-4" />
-                                             </button>
-                                             {currentUser?.role === UserRole.SUPER_ADMIN && currentUser.id !== user.id && (
+                                              {currentUser?.role === UserRole.SUPER_ADMIN && currentUser.id !== user.id && (
                                                  <button
                                                      onClick={() => permanentlyDeleteUser(user)}
                                                      title="Kullanıcıyı kalıcı olarak sil"
