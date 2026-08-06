@@ -15,6 +15,6 @@ View your app in AI Studio: https://ai.studio/apps/da65f030-8e8d-427b-bc44-4334f
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Configure the frontend environment variables from [.env.example](.env.example). UNIC AI Danışman calls OpenAI only through authenticated Supabase Edge Functions; configure server-side secrets as described in [AI Advisor Setup](docs/AI_ADVISOR_SETUP.md) and [Deployment and Auth Setup](docs/DEPLOYMENT_AUTH_SETUP.md).
 3. Run the app:
    `npm run dev`

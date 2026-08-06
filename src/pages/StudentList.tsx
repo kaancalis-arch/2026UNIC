@@ -3,13 +3,15 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
 import { studentService } from '../services/studentService';
+import { studentDocumentService } from '../services/studentDocumentService';
+import { documentTypeService, type DocumentTypeDefinition } from '../services/documentTypeService';
 import { systemService } from '../services/systemService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
 import { mainCategoryService } from '../services/mainCategoryService';
 import { SchoolNameRecord, schoolNameService } from '../services/schoolNameService';
-import { Student, PipelineStage, AnalysisReport, ExamDetails, MainCategoryData, MainDegreeData } from '../types';
+import { Student, PipelineStage, AnalysisReport, ExamDetails, MainCategoryData, MainDegreeData, StudentDocument } from '../types';
 import {
     Search, Plus, Filter, ChevronRight, X, ChevronDown, ChevronUp,
     User, Phone, Mail, Calendar, School, Users, Globe, FileCheck,
@@ -21,6 +23,10 @@ import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { formatTitleCase } from '../lib/utils';
 import LanguageExamFields from '../components/LanguageExamFields';
+import DocumentUploadField from '../components/DocumentUploadField';
+import { getPublicStorageUrl } from '../services/supabaseClient';
+
+const UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
@@ -50,7 +56,6 @@ const getLanguageLevelColor = (level?: string) => {
 const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStageFilter, isSidebarCollapsed }) => {
     const PHONE_ERROR_MESSAGE = 'Telefon numarası 0’dan sonra 10 haneli olmalıdır.';
     const EMAIL_ERROR_MESSAGE = 'Lütfen geçerli bir e-posta adresi girin.';
-    const UNIC_LOGO_URL = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/public/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png';
 
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -162,7 +167,8 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         academic: { exams: {} },
         social: {},
         preferences: {},
-        budget: {}
+        budget: {},
+        documents: []
     });
 
     // GPA Validation State
@@ -205,6 +211,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     const [allCountries, setAllCountries] = useState<string[]>([]);
     const [turkeyHighSchools, setTurkeyHighSchools] = useState<SchoolNameRecord[]>([]);
     const [turkeyUniversities, setTurkeyUniversities] = useState<SchoolNameRecord[]>([]);
+    const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>([]);
     const todayIso = new Date().toISOString().split('T')[0];
     const getInitialStage = () => {
         const validStages = Object.values(PipelineStage) as string[];
@@ -404,14 +411,15 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const loadOptions = async () => {
         try {
-            const [programs, mainDegs, categories, junctions, countries, turkeyHighSchoolData, turkeyUniversityData] = await Promise.all([
+            const [programs, mainDegs, categories, junctions, countries, turkeyHighSchoolData, turkeyUniversityData, documentTypeData] = await Promise.all([
                 interestedProgramService.getAll(),
                 mainDegreeService.getAll(),
                 mainCategoryService.getAll(),
                 mainCategoryService.getJunctions(),
                 countryService.getAll(),
                 schoolNameService.getAll('high_school'),
-                schoolNameService.getAll('university')
+                schoolNameService.getAll('university'),
+                documentTypeService.getAll(),
             ]);
             setAllPrograms(getUniqueProgramNames(programs));
             setAllMainDegreesObjects(mainDegs);
@@ -421,6 +429,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             setAllCountries(countries.map(c => c.name));
             setTurkeyHighSchools(turkeyHighSchoolData);
             setTurkeyUniversities(turkeyUniversityData);
+            setDocumentTypes(documentTypeData.filter(definition => definition.isActive));
         } catch (error) {
             console.error("Failed to load options", error);
         }
@@ -844,7 +853,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }
     };
 
-    const openAnalysisModal = (student: Student, e: React.MouseEvent) => {
+    const openAnalysisModal = async (student: Student, e: React.MouseEvent) => {
         e.stopPropagation();
         
         let prefs = { ...(student.analysis?.preferences || {}) };
@@ -866,12 +875,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }
 
         setSelectedStudentForAnalysis(student);
+        const documents = await studentDocumentService.list(student.id).catch(error => {
+            console.error('Öğrenci belgeleri yüklenemedi.', error);
+            return [];
+        });
         setAnalysisForm({
             language: student.analysis?.language || {},
             academic: student.analysis?.academic || { exams: {} },
             social: student.analysis?.social || {},
             preferences: prefs,
-            budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] }
+            budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
+            documents
         });
         setStudentAcademicInfo({
             schoolName: student.schoolName || '',
@@ -907,6 +921,42 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         setGpaError('');
 
         setIsAnalysisModalOpen(true);
+    };
+
+    const refreshAnalysisDocuments = async () => {
+        if (!selectedStudentForAnalysis) return;
+        const documents = await studentDocumentService.list(selectedStudentForAnalysis.id);
+        setAnalysisForm(previous => ({ ...previous, documents }));
+    };
+
+    const uploadAnalysisDocument = async (documentTypeId: string, file: File) => {
+        if (!selectedStudentForAnalysis) return;
+        await studentDocumentService.upload(selectedStudentForAnalysis.id, documentTypeId, file);
+        await refreshAnalysisDocuments();
+    };
+
+    const viewAnalysisDocument = async (document: StudentDocument) => {
+        if (!selectedStudentForAnalysis) return;
+        const url = await studentDocumentService.createViewUrl(selectedStudentForAnalysis.id, document.id);
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    const archiveAnalysisDocument = async (document: StudentDocument) => {
+        if (!window.confirm(`${document.originalName || document.type} arşivlensin mi?`)) return;
+        await studentDocumentService.archive(document.id);
+        await refreshAnalysisDocuments();
+    };
+
+    const createAnalysisDocumentShare = async (document: StudentDocument, hours: 24 | 72 | 168) => {
+        const share = await studentDocumentService.createShareLink(document.id, hours);
+        await refreshAnalysisDocuments();
+        return share.url;
+    };
+
+    const revokeAnalysisDocumentShare = async (document: StudentDocument) => {
+        if (!document.activeShare) return;
+        await studentDocumentService.revokeShareLink(document.activeShare.id);
+        await refreshAnalysisDocuments();
     };
 
     const saveAnalysis = async () => {
@@ -953,7 +1003,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 phone: studentContactInfo.parent2Phone,
                 email: studentContactInfo.parent2Email,
             },
-            analysis: analysisForm,
+            analysis: { ...analysisForm, documents: selectedStudentForAnalysis.analysis?.documents },
             pipelineStage: PipelineStage.ANALYSE,
             analyseStatus: selectedStudentForAnalysis.analyseStatus || 'Hot'
         };
@@ -2146,6 +2196,34 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         </div>
     );
 
+    const renderDocumentsTab = () => (
+        <div className="space-y-3 animate-fade-in">
+            <div className="mb-5">
+                <h4 className="text-base font-bold text-slate-800">Öğrenci Belgeleri</h4>
+                <p className="mt-1 text-sm text-slate-500">Belgeler güvenli sunucu katmanı üzerinden yüklenir, görüntülenir, arşivlenir ve paylaşılır.</p>
+            </div>
+            {documentTypes.map(definition => (
+                <DocumentUploadField
+                    key={definition.id}
+                    documentTypeId={definition.id}
+                    label={definition.name}
+                    description={definition.note}
+                    required={definition.isRequired}
+                    multiple={definition.allowMultiple}
+                    documents={analysisForm.documents || []}
+                    onUpload={(file) => uploadAnalysisDocument(definition.id, file)}
+                    onView={viewAnalysisDocument}
+                    onArchive={archiveAnalysisDocument}
+                    onCreateShare={createAnalysisDocumentShare}
+                    onRevokeShare={revokeAnalysisDocumentShare}
+                />
+            ))}
+            {documentTypes.length === 0 && (
+                <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">Aktif evrak türü tanımlanmamış.</p>
+            )}
+        </div>
+    );
+
     const filteredStudents = students.filter(student => {
         const normalizedSearchQuery = normalizeSearchValue(searchQuery);
         const searchableText = getStudentSearchableText(student);
@@ -2876,6 +2954,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                     { id: 'preferences', label: 'Tercihler', icon: BookOpen },
                                     { id: 'social', label: 'Sosyal & Spor', icon: Activity },
                                     { id: 'budget', label: 'Eğitim Bütçesi', icon: Coins },
+                                    { id: 'documents', label: 'Belgeler', icon: FileCheck },
                                 ].map(tab => (
                                     <button
                                         key={tab.id}
@@ -2900,6 +2979,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 {activeAnalysisTab === 'preferences' && renderPreferencesTab()}
                                 {activeAnalysisTab === 'social' && renderSocialTab()}
                                 {activeAnalysisTab === 'budget' && renderBudgetTab()}
+                                {activeAnalysisTab === 'documents' && renderDocumentsTab()}
                             </div>
                         </div>
 

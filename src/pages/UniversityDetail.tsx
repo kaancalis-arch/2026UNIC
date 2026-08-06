@@ -29,10 +29,10 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const normalizeFilterValue = (value?: string) => (value || '').toLocaleLowerCase('tr-TR').trim();
-    const programTagOptions = Array.from(new Set((editedUniversity.programs || []).flatMap(program => [
+    const programTagOptions = Array.from(new Set<string>((editedUniversity.programs || []).flatMap(program => [
         ...(program.groupNames || []),
         ...(program.matched_departments || []),
-    ]).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'tr-TR'));
+    ]).filter((tag): tag is string => Boolean(tag)))).sort((a, b) => a.localeCompare(b, 'tr-TR'));
     const normalizedProgramSearchTerm = normalizeFilterValue(programSearchTerm);
     const filteredPrograms = (editedUniversity.programs || []).filter(program => {
         const programTags = [

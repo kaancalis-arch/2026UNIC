@@ -100,6 +100,7 @@ export interface AnalysisReport {
     examRegistrationDate?: string;
     wantsTutoring?: boolean; // Deneme Sınavına Katılmak ve Özel Ders hakkında bilgi almak ister misin?
     languageNotes?: string; // Bu aşamaya bir not kutucuğu ekle
+    preparationNotes?: string;
     otherLanguages?: Array<{ language: string; level: string }>;
 
   };
@@ -133,6 +134,7 @@ export interface AnalysisReport {
     country5?: string;
     notes?: string;
     wantsCoaching?: boolean;
+    budget?: number | string;
   };
   languageProgramPreference?: {
     preferredProgramType?: string;
@@ -164,12 +166,32 @@ export interface AnalysisReport {
     hasForeignCitizenship?: boolean;
     foreignCitizenshipNote?: string;
   };
+  documents?: StudentDocument[];
 }
 
 export interface StudentDocument {
-  id: string; // e.g., 'passport', 'transcript'
-  type: string; // Display name
+  id: string;
+  studentId?: string;
+  documentTypeId?: string;
+  groupId?: string; // Legacy analysis.documents grouping only
+  type: string;
+  originalName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  checksumSha256?: string;
+  version?: number;
+  status?: 'uploaded' | 'approved' | 'rejected' | 'archived';
+  archivedAt?: string;
+  activeShare?: {
+    id: string;
+    expiresAt: string;
+    maxViews: number | null;
+    viewCount: number;
+  };
+  // Legacy fields are read-only compatibility for analysis.documents.
   url?: string;
+  fileName?: string;
+  storagePath?: string;
   uploadedAt: string;
   expiryDate?: string; // ISO Date string YYYY-MM-DD
 }
@@ -206,7 +228,7 @@ export interface Student {
   // System/Pipeline Fields
   pipelineStage: PipelineStage;
   gpa?: number;
-  targetDegree?: 'Summer Course' | 'Language Course' | 'High School' | 'Undergraduate' | 'Master';
+  targetDegree?: 'Summer Course' | 'Language Course' | 'High School' | 'Undergraduate' | 'Master' | 'PhD';
   targetCountries: string[];
   budget: number;
   englishLevel?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
@@ -215,9 +237,9 @@ export interface Student {
   avatarUrl?: string;
   counselorNotes?: string;
 
-  // Hierarchy
-  counselorId?: string; // The ID of the Consultant managing this student
-  representativeId?: string; // The ID of the Representative (if applicable)
+  // Assignment (stored in the legacy student_profiles.counselor_id column)
+  branchId?: string;
+  assignedUserId?: string;
 
   // Stage Specific Data
   analyseStatus?: AnalyseStatus;
@@ -229,42 +251,10 @@ export interface Student {
   visaReports?: any[];
 }
 
-export interface AnalysisResult {
-  recommendedPrograms: string[];
-  visaRiskScore: number; // 0-100
-  visaRiskReasoning: string;
-  scholarshipProbability: number; // 0-100
-  suggestedUniversities: Array<{
-    name: string;
-    country: string;
-    matchScore: number;
-    tuition: number;
-  }>;
-  overallAssessment: string;
-}
-
-export interface RoadmapStep {
-  id: string;
-  title: string;
-  description: string;
-  deadline: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
-  category: 'document' | 'application' | 'visa' | 'financial';
-}
-
 export interface CareerTestResult {
   type: 'BigFive' | 'Holland';
   scores: Record<string, number>;
   summary: string;
-}
-
-// Gemini Response Schema Types
-export interface AIAnalysisResponse {
-  analysis: AnalysisResult;
-}
-
-export interface AIRoadmapResponse {
-  steps: RoadmapStep[];
 }
 
 // System Definitions Types
@@ -283,6 +273,7 @@ export interface CountryData {
   id: string;
   name: string;
   flag: string;
+  imageUrl?: string;
   capital: string;
   currency: string;
   educationSystemDescription: string;
@@ -311,6 +302,7 @@ export interface UniversityProgram {
   name: string;
   groupNames: string[]; // Refs to MainDegreeData.name (Selection from Bölüm Tanımları)
   matched_departments?: string[];
+  educationType?: string;
   link: string;
   tuitionRange: string; // Refs to tuition options (Eğitim Bütçesi)
   campusLocation: string;
@@ -402,33 +394,3 @@ export interface SubProgramData {
   description?: string;
   sortOrder?: number;
 }
-
-export interface AIAgent {
-  id: string;
-  name: string;
-  jobTitle: string;
-  workDescription: string;
-  aiModel: string;
-  apiKey: string;
-  permissions: string[];
-  avatar?: string;
-}
-
-export const AVATAR_OPTIONS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16',
-];

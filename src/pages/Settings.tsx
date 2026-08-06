@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, AIAgent, UniversityProgramData, Branch, Student } from '../types';
+import { SystemUser, UserRole, CountryData, EducationType, UniversityData, MainDegreeData, MainCategoryData, InterestedProgramData, SharedInstitutionData, UniversityProgramData, Branch, Student } from '../types';
 import { MOCK_BRANCHES, MOCK_COUNTRIES, MOCK_UNIVERSITIES } from '../services/mockData';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
@@ -15,17 +15,30 @@ import { systemService } from '../services/systemService';
 import { studentService } from '../services/studentService';
 import { ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, SchoolNameType, schoolNameService } from '../services/schoolNameService';
-import { supabase } from '../services/supabaseClient';
+import { DocumentTypeDefinition, documentTypeService } from '../services/documentTypeService';
+import AIAdvisorSettings from '../components/AIAdvisorSettings';
+import { getPublicStorageUrl, supabase } from '../services/supabaseClient';
 import { 
     Settings as SettingsIcon, Users, Building, GraduationCap, 
     Shield, CheckCircle, XCircle, Plus, PlusCircle, MoreVertical, Edit2, Trash2, 
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen, Edit,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2, ClipboardList,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload,
-    Sun, MessageCircle, School
+    Sun, MessageCircle, School, Bot
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
+import {
+    getAllowedParentRoles,
+    roleRequiresBranch,
+    roleRequiresSameBranch,
+    validateUserHierarchy,
+    wouldCreateHierarchyCycle
+} from '../auth/userHierarchy';
+import { useAuth } from '../auth/AuthContext';
+
+const DEFAULT_UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
+const DEFAULT_USER_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=UNICUser';
 
 // University Types with Descriptions (default values)
 const DEFAULT_UNIVERSITY_TYPES = [
@@ -136,7 +149,8 @@ const Settings: React.FC<{
     onUniversitySelect?: (university: UniversityData) => void;
     onDepartmentKeywordRulesOpen?: () => void;
 }> = ({ onUniversitySelect, onDepartmentKeywordRulesOpen }) => {
-    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions'>('users');
+    const { currentUser } = useAuth();
+    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor'>('users');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
     const [crmStudents, setCrmStudents] = useState<Student[]>([]);
@@ -202,18 +216,6 @@ const Settings: React.FC<{
     const [departmentKeywordRules, setDepartmentKeywordRules] = useState<DepartmentKeywordRule[]>([]);
     const [departmentKeywordRuleForm, setDepartmentKeywordRuleForm] = useState<DepartmentKeywordRuleForm>(emptyDepartmentKeywordRuleForm);
     
-    // AI Agents State
-    const [aiAgents, setAiAgents] = useState<AIAgent[]>([
-        { id: 'agent-1', name: 'Danışman Asistanı', jobTitle: 'Senior Advisor', workDescription: 'Öğrencilere üniversite başvuru süreçlerinde rehberlik eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'universities.read'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Danışman1' },
-        { id: 'agent-2', name: 'Belge Analisti', jobTitle: 'Document Analyst', workDescription: 'Başvuru belgelerini analiz eder ve değerlendirir.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['documents.read', 'documents.write'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Belge1' },
-        { id: 'agent-3', name: 'Kariyer Koçu', jobTitle: 'Career Coach', workDescription: 'Öğrencilere kariyer planlaması konusunda rehberlik eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'universities.read'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kariyer1' },
-        { id: 'agent-4', name: 'Başvuru Uzmanı', jobTitle: 'Application Specialist', workDescription: 'Üniversite başvuru süreçlerini yönetir ve takip eder.', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: ['students.read', 'documents.write'], avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Başvuru1' }
-    ]);
-    const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
-    const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
-    const [agentForm, setAgentForm] = useState<AIAgent>({
-        id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: []
-    });
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
 
     const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
@@ -240,6 +242,23 @@ const Settings: React.FC<{
     });
     const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>([]);
     const [isLoadingProfileBoxes, setIsLoadingProfileBoxes] = useState(false);
+
+    // Document Types State
+    const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>([]);
+    const [isLoadingDocumentTypes, setIsLoadingDocumentTypes] = useState(false);
+    const [isDocumentTypeModalOpen, setIsDocumentTypeModalOpen] = useState(false);
+    const [isSavingDocumentType, setIsSavingDocumentType] = useState(false);
+    const [documentTypeForm, setDocumentTypeForm] = useState<DocumentTypeDefinition>({
+        id: '',
+        name: '',
+        englishName: '',
+        note: '',
+        fileType: '',
+        allowMultiple: false,
+        isActive: true,
+        isRequired: false,
+        sortOrder: 0
+    });
 
     // Shared Institutions State (New)
     const [sharedInstitutions, setSharedInstitutions] = useState<SharedInstitutionData[]>([]);
@@ -288,7 +307,7 @@ const Settings: React.FC<{
         email: '',
         phone: '',
         avatarUrl: '',
-        role: UserRole.CONSULTANT,
+        role: undefined,
         branch_id: '',
         status: 'active',
         parent_user_id: ''
@@ -345,6 +364,8 @@ const Settings: React.FC<{
         } else if (selectedDefinitionType === 'profile_boxes') {
             loadInterestedPrograms();
             loadProfileBoxes();
+        } else if (selectedDefinitionType === 'docs') {
+            loadDocumentTypes();
         } else if (selectedDefinitionType === 'shared_institutions') {
             loadSharedInstitutions();
         } else if (selectedDefinitionType === 'all_programs') {
@@ -377,6 +398,7 @@ const Settings: React.FC<{
             loadSharedInstitutions();
             loadUniversityTypes();
             loadBudgetRangesList();
+            loadDocumentTypes();
         } else if (activeTab === 'data' && !selectedDefinitionType) {
             loadCountries();
             loadUniversities();
@@ -618,8 +640,13 @@ const Settings: React.FC<{
     };
 
     const loadUsers = async () => {
-        const data = await systemService.getSystemUsers();
-        setUsers(data);
+        try {
+            const data = await systemService.getSystemUsers();
+            setUsers(data);
+        } catch (error) {
+            console.error('Kullanıcılar yüklenemedi.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcılar yüklenemedi. Lütfen tekrar deneyin.');
+        }
     };
 
     const getStudentSourceBranchId = (branch: Branch) => {
@@ -632,14 +659,19 @@ const Settings: React.FC<{
 
     const getBranchCrmStudents = (branch: Branch) => {
         const sourceBranchId = getStudentSourceBranchId(branch);
-        const branchUserIds = new Set(users
-            .filter(user => user.branch_id === sourceBranchId)
-            .map(user => user.id));
+        return crmStudents.filter(student => student.branchId === sourceBranchId);
+    };
 
-        return crmStudents.filter(student => {
-            const assignedUserIds = [student.counselorId, student.representativeId].filter(Boolean) as string[];
-            return assignedUserIds.some(userId => branchUserIds.has(userId));
-        });
+    const loadDocumentTypes = async () => {
+        setIsLoadingDocumentTypes(true);
+        try {
+            setDocumentTypes(await documentTypeService.getAll());
+        } catch (error) {
+            console.error('Failed to load document types', error);
+            setDocumentTypes([]);
+        } finally {
+            setIsLoadingDocumentTypes(false);
+        }
     };
 
     // User Actions
@@ -651,7 +683,7 @@ const Settings: React.FC<{
             email: '',
             phone: '',
             avatarUrl: '',
-            role: UserRole.CONSULTANT,
+            role: undefined,
             branch_id: '',
             status: 'active',
             parent_user_id: ''
@@ -681,16 +713,21 @@ const Settings: React.FC<{
 
     const handleSaveUser = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!newUser.role) {
+            alert('Rol seçimi zorunludur.');
+            return;
+        }
+
         const createdUser: SystemUser = {
             id: editingUserId || `user-${Date.now()}`,
             full_name: newUser.full_name || '',
             email: newUser.email || '',
             phone: newUser.phone || '',
-            role: newUser.role || UserRole.CONSULTANT,
-            branch_id: newUser.branch_id || '',
+            role: newUser.role,
+            branch_id: roleRequiresBranch(newUser.role) ? newUser.branch_id || '' : '',
             parent_user_id: newUser.parent_user_id,
             status: newUser.status || 'active',
-            avatarUrl: newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name}`,
+            avatarUrl: newUser.avatarUrl || DEFAULT_USER_AVATAR_URL,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -698,6 +735,13 @@ const Settings: React.FC<{
         try {
             if (!editingUserId && !newUserPassword) {
                 alert('Sisteme giriş şifresi zorunludur.');
+                return;
+            }
+
+            const parentUser = users.find(user => user.id === createdUser.parent_user_id);
+            const hierarchyValidation = validateUserHierarchy(createdUser, parentUser, users);
+            if (!hierarchyValidation.valid) {
+                alert(hierarchyValidation.error);
                 return;
             }
 
@@ -790,9 +834,9 @@ const Settings: React.FC<{
 
     const toggleUserStatus = async (id: string) => {
         const user = users.find(u => u.id === id);
-        if (!user) return;
+        if (!user || user.status !== 'passive') return;
 
-        const nextStatus = user.status === 'active' ? 'passive' : 'active';
+        const nextStatus = 'active';
         setUsers(users.map(u => u.id === id ? { ...u, status: nextStatus, updated_at: new Date().toISOString() } : u));
 
         try {
@@ -804,37 +848,57 @@ const Settings: React.FC<{
         }
     };
 
-    const deleteUser = async (id: string) => {
-        if(window.confirm('Are you sure you want to delete this user?')) {
-            const previousUsers = users;
-            setUsers(users.filter(u => u.id !== id));
-            try {
-                await systemService.deleteSystemUser(id);
-            } catch (error) {
-                console.error('Failed to delete system_users record', error);
-                alert('Kullanıcı Supabase üzerinden silinemedi.');
-                setUsers(previousUsers);
-            }
+    const deactivateUser = async (user: SystemUser) => {
+        if (user.status === 'passive') return;
+        if (!window.confirm(`${user.full_name} adlı kullanıcıyı kaldırmak istediğinizden emin misiniz? Kullanıcı pasif duruma alınacaktır.`)) return;
+
+        try {
+            await systemService.deactivateSystemUser(user.id);
+            setUsers(current => current.map(item => item.id === user.id
+                ? { ...item, status: 'passive', updated_at: new Date().toISOString() }
+                : item
+            ));
+        } catch (error) {
+            console.error('Kullanıcı pasif duruma alınamadı.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcı kaldırılamadı. Lütfen tekrar deneyin.');
+        }
+    };
+
+    const permanentlyDeleteUser = async (user: SystemUser) => {
+        const confirmed = window.confirm(
+            `${user.full_name} adlı kullanıcı kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?`
+        );
+        if (!confirmed) return;
+
+        const enteredName = window.prompt(
+            `Kalıcı silmeyi onaylamak için kullanıcının tam adını yazın: ${user.full_name}`
+        );
+        if (enteredName !== user.full_name) {
+            if (enteredName !== null) alert('Girilen kullanıcı adı eşleşmedi. Kalıcı silme iptal edildi.');
+            return;
+        }
+
+        try {
+            await systemService.permanentlyDeleteSystemUser(user.id);
+            setUsers(current => current.filter(item => item.id !== user.id));
+        } catch (error) {
+            console.error('Kullanıcı kalıcı olarak silinemedi.', error);
+            alert(error instanceof Error ? error.message : 'Kullanıcı kalıcı olarak silinemedi. Lütfen tekrar deneyin.');
         }
     };
 
     const getAvailableParents = (role?: UserRole) => {
-        switch (role) {
-            case UserRole.ADMIN:
-                return users.filter(u => u.role === UserRole.SUPER_ADMIN);
-            case UserRole.BRANCH_MANAGER:
-                return users.filter(u => u.role === UserRole.ADMIN);
-            case UserRole.CONSULTANT:
-                return users.filter(u => u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.REPRESENTATIVE:
-                return users.filter(u => u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.STUDENT_REPRESENTATIVE:
-                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            case UserRole.STUDENT:
-                return users.filter(u => u.role === UserRole.REPRESENTATIVE || u.role === UserRole.CONSULTANT || u.role === UserRole.BRANCH_MANAGER);
-            default:
-                return [];
-        }
+        const allowedRoles = getAllowedParentRoles(role);
+        return users
+            .filter(user => allowedRoles.includes(user.role))
+            .filter(user => user.status === 'active')
+            .filter(user => user.id !== editingUserId)
+            .filter(user => {
+                if (roleRequiresSameBranch(role)) return user.branch_id === newUser.branch_id;
+                return !newUser.branch_id || !user.branch_id || user.branch_id === newUser.branch_id;
+            })
+            .filter(user => !wouldCreateHierarchyCycle(editingUserId || undefined, user.id, users))
+            .sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr-TR'));
     };
 
     // --- UNIVERSITY LOGIC ---
@@ -843,7 +907,7 @@ const Settings: React.FC<{
         setUniversityForm({
             id: `uni-${Date.now()}`,
             name: '',
-            logo: 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8',
+            logo: DEFAULT_UNIC_LOGO_URL,
             countries: [],
             rankingUrl: '',
             websiteUrl: '',
@@ -894,47 +958,6 @@ const Settings: React.FC<{
             setUniversities(prev => prev.filter(u => u.id !== id));
         } catch (error) {
             console.error("Failed to delete", error);
-        }
-    };
-
-    // --- AI AGENT LOGIC ---
-    const handleAddAgent = () => {
-        setAgentForm({
-            id: `agent-${Date.now()}`,
-            name: '',
-            jobTitle: '',
-            workDescription: '',
-            aiModel: 'gemini-2.5-flash',
-            apiKey: '',
-            permissions: []
-        });
-        setEditingAgentId(null);
-        setIsAgentModalOpen(true);
-    };
-
-    const handleEditAgent = (agentId: string) => {
-        const agent = aiAgents.find(a => a.id === agentId);
-        if (agent) {
-            setAgentForm(agent);
-            setEditingAgentId(agentId);
-            setIsAgentModalOpen(true);
-        }
-    };
-
-    const handleSaveAgent = () => {
-        if (editingAgentId) {
-            setAiAgents(prev => prev.map(a => a.id === editingAgentId ? agentForm : a));
-        } else {
-            setAiAgents(prev => [...prev, agentForm]);
-        }
-        setIsAgentModalOpen(false);
-        setAgentForm({ id: '', name: '', jobTitle: '', workDescription: '', aiModel: 'gemini-2.5-flash', apiKey: '', permissions: [] });
-        setEditingAgentId(null);
-    };
-
-    const handleDeleteAgent = (agentId: string) => {
-        if (window.confirm('Bu agenti silmek istediğinize emin misiniz?')) {
-            setAiAgents(prev => prev.filter(a => a.id !== agentId));
         }
     };
 
@@ -1064,7 +1087,7 @@ const Settings: React.FC<{
 
                 let importedCount = 0;
                 let updatedCount = 0;
-                const defaultLogo = 'https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20The%20Uni%20Counsllor%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBUaGUgVW5pIENvdW5zbGxvciBMb2dvLnBuZyIsImlhdCI6MTc3NTA1NDcyOCwiZXhwIjoxODYxNDU0NzI4fQ.pJMQfiNoz3LZcj8Uq_cG9iEJvhWacE4kmUmxDcRqvq8';
+                const defaultLogo = DEFAULT_UNIC_LOGO_URL;
 
                 for (const row of jsonData) {
                     const uniName = (row['Üniversite Adı'] || row['University Name'] || '').trim();
@@ -1565,6 +1588,49 @@ const Settings: React.FC<{
         } catch (error) { console.error(error); }
     };
 
+    // --- DOCUMENT TYPE LOGIC ---
+    const handleAddDocumentType = () => {
+        setDocumentTypeForm({ id: '', name: '', englishName: '', note: '', fileType: '', allowMultiple: false, isActive: true, isRequired: false, sortOrder: 0 });
+        setIsDocumentTypeModalOpen(true);
+    };
+
+    const handleEditDocumentType = (documentType: DocumentTypeDefinition) => {
+        setDocumentTypeForm(documentType);
+        setIsDocumentTypeModalOpen(true);
+    };
+
+    const handleSaveDocumentType = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSavingDocumentType(true);
+        try {
+            const savedDocumentType = await documentTypeService.save(documentTypeForm);
+            setDocumentTypes(prev => {
+                const exists = prev.some(item => item.id === savedDocumentType.id);
+                const next = exists
+                    ? prev.map(item => item.id === savedDocumentType.id ? savedDocumentType : item)
+                    : [...prev, savedDocumentType];
+                return next.sort((a, b) => a.name.localeCompare(b.name, 'tr-TR'));
+            });
+            setIsDocumentTypeModalOpen(false);
+        } catch (error: any) {
+            console.error('Failed to save document type', error);
+            alert(error?.code === '23505' ? 'Bu evrak adı zaten tanımlı.' : `Evrak türü kaydedilemedi: ${error?.message || 'Bilinmeyen hata'}`);
+        } finally {
+            setIsSavingDocumentType(false);
+        }
+    };
+
+    const handleDeleteDocumentType = async (id: string) => {
+        if (!window.confirm('Bu evrak türünü silmek istediğinize emin misiniz?')) return;
+        try {
+            await documentTypeService.delete(id);
+            setDocumentTypes(prev => prev.filter(item => item.id !== id));
+        } catch (error: any) {
+            console.error('Failed to delete document type', error);
+            alert(`Evrak türü silinemedi: ${error?.message || 'Bilinmeyen hata'}`);
+        }
+    };
+
     const handleToggleProfileBoxProgram = async (boxId: string, programName: string) => {
         const nextBoxes = profileBoxes.map(box => {
             if (box.id !== boxId) return box;
@@ -1841,12 +1907,15 @@ const Settings: React.FC<{
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <button 
-                                            onClick={() => toggleUserStatus(user.id)}
-                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                            user.status === 'active'
-                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                         <button
+                                             onClick={() => toggleUserStatus(user.id)}
+                                             disabled={user.status === 'active'}
+                                             title={user.status === 'passive' ? 'Kullanıcıyı yeniden etkinleştir' : 'Kullanıcı aktif'}
+                                             aria-label={user.status === 'passive' ? `${user.full_name} kullanıcısını yeniden etkinleştir` : `${user.full_name} kullanıcısı aktif`}
+                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                             user.status === 'active'
+                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
+                                                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                         }`}>
                                             {user.status === 'active' ? (
                                                 <><CheckCircle className="w-3 h-3" /> Aktif</>
@@ -1857,18 +1926,33 @@ const Settings: React.FC<{
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => openEditUserModal(user)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                             <button
+                                                 onClick={() => openEditUserModal(user)}
+                                                 title="Kullanıcıyı düzenle"
+                                                 aria-label={`${user.full_name} kullanıcısını düzenle`}
+                                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                                             >
                                                 <Edit className="w-4 h-4" />
                                             </button>
-                                            <button 
-                                                onClick={() => deleteUser(user.id)}
-                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                              <button
+                                                  onClick={() => deactivateUser(user)}
+                                                  disabled={user.status === 'passive' || currentUser?.id === user.id}
+                                                  title={currentUser?.id === user.id ? 'Kendi hesabınızı kaldıramazsınız' : user.status === 'passive' ? 'Kullanıcı zaten kaldırılmış' : 'Kullanıcıyı kaldır'}
+                                                 aria-label={`${user.full_name} kullanıcısını kaldır`}
+                                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                             >
+                                                 <Trash2 className="w-4 h-4" />
+                                             </button>
+                                             {currentUser?.role === UserRole.SUPER_ADMIN && currentUser.id !== user.id && (
+                                                 <button
+                                                     onClick={() => permanentlyDeleteUser(user)}
+                                                     title="Kullanıcıyı kalıcı olarak sil"
+                                                     aria-label={`${user.full_name} kullanıcısını kalıcı olarak sil`}
+                                                     className="p-2 text-rose-600 bg-rose-50 hover:text-white hover:bg-rose-600 rounded-lg transition-colors"
+                                                 >
+                                                     <XCircle className="w-4 h-4" />
+                                                 </button>
+                                             )}
                                         </div>
                                     </td>
                                 </tr>
@@ -2400,7 +2484,7 @@ const Settings: React.FC<{
 
                                     <div className="col-span-2 md:col-span-1">
                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bölüm Adı</label>
-                                        <input 
+                                        <input
                                             value={allProgramForm.name}
                                             onChange={(e) => setAllProgramForm({...allProgramForm, name: formatTitleCase(e.target.value)})}
                                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
@@ -2545,6 +2629,91 @@ const Settings: React.FC<{
                                     );
                                 })
                             )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderDocumentTypeManager = () => (
+        <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
+            <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setSelectedDefinitionType(null)} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-slate-600" />
+                    </button>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Evrak Türleri</h3>
+                        <p className="text-sm text-slate-500">Sistemde kullanılacak evrakları ve yükleme biçimlerini tanımlayın.</p>
+                    </div>
+                </div>
+                <button
+                    onClick={handleAddDocumentType}
+                    className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-colors shadow-lg shadow-rose-500/20"
+                >
+                    <Plus className="w-4 h-4" />
+                    Yeni Evrak Tanımı
+                </button>
+            </div>
+
+            <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left">
+                        <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                                <th className="px-6 py-4 font-semibold">Evrak Adı</th>
+                                <th className="px-6 py-4 font-semibold">İngilizce Adı</th>
+                                <th className="px-6 py-4 font-semibold">Evrak Notu</th>
+                                <th className="px-6 py-4 font-semibold">Dosya Türü</th>
+                                <th className="px-6 py-4 font-semibold">Evrak Adedi</th>
+                                <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {isLoadingDocumentTypes ? (
+                                <tr>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">
+                                        <Loader2 className="inline-block w-5 h-5 mr-2 animate-spin" />
+                                        Evrak türleri yükleniyor...
+                                    </td>
+                                </tr>
+                            ) : documentTypes.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="p-10 text-center text-slate-500">Henüz evrak türü tanımlanmadı.</td>
+                                </tr>
+                            ) : documentTypes.map(documentType => (
+                                <tr key={documentType.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                                                <FileText className="h-5 w-5" />
+                                            </div>
+                                            <span className="font-bold text-slate-800">{documentType.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{documentType.englishName}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-500 max-w-xs">
+                                        <p className="line-clamp-2">{documentType.note || '-'}</p>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">{documentType.fileType}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${documentType.allowMultiple ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                            {documentType.allowMultiple ? 'Birden Çok Evrak' : 'Tek Evrak'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button onClick={() => handleEditDocumentType(documentType)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" aria-label="Evrak türünü düzenle">
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleDeleteDocumentType(documentType.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" aria-label="Evrak türünü sil">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -4349,6 +4518,7 @@ const Settings: React.FC<{
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
                             { id: 'institutions', label: 'Kurumlar', icon: Building },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
+                            { id: 'ai-advisor', label: 'AI Danışman', icon: Bot },
                             { id: 'data', label: 'DATA', icon: Database },
                         ].map((tab) => (
                             <button
@@ -4371,6 +4541,8 @@ const Settings: React.FC<{
             {activeTab === 'users' && !selectedDefinitionType && renderUserManagement()}
 
             {activeTab === 'institutions' && renderInstitutions()}
+
+            {activeTab === 'ai-advisor' && <AIAdvisorSettings />}
 
             {activeTab === 'definitions' && (
                 <>
@@ -4426,11 +4598,11 @@ const Settings: React.FC<{
                                     <DefinitionCard 
                                         id="docs"
                                         title="Evrak Türleri" 
-                                        icon={Shield} 
-                                        count={18} 
+                                        icon={FileText}
+                                        count={documentTypes.length || 0}
                                         color="text-rose-600"
                                         bg="bg-rose-50"
-                                        onClick={(id: string) => alert('Evrak modülü yakında eklenecek')}
+                                        onClick={(id: string) => setSelectedDefinitionType(id)}
                                     />
                                     <DefinitionCard 
                                         id="department_keyword_rules"
@@ -4452,6 +4624,7 @@ const Settings: React.FC<{
                     {selectedDefinitionType === 'shared_institutions' && renderSharedInstitutionManager()}
                     {selectedDefinitionType === 'budget' && renderBudgetManager()}
                     {selectedDefinitionType === 'university_types' && renderUniversityTypesManager()}
+                    {selectedDefinitionType === 'docs' && renderDocumentTypeManager()}
                 </>
             )}
 
@@ -4654,7 +4827,7 @@ const Settings: React.FC<{
                                 <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Kullanıcı Bilgileri</h3>
                                 <div className="mb-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4">
                                     <img
-                                        src={newUser.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newUser.full_name || 'User'}`}
+                                        src={newUser.avatarUrl || DEFAULT_USER_AVATAR_URL}
                                         alt="Kullanıcı resmi"
                                         className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100 object-cover"
                                     />
@@ -4663,7 +4836,7 @@ const Settings: React.FC<{
                                         <div className="flex flex-wrap items-center gap-2">
                                             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                                                 <Upload className="h-4 w-4" />
-                                                Resim Seç
+                                                 Avatar Seç
                                                 <input
                                                     type="file"
                                                     accept="image/*"
@@ -4689,6 +4862,52 @@ const Settings: React.FC<{
                                         </div>
                                     </div>
                                 </div>
+                                <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+                                        <select
+                                            required
+                                            value={newUser.role || ''}
+                                            onChange={e => {
+                                                const role = e.target.value as UserRole;
+                                                setNewUser({
+                                                    ...newUser,
+                                                    role,
+                                                    branch_id: roleRequiresBranch(role) ? newUser.branch_id : '',
+                                                    parent_user_id: ''
+                                                });
+                                            }}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        >
+                                            <option value="">Rol Seçin</option>
+                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
+                                            <option value={UserRole.ADMIN}>Admin</option>
+                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
+                                            <option value={UserRole.CONSULTANT}>Danışman</option>
+                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
+                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilcisi</option>
+                                            <option value={UserRole.STUDENT}>Öğrenci</option>
+                                        </select>
+                                    </div>
+                                    {newUser.role && roleRequiresBranch(newUser.role) && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
+                                            <select
+                                                required={roleRequiresBranch(newUser.role)}
+                                                value={newUser.branch_id}
+                                                onChange={e => setNewUser({ ...newUser, branch_id: e.target.value, parent_user_id: '' })}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            >
+                                                <option value="">Şube Seçin</option>
+                                                {branches.map(branch => (
+                                                    <option key={branch.id} value={branch.id}>
+                                                        {branch.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Ad Soyad</label>
@@ -4701,12 +4920,12 @@ const Settings: React.FC<{
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
-                                        <input 
+                                        <input
                                             required
                                             type="email"
-                                            value={newUser.email} 
+                                            value={newUser.email}
                                             onChange={e => setNewUser({...newUser, email: e.target.value})}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                         />
                                     </div>
                                     {!editingUserId && (
@@ -4723,56 +4942,16 @@ const Settings: React.FC<{
                                             />
                                         </div>
                                     )}
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                                        <select
-                                            value={newUser.role}
-                                            onChange={e => {
-                                                const newRole = e.target.value as UserRole;
-                                                setNewUser({
-                                                    ...newUser,
-                                                    role: newRole,
-                                                    branch_id: newRole === UserRole.SUPER_ADMIN || newRole === UserRole.ADMIN ? '' : newUser.branch_id,
-                                                    parent_user_id: ''
-                                                });
-                                            }}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                        >
-                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
-                                            <option value={UserRole.ADMIN}>Admin</option>
-                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
-                                            <option value={UserRole.CONSULTANT}>Danışman</option>
-                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
-                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilci</option>
-                                            <option value={UserRole.STUDENT}>Öğrenci</option>
-                                        </select>
-                                    </div>
-                                    {newUser.role !== UserRole.SUPER_ADMIN && newUser.role !== UserRole.ADMIN && (
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
-                                            <select
-                                                value={newUser.branch_id}
-                                                onChange={e => setNewUser({...newUser, branch_id: e.target.value})}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                            >
-                                                <option value="">Şube Seçin</option>
-                                                {branches.map(branch => (
-                                                    <option key={branch.id} value={branch.id}>
-                                                        {branch.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                             
-                            {(newUser.role === UserRole.ADMIN || newUser.role === UserRole.CONSULTANT || newUser.role === UserRole.REPRESENTATIVE || newUser.role === UserRole.STUDENT_REPRESENTATIVE || newUser.role === UserRole.STUDENT) && (
+                            {newUser.role && getAllowedParentRoles(newUser.role).length > 0 && (
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
                                     <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Bağlı Olduğu Yönetici
                                     </label>
                                     <select
+                                        required
                                         value={newUser.parent_user_id || ''}
                                         onChange={e => setNewUser({...newUser, parent_user_id: e.target.value})}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
@@ -4788,9 +4967,9 @@ const Settings: React.FC<{
                                         {newUser.role === UserRole.ADMIN ? 'Admin kullanıcıları Super Admin altında çalışır.' :
                                          newUser.role === UserRole.BRANCH_MANAGER ? 'Şube Müdürleri Admin altında çalışır.' :
                                          newUser.role === UserRole.CONSULTANT ? 'Danışmanlar Şube Müdürüne bağlıdır.' :
-                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler Danışman veya Şube Müdürüne bağlıdır.' :
-                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri Temsilci, Danışman veya Şube Müdürüne bağlıdır.' :
-                                         'Öğrenciler Temsilci, Danışman veya Şube Müdürüne atanır.'}
+                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler aynı şubedeki Danışman veya Şube Müdürüne bağlıdır.' :
+                                         newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri yalnızca aynı şubedeki Danışmana bağlıdır.' :
+                                         'Öğrenciler aynı şubedeki Danışman, Temsilci veya Öğrenci Temsilcisine bağlıdır.'}
                                     </p>
                                 </div>
                             )}
@@ -5278,6 +5457,132 @@ const Settings: React.FC<{
                 </div>
             )}
 
+            {/* Document Type Modal */}
+            {isDocumentTypeModalOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
+                    <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-fade-in">
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/60 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">
+                                    {documentTypeForm.id ? 'Evrak Tanımını Düzenle' : 'Yeni Evrak Tanımı'}
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">Evrak bilgilerini ve izin verilen yükleme adedini belirleyin.</p>
+                            </div>
+                            <button type="button" onClick={() => setIsDocumentTypeModalOpen(false)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                                <XCircle className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveDocumentType} className="p-6 space-y-5">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Evrak Adı</label>
+                                <input
+                                    required
+                                    autoFocus
+                                    value={documentTypeForm.name}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, name: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: Pasaport"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">İngilizce Adı</label>
+                                <input
+                                    required
+                                    value={documentTypeForm.englishName}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, englishName: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: Passport"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Evrak Notu</label>
+                                <textarea
+                                    rows={3}
+                                    value={documentTypeForm.note}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, note: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all resize-none"
+                                    placeholder="Evrakla ilgili açıklama veya dikkat edilmesi gerekenler..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Dosya Türü</label>
+                                <input
+                                    required
+                                    value={documentTypeForm.fileType}
+                                    onChange={e => setDocumentTypeForm({ ...documentTypeForm, fileType: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:border-rose-400 focus:ring-4 focus:ring-rose-500/10 outline-none transition-all"
+                                    placeholder="Örn: PDF, JPG, PNG"
+                                />
+                            </div>
+                            <fieldset>
+                                <legend className="block text-sm font-bold text-slate-700 mb-3">Evrak Adedi</legend>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${!documentTypeForm.allowMultiple ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentQuantity"
+                                            checked={!documentTypeForm.allowMultiple}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, allowMultiple: false })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">TEK EVRAK</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Bu tür için yalnızca bir dosya yüklenir.</span>
+                                    </label>
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${documentTypeForm.allowMultiple ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentQuantity"
+                                            checked={documentTypeForm.allowMultiple}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, allowMultiple: true })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">BİRDEN ÇOK EVRAK</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Aynı türde birden fazla dosya yüklenebilir.</span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={documentTypeForm.isActive}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, isActive: event.target.checked })}
+                                        className="h-4 w-4 rounded border-slate-300 text-rose-600"
+                                    />
+                                    <span className="text-sm font-bold text-slate-700">Aktif</span>
+                                </label>
+                                <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={documentTypeForm.isRequired}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, isRequired: event.target.checked })}
+                                        className="h-4 w-4 rounded border-slate-300 text-rose-600"
+                                    />
+                                    <span className="text-sm font-bold text-slate-700">Zorunlu</span>
+                                </label>
+                                <label className="block rounded-xl border border-slate-200 p-3">
+                                    <span className="text-xs font-bold text-slate-500">Sıra</span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={documentTypeForm.sortOrder}
+                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, sortOrder: Math.max(0, Number(event.target.value) || 0) })}
+                                        className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                                    />
+                                </label>
+                            </div>
+                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+                                <button type="button" onClick={() => setIsDocumentTypeModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
+                                <button type="submit" disabled={isSavingDocumentType} className="flex items-center gap-2 px-8 py-2.5 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 shadow-lg shadow-rose-500/20 transition-all">
+                                    {isSavingDocumentType && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    Kaydet
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Shared Institution Form Modal (Kurumlar) */}
             {isSharedInstitutionModalOpen && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-sm px-4 py-6">
@@ -5354,138 +5659,6 @@ const Settings: React.FC<{
                             <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
                                 <button type="button" onClick={() => setIsSharedInstitutionModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">Vazgeç</button>
                                 <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Kaydet</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* AI Agent Modal */}
-            {isAgentModalOpen && (
-                <div className="fixed top-0 left-0 w-[100vw] h-[100vh] bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-fade-in overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                {editingAgentId ? 'AI Agent Düzenle' : 'Yeni AI Agent Ekle'}
-                            </h3>
-                            <button onClick={() => setIsAgentModalOpen(false)}>
-                                <XCircle className="w-6 h-6 text-slate-400 hover:text-slate-600" />
-                            </button>
-                        </div>
-                        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }} className="p-4 space-y-3">
-                            {/* Avatar Bucket Selection */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Avatar Seç</label>
-                                <div className="grid grid-cols-8 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
-                                    {['https://api.dicebear.com/7.x/avataaars/svg?seed=Agent1', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent2', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent3', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent4', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent5', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent6', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent7', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent8', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent9', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent10', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent11', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent12', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent13', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent14', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent15', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Agent16'].map((avatar, idx) => (
-                                        <div 
-                                            key={idx}
-                                            onClick={() => setAgentForm({...agentForm, avatar})}
-                                            className={`w-10 h-10 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 ${agentForm.avatar === avatar ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-transparent'}`}
-                                        >
-                                            <img src={avatar} alt="" className="w-full h-full object-cover" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Name</label>
-                                <input
-                                    required
-                                    value={agentForm.name}
-                                    onChange={(e) => setAgentForm({...agentForm, name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="örn: Danışman Asistanı"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
-                                <input
-                                    required
-                                    value={agentForm.jobTitle}
-                                    onChange={(e) => setAgentForm({...agentForm, jobTitle: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="örn: Senior Advisor"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Work Description</label>
-                                <textarea
-                                    required
-                                    value={agentForm.workDescription}
-                                    onChange={(e) => setAgentForm({...agentForm, workDescription: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                    placeholder="Agentin görevlerini açıklayın..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">AI Model</label>
-                                <select
-                                    value={agentForm.aiModel}
-                                    onChange={(e) => setAgentForm({...agentForm, aiModel: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm"
-                                >
-                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                    <option value="gpt-4o">GPT-4o</option>
-                                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">API Key</label>
-                                <input
-                                    type="password"
-                                    value={agentForm.apiKey}
-                                    onChange={(e) => setAgentForm({...agentForm, apiKey: e.target.value})}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono text-sm"
-                                    placeholder="API anahtarınızı giriniz..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-2">Yetki Alanları</label>
-                                <div className="grid grid-cols-2 gap-1">
-                                    {['students.read', 'students.write', 'universities.read', 'universities.write', 'documents.read', 'documents.write', 'applications.read', 'applications.write'].map(perm => (
-                                        <label key={perm} className="flex items-center gap-1 p-1.5 border border-slate-200 rounded hover:bg-slate-50 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={agentForm.permissions?.includes(perm) || false}
-                                                onChange={(e) => {
-                                                    const isChecked = e.target.checked;
-                                                    setAgentForm(prev => ({
-                                                        ...prev,
-                                                        permissions: isChecked
-                                                            ? [...(prev.permissions || []), perm]
-                                                            : (prev.permissions || []).filter(p => p !== perm)
-                                                    }));
-                                                }}
-                                                className="w-3 h-3 text-indigo-600 rounded border-slate-300"
-                                            />
-                                            <span className="text-[10px] text-slate-700">{perm}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="pt-3 flex justify-between">
-                                {editingAgentId && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { handleDeleteAgent(editingAgentId); setIsAgentModalOpen(false); }}
-                                        className="px-3 py-1.5 text-rose-600 font-medium hover:bg-rose-50 rounded-lg text-sm"
-                                    >
-                                        Sil
-                                    </button>
-                                )}
-                                <div className="flex gap-2 ml-auto">
-                                    <button type="button" onClick={() => setIsAgentModalOpen(false)} className="px-3 py-1.5 text-slate-600 font-medium text-sm">İptal</button>
-                                    <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 text-sm">Kaydet</button>
-                                </div>
                             </div>
                         </form>
                     </div>

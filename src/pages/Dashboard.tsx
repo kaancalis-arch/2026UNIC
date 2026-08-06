@@ -5,12 +5,12 @@ import { sharedInstitutionService } from '../services/sharedInstitutionService';
 import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react';
 import { getFlagEmoji } from '../utils/countryUtils';
-import { motion } from 'framer-motion';
+import { motion, type Variants } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { CalendarEntry, CalendarEvent, EVENT_TYPES, formatEventTime } from '../components/Calendar';
 import { calendarService } from '../services/calendarService';
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -18,12 +18,12 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
 };
 
-const scaleIn = {
+const scaleIn: Variants = {
   hidden: { opacity: 0, scale: 0.92 },
   visible: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 200, damping: 20 } }
 };

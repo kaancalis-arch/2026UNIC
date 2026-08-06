@@ -1,7 +1,24 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = "https://qwualszqafxjorumgttv.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dWFsc3pxYWZ4am9ydW1ndHR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDU5MjQsImV4cCI6MjA4OTMyMTkyNH0.cm5J9aQuUz-riX3vBpo-CNp0p5KSFOUT730gbZPXYHk";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabasePublishableKey) {
+  throw new Error(
+    'Supabase yapılandırması eksik. VITE_SUPABASE_URL ve VITE_SUPABASE_PUBLISHABLE_KEY ortam değişkenlerini tanımlayın.'
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
+
+export const getPublicStorageUrl = (bucket: string, path: string): string => {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  return `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedPath}`;
+};

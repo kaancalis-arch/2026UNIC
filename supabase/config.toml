@@ -1,0 +1,11 @@
+[functions.student-documents]
+verify_jwt = true
+
+[functions.student-document-share]
+verify_jwt = false
+
+[functions.ai-advisor]
+verify_jwt = true
+
+[functions.ai-advisor-share]
+verify_jwt = false

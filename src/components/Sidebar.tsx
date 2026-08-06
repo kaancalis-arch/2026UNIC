@@ -17,6 +17,10 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
+import { canAccessPage } from '../auth/permissions';
+import { getPublicStorageUrl } from '../services/supabaseClient';
+
+const UNIC_DARK_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC Dark Logo.png');
 
 const ResearchIcon: React.FC<{ className?: string }> = ({ className }) => (
   <span className={`${className || ''} inline-flex items-center justify-center text-base leading-none`}>📊</span>
@@ -26,8 +30,7 @@ interface SidebarProps {
   currentPage: string;
   setPage: (page: string) => void;
   currentUser: SystemUser;
-  onSwitchUser: () => void;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   isCollapsed: boolean;
   onToggle: () => void;
 }
@@ -43,7 +46,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentPage,
   setPage,
   currentUser,
-  onSwitchUser,
   onLogout,
   isCollapsed,
   onToggle
@@ -53,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ];
 
-    if (currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.BRANCH_MANAGER || currentUser.role === UserRole.CONSULTANT || currentUser.role === UserRole.REPRESENTATIVE || currentUser.role === UserRole.STUDENT_REPRESENTATIVE) {
+    if (canAccessPage(currentUser.role, 'students')) {
       baseItems.push({ id: 'students', label: 'CRM', icon: Users });
     }
 
@@ -79,7 +81,12 @@ const Sidebar: React.FC<SidebarProps> = ({
       ]
     });
 
-    return baseItems;
+    return baseItems
+      .filter((item) => canAccessPage(currentUser.role, item.id))
+      .map((item) => ({
+        ...item,
+        subItems: item.subItems?.filter((subItem) => canAccessPage(currentUser.role, subItem.id)),
+      }));
   };
 
   const navItems = getNavItems();
@@ -93,7 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     <div className={`fixed left-0 top-0 z-50 flex h-screen flex-col bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 text-white shadow-xl transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
       <div className={`flex items-center border-b border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'justify-center'}`}>
         <img
-          src="https://qwualszqafxjorumgttv.supabase.co/storage/v1/object/sign/Unic_Main/UNIC%20Dark%20Logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8yZjYzOGI0OC0wNTc0LTQ2OTItYmQwZi1lZDk3NzM3Njk2ODkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJVbmljX01haW4vVU5JQyBEYXJrIExvZ28ucG5nIiwiaWF0IjoxNzc0OTc5NDE5LCJleHAiOjI2Mzg5Nzk0MTl9.8gNdL0DIenvyeJ9eopJ0Qfm_5m_ggT-FB-KhVUpnzg0"
+          src={UNIC_DARK_LOGO_URL}
           alt="UNIC logo"
           className={`${isCollapsed ? 'h-14 w-14' : 'h-28 w-auto max-w-[260px]'} shrink-0 rounded-2xl bg-transparent object-contain`}
         />
@@ -160,7 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className={`space-y-2 border-t border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'px-2' : ''}`}>
-        {(currentUser.role === UserRole.SUPER_ADMIN || currentUser.role === UserRole.ADMIN) && (
+        {canAccessPage(currentUser.role, 'settings') && (
           <button
             onClick={() => setPage('settings')}
             title={isCollapsed ? 'System Settings' : ''}
@@ -172,9 +179,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div
-          onClick={onSwitchUser}
-          className={`w-full cursor-pointer rounded-xl border border-slate-800 bg-slate-800/50 transition-colors hover:border-slate-700 hover:bg-slate-800 ${isCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-3'} flex items-center`}
-          title={isCollapsed ? `${currentUser.full_name} (${currentUser.role})` : 'Click to switch simulated role (Demo)'}
+          className={`flex w-full items-center rounded-xl border border-slate-800 bg-slate-800/50 ${isCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-3'}`}
+          title={isCollapsed ? `${currentUser.full_name} (${currentUser.role})` : undefined}
         >
           <div className="relative shrink-0">
             <img src={currentUser.avatarUrl} className="h-8 w-8 rounded-full bg-slate-700" />
@@ -194,13 +200,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <p className="truncate text-sm font-medium text-white">{currentUser.full_name}</p>
                 <p className="text-[10px] uppercase tracking-wider text-slate-400">{currentUser.role}</p>
               </div>
-              <ChevronRight className="h-4 w-4 text-slate-500" />
             </>
           )}
         </div>
 
          <button
-           onClick={onLogout}
+           onClick={() => void onLogout()}
            title={isCollapsed ? 'Sign Out' : ''}
            className={`w-full rounded-xl text-xs font-medium text-rose-400 transition-colors hover:bg-slate-800 hover:text-rose-300 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'} flex items-center`}
          >

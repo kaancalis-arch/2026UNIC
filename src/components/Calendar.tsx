@@ -110,6 +110,8 @@ export const formatEventTime = (time?: string) => {
 interface CalendarProps {
   students: Student[];
   users: SystemUser[];
+  usersLoading: boolean;
+  usersError: string | null;
   entries: CalendarEntry[];
   events: CalendarEvent[];
   onAddEvent: (event: Omit<CalendarEvent, 'id'>) => void;
@@ -119,7 +121,7 @@ interface CalendarProps {
   onSelectedDateChange?: (date: string | null) => void;
 }
 
-const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, onAddEvent, onDeleteEvent, variant = 'full', selectedDate: controlledSelectedDate, onSelectedDateChange }) => {
+const Calendar: React.FC<CalendarProps> = ({ students, users, usersLoading, usersError, entries, events, onAddEvent, onDeleteEvent, variant = 'full', selectedDate: controlledSelectedDate, onSelectedDateChange }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showExternalForm, setShowExternalForm] = useState(false);
   const [externalDate, setExternalDate] = useState('');
@@ -132,7 +134,7 @@ const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, o
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const availableUsers = useMemo(
-    () => users.filter((user) => user.isActive && user.role !== UserRole.STUDENT),
+    () => users.filter((user) => user.status === 'active' && user.role !== UserRole.STUDENT),
     [users]
   );
 
@@ -524,18 +526,28 @@ const Calendar: React.FC<CalendarProps> = ({ students, users, entries, events, o
                 <label className="block text-xs text-slate-400 mb-1">Atanan Kullanıcı</label>
                 <select
                   value={assignedUserId}
+                  disabled={usersLoading || Boolean(usersError) || availableUsers.length === 0}
                   onChange={e => {
                     setAssignedUserId(e.target.value);
                   }}
                   className="w-full bg-slate-600 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">Kullanıcı seçin</option>
+                  <option value="">
+                    {usersLoading
+                      ? 'Kullanıcılar yükleniyor'
+                      : usersError
+                        ? 'Kullanıcılar yüklenemedi'
+                        : availableUsers.length === 0
+                          ? 'Atanabilir kullanıcı bulunamadı'
+                          : 'Kullanıcı seçin'}
+                  </option>
                   {availableUsers.map((user) => (
                     <option key={user.id} value={user.id}>
                       {`${user.full_name} - ${user.role}`}
                     </option>
                   ))}
                 </select>
+                {usersError && <p className="mt-1 text-xs font-medium text-rose-300">{usersError}</p>}
               </div>
 
               <div>

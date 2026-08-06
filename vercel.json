@@ -1,0 +1,28 @@
+{
+  "rewrites": [
+    {
+      "source": "/reset-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reset-password/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/document/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/document/:token/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/report/:token",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/report/:token/",
+      "destination": "/index.html"
+    }
+  ]
+}
