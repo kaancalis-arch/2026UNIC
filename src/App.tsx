@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import StudentList from './pages/StudentList';
 import StudentDetail from './pages/StudentDetail';
 import Settings from './pages/Settings';
+import UserManagement from './pages/UserManagement';
 import VisaResults from './pages/VisaResults';
 import VisaChecklist from './pages/VisaChecklist';
 import VisaControl from './pages/VisaControl';
@@ -102,6 +103,8 @@ const App: React.FC = () => {
           );
       case 'settings':
         return <Settings onUniversitySelect={handleUniversitySelect} onDepartmentKeywordRulesOpen={() => setCurrentPage('department-keyword-rules')} />;
+      case 'user-management':
+        return <UserManagement />;
       case 'department-keyword-rules':
         return <DepartmentKeywordRules />;
       case 'universities':

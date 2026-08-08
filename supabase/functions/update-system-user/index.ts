@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { authorizeActor } from '../_shared/authorization.ts';
+import { authorizeAuthenticatedActor } from '../_shared/authorization.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { errorResponse, SafeError, successResponse } from '../_shared/safeErrors.ts';
 import { assertNoUserDependencies } from '../_shared/userDependencies.ts';
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actor = await authorizeActor(admin, req);
+    const actor = await authorizeAuthenticatedActor(admin, req);
     const payload = await parsePayload(req);
 
     const { data: snapshot, error: targetError } = await admin
@@ -68,6 +68,15 @@ Deno.serve(async (req) => {
     }
     if (!snapshot) throw new SafeError('TARGET_NOT_FOUND', 'Kullanıcı bulunamadı.', 404);
 
+    const isSelfUpdate = actor.id === snapshot.id;
+    const isGlobalAdmin = actor.role === 'Super Admin' || actor.role === 'Admin';
+    if (!isSelfUpdate && snapshot.parent_user_id !== actor.id) {
+      throw new SafeError('FORBIDDEN', 'Yalnız doğrudan bağlı kullanıcılar yönetilebilir.', 403);
+    }
+    if (!isGlobalAdmin && (Object.keys(payload).length !== 2 || payload.status === undefined)) {
+      throw new SafeError('FORBIDDEN', 'Bu rol yalnız doğrudan alt kullanıcıların durumunu değiştirebilir.', 403);
+    }
+
     if (actor.role === 'Admin' && snapshot.role === 'Super Admin') {
       throw new SafeError('SUPER_ADMIN_PROTECTED', 'Admin kullanıcılar Super Admin hesaplarını değiştiremez.', 403);
     }
@@ -80,9 +89,11 @@ Deno.serve(async (req) => {
 
     const updates: Record<string, unknown> = {};
     for (const field of profileFields) {
-      if (Object.prototype.hasOwnProperty.call(payload, field)) updates[field] = payload[field];
+      if (Object.prototype.hasOwnProperty.call(payload, field) && payload[field] !== snapshot[field]) {
+        updates[field] = payload[field];
+      }
     }
-    if (actor.id === snapshot.id) {
+    if (isSelfUpdate) {
       const changesProtectedField = selfProtectedFields.some(
         (field) => Object.prototype.hasOwnProperty.call(updates, field) && updates[field] !== snapshot[field],
       );
@@ -96,6 +107,9 @@ Deno.serve(async (req) => {
     }
 
     const merged = { ...snapshot, ...updates };
+    if (!isSelfUpdate && merged.parent_user_id !== actor.id) {
+      throw new SafeError('FORBIDDEN', 'Kullanıcı yalnız mevcut doğrudan yöneticisine bağlı kalabilir.', 403);
+    }
     const statusChanged = merged.status !== snapshot.status;
     if (snapshot.status === 'active' && merged.status === 'passive') {
       await assertNoUserDependencies(admin, payload.id, { activeChildrenOnly: true });
@@ -146,12 +160,14 @@ Deno.serve(async (req) => {
     let profile: unknown;
     let profileError: any;
     try {
-      const result = await admin
+      let profileQuery = admin
         .from('system_users')
         .update(updates)
-        .eq('id', payload.id)
+        .eq('id', payload.id);
+      if (!isSelfUpdate) profileQuery = profileQuery.eq('parent_user_id', actor.id);
+      const result = await profileQuery
         .select('*')
-        .single();
+        .maybeSingle();
       profile = result.data;
       profileError = result.error;
     } catch (error) {
@@ -166,7 +182,7 @@ Deno.serve(async (req) => {
       throw new SafeError('PROFILE_UPDATE_FAILED', 'Kullanıcı profili güncellenemedi.', 500);
     }
 
-    if (profileError) {
+    if (profileError || !profile) {
       console.error('Sistem kullanıcı profili güncellenemedi:', profileError);
       if (authSnapshot) {
         const rolledBack = await rollbackAuthUser(admin, payload.id, authSnapshot);
@@ -185,8 +201,11 @@ Deno.serve(async (req) => {
           409,
         );
       }
-      if (profileError.code === '23505') {
+      if (profileError?.code === '23505') {
         throw new SafeError('EMAIL_ALREADY_EXISTS', 'Bu e-posta adresi zaten kayıtlı.', 409);
+      }
+      if (!profile) {
+        throw new SafeError('FORBIDDEN', 'Kullanıcı artık doğrudan hesabınıza bağlı değil.', 403);
       }
       throw new SafeError('PROFILE_UPDATE_FAILED', 'Kullanıcı profili güncellenemedi.', 400);
     }

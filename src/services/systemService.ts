@@ -149,6 +149,25 @@ export const systemService = {
     return (data || []).map(mapSystemUser);
   },
 
+  async getDirectReports(parentUserId: string): Promise<SystemUser[]> {
+    if (!supabase) throw new Error(EDGE_FALLBACK_MESSAGE);
+
+    const { data, error } = await supabase
+      .from('system_users')
+      .select('*')
+      .eq('parent_user_id', parentUserId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching direct reports:', error);
+      throw new Error('Bağlı kullanıcılar yüklenemedi. Lütfen tekrar deneyin.');
+    }
+
+    return (data || [])
+      .map(mapSystemUser)
+      .filter(user => user.parent_user_id === parentUserId);
+  },
+
   async addSystemUserWithAuth(user: SystemUserPayload, password: string): Promise<SystemUser> {
     if (!supabase) throw new Error('Supabase is not initialized');
     await validateHierarchyWrite(undefined, user);
@@ -235,13 +254,13 @@ export const systemService = {
     if (!isEdgeSuccessBody(data)) throw new Error(EDGE_FALLBACK_MESSAGE);
   },
 
-  async permanentlyDeleteSystemUser(id: string): Promise<void> {
+  async permanentlyDeleteSystemUser(id: string, fullName: string): Promise<void> {
     if (!supabase) throw new Error('Supabase is not initialized');
     const accessToken = await requireAccessToken();
 
     const { data, error } = await supabase.functions.invoke('delete-system-user', {
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: { id }
+      body: { id, full_name: fullName }
     });
 
     if (error) await throwSafeEdgeError(error, data);
