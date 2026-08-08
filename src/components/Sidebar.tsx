@@ -15,6 +15,7 @@ import {
   CalendarDays,
   ChartPie,
   CheckCircle,
+  UserRoundCog,
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
 import { canAccessPage } from '../auth/permissions';
@@ -61,6 +62,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     if (canAccessPage(currentUser.role, 'user-management')) {
       baseItems.push({ id: 'user-management', label: 'Kullanıcı Yönetimi', icon: Users });
+    }
+
+    if (canAccessPage(currentUser.role, 'student-assignments')) {
+      baseItems.push({ id: 'student-assignments', label: 'Öğrenci Atamaları', icon: UserRoundCog });
     }
 
     if (currentUser.role === UserRole.STUDENT) {

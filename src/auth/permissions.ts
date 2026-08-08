@@ -18,6 +18,12 @@ const LIMITED_USER_MANAGEMENT_ROLES = new Set([
   UserRole.STUDENT_REPRESENTATIVE,
 ]);
 
+const STUDENT_ASSIGNMENT_ROLES = new Set([
+  UserRole.SUPER_ADMIN,
+  UserRole.ADMIN,
+  UserRole.BRANCH_MANAGER,
+]);
+
 export const canAccessPage = (role: UserRole, page: string): boolean => {
   // This controls frontend UX only; Supabase RLS remains the security boundary.
   if (ADMIN_ONLY_PAGES.has(page)) {
@@ -26,6 +32,10 @@ export const canAccessPage = (role: UserRole, page: string): boolean => {
 
   if (page === 'user-management') {
     return LIMITED_USER_MANAGEMENT_ROLES.has(role);
+  }
+
+  if (page === 'student-assignments') {
+    return STUDENT_ASSIGNMENT_ROLES.has(role);
   }
 
   if (STUDENT_RESTRICTED_PAGES.has(page)) {
