@@ -59,6 +59,10 @@ const Sidebar: React.FC<SidebarProps> = ({
       baseItems.push({ id: 'students', label: 'CRM', icon: Users });
     }
 
+    if (canAccessPage(currentUser.role, 'user-management')) {
+      baseItems.push({ id: 'user-management', label: 'Kullanıcı Yönetimi', icon: Users });
+    }
+
     if (currentUser.role === UserRole.STUDENT) {
       baseItems.push({ id: 'my-profile', label: 'My Profile', icon: User });
       baseItems.push({ id: 'my-roadmap', label: 'My Roadmap', icon: Map });

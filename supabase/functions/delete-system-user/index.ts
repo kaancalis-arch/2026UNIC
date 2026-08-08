@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { authorizeActor } from '../_shared/authorization.ts';
+import { authorizeAuthenticatedActor } from '../_shared/authorization.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { errorResponse, jsonResponse, SafeError } from '../_shared/safeErrors.ts';
 import { assertNoUserDependencies } from '../_shared/userDependencies.ts';
@@ -35,19 +35,17 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actor = await authorizeActor(admin, req);
-    const targetId = await parseTargetId(req);
+    const actor = await authorizeAuthenticatedActor(admin, req);
+    const payload = await parsePayload(req);
+    const targetId = payload.id;
 
-    if (actor.role !== 'Super Admin') {
-      throw new SafeError('FORBIDDEN', 'Yalnız Super Admin kullanıcıları kalıcı olarak silebilir.', 403);
-    }
     if (actor.id === targetId) {
       throw new SafeError('SELF_DELETE_RESTRICTED', 'Kendi hesabınızı silemezsiniz.', 403);
     }
 
     const { data: snapshot, error: targetError } = await admin
       .from('system_users')
-      .select('id, full_name, email, role, branch_id, parent_user_id, status, avatar_url')
+      .select('*')
       .eq('id', targetId)
       .maybeSingle();
     if (targetError) {
@@ -55,16 +53,26 @@ Deno.serve(async (req) => {
       throw new SafeError('INTERNAL_ERROR', 'Kullanıcı bilgileri okunamadı.', 500);
     }
     if (!snapshot) throw new SafeError('TARGET_NOT_FOUND', 'Kullanıcı bulunamadı.', 404);
+    if (snapshot.parent_user_id !== actor.id) {
+      throw new SafeError('FORBIDDEN', 'Yalnız doğrudan bağlı kullanıcılar kalıcı olarak silinebilir.', 403);
+    }
+    if (payload.full_name !== snapshot.full_name) {
+      throw new SafeError('VALIDATION_ERROR', 'Kalıcı silme onayındaki kullanıcı adı eşleşmiyor.', 400);
+    }
 
-    await assertNoUserDependencies(admin, targetId, { includeCalendar: true });
+    await assertNoUserDependencies(admin, targetId, { includeCalendar: true, includePermanentRecords: true });
 
     const { data: deletedProfile, error: profileError } = await admin
       .from('system_users')
       .delete()
       .eq('id', targetId)
+      .eq('parent_user_id', actor.id)
       .select('id')
-      .single();
-    if (profileError || !deletedProfile) {
+      .maybeSingle();
+    if (!profileError && !deletedProfile) {
+      throw new SafeError('FORBIDDEN', 'Kullanıcı artık doğrudan hesabınıza bağlı değil.', 403);
+    }
+    if (profileError) {
       console.error('Sistem kullanıcı profili silinemedi:', profileError);
       if (isSuperAdminProtectionError(profileError)) {
         throw new SafeError('SUPER_ADMIN_PROTECTED', 'Son aktif Super Admin silinemez.', 409);
@@ -99,7 +107,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function parseTargetId(req: Request): Promise<string> {
+async function parsePayload(req: Request): Promise<{ id: string; full_name: string }> {
   let value: unknown;
   try {
     value = await req.json();
@@ -112,10 +120,17 @@ async function parseTargetId(req: Request): Promise<string> {
     throw new SafeError('VALIDATION_ERROR', 'Geçersiz istek gövdesi.', 400);
   }
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).length !== 1 || !Object.prototype.hasOwnProperty.call(input, 'id') || !isUuid(input.id)) {
-    throw new SafeError('VALIDATION_ERROR', 'İstek gövdesi yalnız geçerli bir UUID olan id alanını içermelidir.', 400);
+  if (
+    Object.keys(input).length !== 2 ||
+    !Object.prototype.hasOwnProperty.call(input, 'id') ||
+    !Object.prototype.hasOwnProperty.call(input, 'full_name') ||
+    !isUuid(input.id) ||
+    typeof input.full_name !== 'string' ||
+    !input.full_name
+  ) {
+    throw new SafeError('VALIDATION_ERROR', 'İstek gövdesi geçerli id ve tam full_name alanlarını içermelidir.', 400);
   }
-  return input.id;
+  return { id: input.id, full_name: input.full_name };
 }
 
 function isSuperAdminProtectionError(error: { message?: string; details?: string } | null): boolean {
