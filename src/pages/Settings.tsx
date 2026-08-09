@@ -1930,8 +1930,8 @@ const Settings: React.FC<{
                                         <div className="flex items-center justify-end gap-2">
                                              <button
                                                  onClick={() => openEditUserModal(user)}
-                                                 disabled={!isCurrentUser && !isDirectReport}
-                                                 title={!isCurrentUser && !isDirectReport ? 'Yalnız kendi hesabınız veya doğrudan bağlı kullanıcı düzenlenebilir' : 'Kullanıcıyı düzenle'}
+                                                 disabled={!isDirectReport}
+                                                 title={!isDirectReport ? isCurrentUser ? 'Kendi kullanıcı satırınız salt okunurdur' : 'Dolaylı bağlı kullanıcılar salt okunurdur' : 'Kullanıcıyı düzenle'}
                                                  aria-label={`${user.full_name} kullanıcısını düzenle`}
                                                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                                             >
