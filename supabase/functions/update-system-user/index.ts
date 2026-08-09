@@ -33,7 +33,6 @@ const profileFields = [
   'avatar_url',
 ] as const;
 const payloadFields = new Set(['id', ...profileFields]);
-const selfProtectedFields = ['email', 'role', 'branch_id', 'parent_user_id', 'status'] as const;
 
 Deno.serve(async (req) => {
   const corsResponse = handleCors(req);
@@ -94,15 +93,8 @@ Deno.serve(async (req) => {
       }
     }
     if (isSelfUpdate) {
-      const changesProtectedField = selfProtectedFields.some(
-        (field) => Object.prototype.hasOwnProperty.call(updates, field) && updates[field] !== snapshot[field],
-      );
-      if (changesProtectedField) {
-        throw new SafeError(
-          'SELF_UPDATE_RESTRICTED',
-          'Kendi hesabınızın e-posta, rol, durum, şube veya üst kullanıcı bilgisini değiştiremezsiniz.',
-          403,
-        );
+      if (Object.keys(updates).length > 0) {
+        throw new SafeError('SELF_UPDATE_RESTRICTED', 'Kendi kullanıcı kaydınızı değiştiremezsiniz.', 403);
       }
     }
 
