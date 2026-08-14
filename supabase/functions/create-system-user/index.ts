@@ -1,7 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { authorizeActor } from '../_shared/authorization.ts';
+import { authorizeAuthenticatedActor } from '../_shared/authorization.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { errorResponse, SafeError, successResponse } from '../_shared/safeErrors.ts';
+import { canBranchManagerCreateTarget } from '../_shared/systemUserManagement.ts';
 import {
   isSystemUserRole,
   isSystemUserStatus,
@@ -14,6 +15,7 @@ import {
 type CreateSystemUserPayload = {
   full_name: string;
   email: string;
+  phone: string | null;
   password: string;
   role: string;
   branch_id: string | null;
@@ -25,6 +27,7 @@ type CreateSystemUserPayload = {
 const payloadFields = new Set([
   'full_name',
   'email',
+  'phone',
   'password',
   'role',
   'branch_id',
@@ -52,11 +55,17 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actor = await authorizeActor(admin, req);
+    const actor = await authorizeAuthenticatedActor(admin, req);
     const payload = await parsePayload(req);
 
+    if (!['Super Admin', 'Admin', 'Şube Müdürü'].includes(actor.role)) {
+      throw new SafeError('FORBIDDEN', 'Bu işlem için yetkiniz bulunmuyor.', 403);
+    }
     if (actor.role === 'Admin' && payload.role === 'Super Admin') {
       throw new SafeError('FORBIDDEN', 'Admin kullanıcılar Super Admin oluşturamaz.', 403);
+    }
+    if (actor.role === 'Şube Müdürü') {
+      await assertBranchManagerCanCreate(admin, actor, payload);
     }
 
     await validateBranch(admin, payload.branch_id);
@@ -97,6 +106,9 @@ Deno.serve(async (req) => {
 
     try {
       // The real Auth id makes the final self/cycle check authoritative.
+      if (actor.role === 'Şube Müdürü') {
+        await assertBranchManagerCanCreate(admin, actor, payload);
+      }
       await validateUserHierarchy(admin, hierarchyCandidate(authUserId, payload));
 
       const { data: profile, error: profileError } = await admin
@@ -105,6 +117,7 @@ Deno.serve(async (req) => {
           id: authUserId,
           full_name: payload.full_name,
           email: payload.email,
+          phone: payload.phone,
           role: payload.role,
           branch_id: payload.branch_id,
           parent_user_id: payload.parent_user_id,
@@ -161,6 +174,12 @@ async function parsePayload(req: Request): Promise<CreateSystemUserPayload> {
   if (typeof input.email !== 'string' || !isEmail(input.email.trim())) {
     throw new SafeError('VALIDATION_ERROR', 'Geçerli bir e-posta adresi zorunludur.', 400);
   }
+  if (input.phone !== undefined && input.phone !== null && typeof input.phone !== 'string') {
+    throw new SafeError('VALIDATION_ERROR', 'Telefon metin olmalıdır.', 400);
+  }
+  if (typeof input.phone === 'string' && input.phone.trim() && !/^05\d{9}$/.test(input.phone.trim())) {
+    throw new SafeError('VALIDATION_ERROR', 'Telefon 05 ile başlamalı ve ardından 9 rakam içermelidir.', 400);
+  }
   if (typeof input.password !== 'string' || input.password.length < 6) {
     throw new SafeError('VALIDATION_ERROR', 'Şifre en az 6 karakter olmalıdır.', 400);
   }
@@ -179,6 +198,7 @@ async function parsePayload(req: Request): Promise<CreateSystemUserPayload> {
   const payload: CreateSystemUserPayload = {
     full_name: input.full_name.trim(),
     email: input.email.trim().toLowerCase(),
+    phone: typeof input.phone === 'string' ? input.phone.trim() || null : null,
     password: input.password,
     role: input.role,
     branch_id: (input.branch_id as string | null | undefined) ?? null,
@@ -225,5 +245,32 @@ async function rollbackCreatedAuthUser(admin: any, userId: string): Promise<bool
   } catch (error) {
     console.error('KRİTİK: Auth kullanıcı rollback isteği tamamlanamadı:', { userId, error });
     return false;
+  }
+}
+
+async function assertBranchManagerCanCreate(
+  admin: any,
+  actor: { id: string; role: string; branch_id: string | null },
+  payload: CreateSystemUserPayload,
+): Promise<void> {
+  let selectedParent = null;
+  if (payload.role === 'Temsilci' && payload.parent_user_id !== actor.id) {
+    const { data: parent, error: parentError } = await admin
+      .from('system_users')
+      .select('id, role, branch_id, parent_user_id, status')
+      .eq('id', payload.parent_user_id)
+      .maybeSingle();
+    if (parentError) {
+      console.error('Temsilci üst yöneticisi doğrulanamadı:', parentError);
+      throw new SafeError('INTERNAL_ERROR', 'Üst yönetici bilgisi doğrulanamadı.', 500);
+    }
+    selectedParent = parent;
+  }
+  if (!canBranchManagerCreateTarget(actor, hierarchyCandidate('', payload), selectedParent)) {
+    throw new SafeError(
+      'FORBIDDEN',
+      'Şube Müdürü yalnızca kendi aktif şubesinde izin verilen Danışman veya Temsilciyi oluşturabilir.',
+      403,
+    );
   }
 }

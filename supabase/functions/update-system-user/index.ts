@@ -4,6 +4,11 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { errorResponse, SafeError, successResponse } from '../_shared/safeErrors.ts';
 import { assertNoUserDependencies } from '../_shared/userDependencies.ts';
 import {
+  assertNotSelfTarget,
+  canManageDirectTarget,
+  canUpdateTargetFields,
+} from '../_shared/systemUserManagement.ts';
+import {
   isSystemUserRole,
   isSystemUserStatus,
   isUuid,
@@ -16,6 +21,7 @@ type UpdateSystemUserPayload = {
   id: string;
   full_name?: string;
   email?: string;
+  phone?: string | null;
   role?: string;
   branch_id?: string | null;
   parent_user_id?: string | null;
@@ -26,6 +32,7 @@ type UpdateSystemUserPayload = {
 const profileFields = [
   'full_name',
   'email',
+  'phone',
   'role',
   'branch_id',
   'parent_user_id',
@@ -33,8 +40,6 @@ const profileFields = [
   'avatar_url',
 ] as const;
 const payloadFields = new Set(['id', ...profileFields]);
-const selfProtectedFields = ['email', 'role', 'branch_id', 'parent_user_id', 'status'] as const;
-
 Deno.serve(async (req) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
@@ -57,9 +62,11 @@ Deno.serve(async (req) => {
     const actor = await authorizeAuthenticatedActor(admin, req);
     const payload = await parsePayload(req);
 
+    assertNotSelfTarget(actor.id, payload.id, 'SELF_UPDATE_RESTRICTED');
+
     const { data: snapshot, error: targetError } = await admin
       .from('system_users')
-      .select('id, full_name, email, role, branch_id, parent_user_id, status, avatar_url')
+      .select('id, full_name, email, phone, role, branch_id, parent_user_id, status, avatar_url')
       .eq('id', payload.id)
       .maybeSingle();
     if (targetError) {
@@ -68,13 +75,8 @@ Deno.serve(async (req) => {
     }
     if (!snapshot) throw new SafeError('TARGET_NOT_FOUND', 'Kullanıcı bulunamadı.', 404);
 
-    const isSelfUpdate = actor.id === snapshot.id;
-    const isGlobalAdmin = actor.role === 'Super Admin' || actor.role === 'Admin';
-    if (!isSelfUpdate && snapshot.parent_user_id !== actor.id) {
+    if (!canManageDirectTarget(actor, snapshot)) {
       throw new SafeError('FORBIDDEN', 'Yalnız doğrudan bağlı kullanıcılar yönetilebilir.', 403);
-    }
-    if (!isGlobalAdmin && (Object.keys(payload).length !== 2 || payload.status === undefined)) {
-      throw new SafeError('FORBIDDEN', 'Bu rol yalnız doğrudan alt kullanıcıların durumunu değiştirebilir.', 403);
     }
 
     if (actor.role === 'Admin' && snapshot.role === 'Super Admin') {
@@ -93,23 +95,16 @@ Deno.serve(async (req) => {
         updates[field] = payload[field];
       }
     }
-    if (isSelfUpdate) {
-      const changesProtectedField = selfProtectedFields.some(
-        (field) => Object.prototype.hasOwnProperty.call(updates, field) && updates[field] !== snapshot[field],
+    if (!canUpdateTargetFields(actor.role, Object.keys(updates))) {
+      throw new SafeError(
+        'FORBIDDEN',
+        actor.role === 'Şube Müdürü'
+          ? 'Şube Müdürü kullanıcıların rol, şube veya bağlı yönetici bilgisini değiştiremez.'
+          : 'Bu rol yalnız doğrudan alt kullanıcıların durumunu değiştirebilir.',
+        403,
       );
-      if (changesProtectedField) {
-        throw new SafeError(
-          'SELF_UPDATE_RESTRICTED',
-          'Kendi hesabınızın e-posta, rol, durum, şube veya üst kullanıcı bilgisini değiştiremezsiniz.',
-          403,
-        );
-      }
     }
-
     const merged = { ...snapshot, ...updates };
-    if (!isSelfUpdate && merged.parent_user_id !== actor.id) {
-      throw new SafeError('FORBIDDEN', 'Kullanıcı yalnız mevcut doğrudan yöneticisine bağlı kalabilir.', 403);
-    }
     const statusChanged = merged.status !== snapshot.status;
     if (snapshot.status === 'active' && merged.status === 'passive') {
       await assertNoUserDependencies(admin, payload.id, { activeChildrenOnly: true });
@@ -163,8 +158,11 @@ Deno.serve(async (req) => {
       let profileQuery = admin
         .from('system_users')
         .update(updates)
-        .eq('id', payload.id);
-      if (!isSelfUpdate) profileQuery = profileQuery.eq('parent_user_id', actor.id);
+        .eq('id', payload.id)
+        .eq('parent_user_id', actor.id);
+      if (actor.role !== 'Super Admin' && actor.role !== 'Admin') {
+        profileQuery = profileQuery.eq('branch_id', actor.branch_id);
+      }
       const result = await profileQuery
         .select('*')
         .maybeSingle();
@@ -204,9 +202,7 @@ Deno.serve(async (req) => {
       if (profileError?.code === '23505') {
         throw new SafeError('EMAIL_ALREADY_EXISTS', 'Bu e-posta adresi zaten kayıtlı.', 409);
       }
-      if (!profile) {
-        throw new SafeError('FORBIDDEN', 'Kullanıcı artık doğrudan hesabınıza bağlı değil.', 403);
-      }
+      if (!profile) throw new SafeError('FORBIDDEN', 'Kullanıcı artık doğrudan hesabınıza bağlı değil.', 403);
       throw new SafeError('PROFILE_UPDATE_FAILED', 'Kullanıcı profili güncellenemedi.', 400);
     }
 
@@ -241,6 +237,12 @@ async function parsePayload(req: Request): Promise<UpdateSystemUserPayload> {
   if (input.email !== undefined && (typeof input.email !== 'string' || !isEmail(input.email.trim()))) {
     throw new SafeError('VALIDATION_ERROR', 'Geçerli bir e-posta adresi girilmelidir.', 400);
   }
+  if (input.phone !== undefined && input.phone !== null && typeof input.phone !== 'string') {
+    throw new SafeError('VALIDATION_ERROR', 'Telefon metin olmalıdır.', 400);
+  }
+  if (typeof input.phone === 'string' && input.phone.trim() && !/^05\d{9}$/.test(input.phone.trim())) {
+    throw new SafeError('VALIDATION_ERROR', 'Telefon 05 ile başlamalı ve ardından 9 rakam içermelidir.', 400);
+  }
   if (input.role !== undefined && !isSystemUserRole(input.role)) {
     throw new SafeError('INVALID_ROLE', 'Geçersiz kullanıcı rolü.', 400);
   }
@@ -256,6 +258,9 @@ async function parsePayload(req: Request): Promise<UpdateSystemUserPayload> {
   const payload: UpdateSystemUserPayload = { id: input.id };
   if (input.full_name !== undefined) payload.full_name = (input.full_name as string).trim();
   if (input.email !== undefined) payload.email = (input.email as string).trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(input, 'phone')) {
+    payload.phone = typeof input.phone === 'string' ? input.phone.trim() || null : null;
+  }
   if (input.role !== undefined) payload.role = input.role as string;
   if (input.status !== undefined) payload.status = input.status as string;
   if (Object.prototype.hasOwnProperty.call(input, 'branch_id')) payload.branch_id = input.branch_id as string | null;
