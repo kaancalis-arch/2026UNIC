@@ -3,12 +3,14 @@ import { authorizeAuthenticatedActor } from '../_shared/authorization.ts';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { errorResponse, jsonResponse, SafeError } from '../_shared/safeErrors.ts';
 import { assertNoUserDependencies } from '../_shared/userDependencies.ts';
+import { assertNotSelfTarget, canManageDirectTarget } from '../_shared/systemUserManagement.ts';
 import { isUuid } from '../_shared/userHierarchy.ts';
 
 type SystemUserSnapshot = {
   id: string;
   full_name: string;
   email: string;
+  phone: string | null;
   role: string;
   branch_id: string | null;
   parent_user_id: string | null;
@@ -39,9 +41,7 @@ Deno.serve(async (req) => {
     const payload = await parsePayload(req);
     const targetId = payload.id;
 
-    if (actor.id === targetId) {
-      throw new SafeError('SELF_DELETE_RESTRICTED', 'Kendi hesabınızı silemezsiniz.', 403);
-    }
+    assertNotSelfTarget(actor.id, targetId, 'SELF_DELETE_RESTRICTED');
 
     const { data: snapshot, error: targetError } = await admin
       .from('system_users')
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       throw new SafeError('INTERNAL_ERROR', 'Kullanıcı bilgileri okunamadı.', 500);
     }
     if (!snapshot) throw new SafeError('TARGET_NOT_FOUND', 'Kullanıcı bulunamadı.', 404);
-    if (snapshot.parent_user_id !== actor.id) {
+    if (!canManageDirectTarget(actor, snapshot)) {
       throw new SafeError('FORBIDDEN', 'Yalnız doğrudan bağlı kullanıcılar kalıcı olarak silinebilir.', 403);
     }
     if (payload.full_name !== snapshot.full_name) {
@@ -62,11 +62,15 @@ Deno.serve(async (req) => {
 
     await assertNoUserDependencies(admin, targetId, { includeCalendar: true, includePermanentRecords: true });
 
-    const { data: deletedProfile, error: profileError } = await admin
+    let deleteQuery = admin
       .from('system_users')
       .delete()
       .eq('id', targetId)
-      .eq('parent_user_id', actor.id)
+      .eq('parent_user_id', actor.id);
+    if (actor.role !== 'Super Admin' && actor.role !== 'Admin') {
+      deleteQuery = deleteQuery.eq('branch_id', actor.branch_id);
+    }
+    const { data: deletedProfile, error: profileError } = await deleteQuery
       .select('id')
       .maybeSingle();
     if (!profileError && !deletedProfile) {

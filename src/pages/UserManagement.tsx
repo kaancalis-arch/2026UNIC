@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle, Loader2, Trash2, UserRoundCheck, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { systemService } from '../services/systemService';
-import type { SystemUser } from '../types';
+import { type SystemUser, UserRole } from '../types';
 
 const UserManagement = () => {
   const { currentUser } = useAuth();
@@ -11,6 +11,12 @@ const UserManagement = () => {
   const [statusUserId, setStatusUserId] = useState<string | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const isGlobalAdmin = currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN;
+
+  const isDirectReport = (user: SystemUser): boolean => {
+    if (!currentUser || user.id === currentUser.id || user.parent_user_id !== currentUser.id) return false;
+    return isGlobalAdmin || (!!currentUser.branch_id && user.branch_id === currentUser.branch_id);
+  };
 
   useEffect(() => {
     let active = true;
@@ -20,8 +26,8 @@ const UserManagement = () => {
       setIsLoading(true);
       setError('');
       try {
-        const directReports = await systemService.getDirectReports(currentUser.id);
-        if (active) setUsers(directReports);
+        const visibleUsers = await systemService.getSystemUsers();
+        if (active) setUsers(visibleUsers);
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Bağlı kullanıcılar yüklenemedi.');
       } finally {
@@ -36,7 +42,7 @@ const UserManagement = () => {
   }, [currentUser]);
 
   const toggleStatus = async (user: SystemUser) => {
-    if (!currentUser || user.parent_user_id !== currentUser.id || statusUserId) return;
+    if (!isDirectReport(user) || statusUserId) return;
 
     const nextStatus = user.status === 'active' ? 'passive' : 'active';
     const action = nextStatus === 'passive' ? 'pasife almak' : 'yeniden aktifleştirmek';
@@ -56,7 +62,7 @@ const UserManagement = () => {
   };
 
   const permanentlyDelete = async (user: SystemUser) => {
-    if (!currentUser || user.parent_user_id !== currentUser.id || deletingUserId) return;
+    if (!isDirectReport(user) || deletingUserId) return;
     if (!window.confirm(`${user.full_name} adlı kullanıcı kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?`)) return;
 
     const enteredName = window.prompt(`Kalıcı silmeyi onaylamak için kullanıcının tam adını yazın: ${user.full_name}`);
@@ -87,7 +93,7 @@ const UserManagement = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-300">Sınırlı Yetki</p>
             <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Kullanıcı Yönetimi</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-              Yalnız doğrudan size bağlı kullanıcıların durumunu değiştirebilir veya bağımlı kayıtları yoksa kalıcı olarak silebilirsiniz.
+              Kendi hiyerarşinizdeki tüm kullanıcıları görüntüleyebilirsiniz. İşlemler yalnız doğrudan bağlı hesaplarla sınırlıdır.
             </p>
           </div>
         </div>
@@ -102,12 +108,14 @@ const UserManagement = () => {
       ) : users.length === 0 ? (
         <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
           <Users className="h-9 w-9 text-slate-300" />
-          <h2 className="mt-3 font-semibold text-slate-700">Doğrudan bağlı kullanıcı yok</h2>
-          <p className="mt-1 text-sm text-slate-500">Bu sayfada yalnız doğrudan size bağlı hesaplar listelenir.</p>
+          <h2 className="mt-3 font-semibold text-slate-700">Görüntülenebilir kullanıcı yok</h2>
+          <p className="mt-1 text-sm text-slate-500">Hiyerarşinizde görüntülenebilir hesap bulunamadı.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {users.map(user => {
+            const isSelf = currentUser?.id === user.id;
+            const canManage = isDirectReport(user);
             const isUpdating = statusUserId === user.id;
             const isDeleting = deletingUserId === user.id;
             return (
@@ -122,6 +130,9 @@ const UserManagement = () => {
                     <h2 className="truncate font-bold text-slate-800">{user.full_name}</h2>
                     <p className="truncate text-xs text-slate-500">{user.email}</p>
                     <p className="mt-1 text-xs font-semibold text-teal-700">{user.role}</p>
+                    <p className="mt-1 text-[11px] font-medium text-slate-400">
+                      {isSelf ? 'Kendi hesabınız' : canManage ? 'Doğrudan bağlı' : 'Dolaylı bağlı · salt okunur'}
+                    </p>
                   </div>
                 </div>
 
@@ -129,22 +140,25 @@ const UserManagement = () => {
                   <button
                     type="button"
                     onClick={() => void toggleStatus(user)}
-                    disabled={statusUserId !== null || deletingUserId !== null}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${user.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                    disabled={!canManage || statusUserId !== null || deletingUserId !== null}
+                    title={canManage ? 'Kullanıcı durumunu değiştir' : 'Yalnız doğrudan bağlı kullanıcıların durumu değiştirilebilir'}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${user.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 enabled:hover:bg-emerald-100' : 'border-slate-200 bg-slate-50 text-slate-600 enabled:hover:bg-slate-100'}`}
                   >
                     {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : user.status === 'active' ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                     {isUpdating ? 'Güncelleniyor' : user.status === 'active' ? 'Aktif' : 'Pasif'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void permanentlyDelete(user)}
-                    disabled={deletingUserId !== null || statusUserId !== null}
-                    title="Kullanıcıyı kalıcı olarak sil"
-                    aria-label={`${user.full_name} kullanıcısını kalıcı olarak sil`}
-                    className="rounded-xl bg-rose-50 p-2.5 text-rose-600 transition-colors hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => void permanentlyDelete(user)}
+                      disabled={deletingUserId !== null || statusUserId !== null}
+                      title="Kullanıcıyı kalıcı olarak sil"
+                      aria-label={`${user.full_name} kullanıcısını kalıcı olarak sil`}
+                      className="rounded-xl bg-rose-50 p-2.5 text-rose-600 transition-colors hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  )}
                 </div>
               </article>
             );
