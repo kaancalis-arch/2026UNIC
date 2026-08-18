@@ -9,3 +9,6 @@ verify_jwt = true
 
 [functions.ai-advisor-share]
 verify_jwt = false
+
+[functions.student-assignments]
+verify_jwt = true

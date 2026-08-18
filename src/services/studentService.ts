@@ -1,7 +1,6 @@
 
 import { supabase } from './supabaseClient';
 import { Student, PipelineStage, UserRole } from '../types';
-import { MOCK_STUDENTS } from './mockData';
 
 // Helpers to map snake_case DB columns to camelCase TS props
 function mapDbToStudent(row: any): Student {
@@ -48,7 +47,7 @@ function mapDbToStudent(row: any): Student {
         counselorNotes: row.counselor_notes,
         branchId: row.branch_id,
         // counselor_id is retained in the database to avoid a risky column rename.
-        assignedUserId: row.counselor_id || row.representative_id,
+        assignedUserId: row.counselor_id,
         analyseStatus: row.analyse_status,
         applications: row.applications || [],
         visaStatus: row.visa_status,
@@ -134,7 +133,7 @@ async function validateAssignment(student: Partial<Student>): Promise<void> {
     if (!student.branchId) {
         throw new Error('Sorumlu kullanıcı atamak için öğrencinin şubesi belirtilmelidir.');
     }
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
 
     const { data: assignedUser, error } = await supabase
         .from('system_users')
@@ -157,32 +156,24 @@ async function validateAssignment(student: Partial<Student>): Promise<void> {
 
 export const studentService = {
     async getAll(): Promise<Student[]> {
-        if (!supabase) return MOCK_STUDENTS;
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
 
-        try {
-            const { data, error } = await supabase
-                .from('student_profiles')
-                .select('*')
-                .order('created_at', { ascending: false });
+        const { data, error } = await supabase
+            .from('student_profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-            if (error) {
-                console.warn('Supabase fetch failed (likely invalid key or table missing). Using mock data. Error:', error.message);
-                // In a real scenario, you might want to show an error or empty list, 
-                // but for resilience we fall back to mock data if the DB connection fails completely.
-                return MOCK_STUDENTS;
-            }
-
-            if (!data) return MOCK_STUDENTS;
-
-            return data.map(mapDbToStudent);
-        } catch (err) {
-            console.warn('Unexpected error in studentService.getAll. Using mock data.', err);
-            return MOCK_STUDENTS;
+        if (error) {
+            console.error('Öğrenci sorgusu başarısız:', error);
+            throw new Error('Öğrenciler yüklenemedi. Lütfen tekrar deneyin.');
         }
+        if (!data) throw new Error('Öğrenci verisi alınamadı. Lütfen tekrar deneyin.');
+
+        return data.map(mapDbToStudent);
     },
 
     async findDuplicateContact(email?: string, phone?: string, excludeId?: string): Promise<Student | null> {
-        if (!supabase) return null;
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
 
         const normalizedEmail = email?.trim().toLowerCase();
         const normalizedPhone = phone?.trim();
@@ -244,13 +235,17 @@ export const studentService = {
             throw new Error('En az bir program seçilmelidir.');
         }
 
-        await validateAssignment(student);
-
-        if (!supabase) {
-            return { ...student, id: `local-${Date.now()}` } as Student;
+        if (student.branchId || student.assignedUserId) {
+            throw new Error('Öğrenciyi önce atanmamış oluşturun; şube ve sorumlu için Öğrenci Atamaları sayfasını kullanın.');
         }
 
+        await validateAssignment(student);
+
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
+
         const dbStudent = mapStudentToDb(student);
+        delete dbStudent.branch_id;
+        delete dbStudent.counselor_id;
 
         try {
             const { data, error } = await supabase
@@ -273,9 +268,10 @@ export const studentService = {
     },
 
     async update(id: string, updates: Partial<Student>): Promise<void> {
-        if (!supabase) return;
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
 
-        if (updates.assignedUserId !== undefined || updates.branchId !== undefined) {
+        const updatesAssignment = updates.assignedUserId !== undefined || updates.branchId !== undefined;
+        if (updatesAssignment) {
             const { data: currentStudent, error } = await supabase
                 .from('student_profiles')
                 .select('branch_id, counselor_id')
@@ -283,13 +279,20 @@ export const studentService = {
                 .single();
 
             if (error) throw new Error(error.message || 'Öğrenci atama bilgisi okunamadı.');
-            await validateAssignment({
-                branchId: updates.branchId ?? currentStudent.branch_id,
-                assignedUserId: updates.assignedUserId ?? currentStudent.counselor_id
-            });
+            const requestedBranchId = updates.branchId === undefined
+                ? currentStudent.branch_id
+                : updates.branchId || null;
+            const requestedAssignedUserId = updates.assignedUserId === undefined
+                ? currentStudent.counselor_id
+                : updates.assignedUserId || null;
+            if (requestedBranchId !== currentStudent.branch_id || requestedAssignedUserId !== currentStudent.counselor_id) {
+                throw new Error('Şube ve sorumlu değişikliklerini Öğrenci Atamaları sayfasından yapın.');
+            }
         }
 
         const dbUpdates = mapStudentToDb(updates);
+        delete dbUpdates.branch_id;
+        delete dbUpdates.counselor_id;
 
         try {
             const { error } = await supabase
@@ -308,7 +311,7 @@ export const studentService = {
     },
 
     async delete(id: string): Promise<void> {
-        if (!supabase) return;
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
         try {
             const { data, error } = await supabase.from('student_profiles').delete().eq('id', id).select();
 

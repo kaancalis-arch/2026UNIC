@@ -67,16 +67,28 @@ const isEdgeDeleteSuccessBody = (value: unknown): value is { success: true } => 
 const edgeErrorMessage = (code?: string): string =>
   (code && EDGE_ERROR_MESSAGES[code]) || EDGE_FALLBACK_MESSAGE;
 
+const edgeErrorMessageFromBody = (value: unknown): string | null => {
+  if (isEdgeErrorBody(value)) return edgeErrorMessage(value.code);
+  return null;
+};
+
 async function throwSafeEdgeError(error: unknown, data?: unknown): Promise<never> {
-  if (error instanceof FunctionsHttpError && error.context instanceof Response) {
+  const context = error instanceof FunctionsHttpError
+    ? error.context
+    : error && typeof error === 'object' && 'context' in error
+      ? (error as { context?: unknown }).context
+      : undefined;
+  if (context instanceof Response) {
     let body: unknown;
     try {
-      body = await error.context.clone().json();
+      body = await context.clone().json();
     } catch {}
-    if (isEdgeErrorBody(body)) throw new Error(edgeErrorMessage(body.code));
+    const message = edgeErrorMessageFromBody(body);
+    if (message) throw new Error(message);
   }
 
-  if (isEdgeErrorBody(data)) throw new Error(edgeErrorMessage(data.code));
+  const message = edgeErrorMessageFromBody(data);
+  if (message) throw new Error(message);
   throw new Error(EDGE_FALLBACK_MESSAGE);
 }
 
@@ -178,6 +190,7 @@ export const systemService = {
       body: {
         full_name: user.full_name,
         email: user.email,
+        phone: user.phone || null,
         password,
         role: user.role,
         branch_id: user.branch_id || null,
@@ -209,6 +222,7 @@ export const systemService = {
     };
     addDefinedField('full_name');
     addDefinedField('email');
+    addDefinedField('phone');
     addDefinedField('role');
     addDefinedField('branch_id');
     addDefinedField('parent_user_id');

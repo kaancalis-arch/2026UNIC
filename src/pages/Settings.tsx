@@ -39,6 +39,16 @@ import { useAuth } from '../auth/AuthContext';
 
 const DEFAULT_UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
 const DEFAULT_USER_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=UNICUser';
+const EMPTY_PHONE_PREFIX = '05';
+
+const formatPhoneForInput = (value?: string) => {
+    const digits = (value || '').replace(/\D/g, '');
+    if (!digits) return EMPTY_PHONE_PREFIX;
+    if (digits.startsWith('90') && digits.length === 12) return `0${digits.slice(2)}`.slice(0, 11);
+    if (digits.startsWith('5') && digits.length === 10) return `0${digits}`.slice(0, 11);
+    if (!digits.startsWith(EMPTY_PHONE_PREFIX)) return EMPTY_PHONE_PREFIX;
+    return digits.slice(0, 11);
+};
 
 // University Types with Descriptions (default values)
 const DEFAULT_UNIVERSITY_TYPES = [
@@ -150,8 +160,13 @@ const Settings: React.FC<{
     onDepartmentKeywordRulesOpen?: () => void;
 }> = ({ onUniversitySelect, onDepartmentKeywordRulesOpen }) => {
     const { currentUser } = useAuth();
+    const isBranchManager = currentUser?.role === UserRole.BRANCH_MANAGER;
+    const hasUserOnlySettings = isBranchManager;
+    const isGlobalAdmin = currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN;
     const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor'>('users');
     const [users, setUsers] = useState<SystemUser[]>([]);
+    const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [showPassiveUsers, setShowPassiveUsers] = useState(false);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
     const [crmStudents, setCrmStudents] = useState<Student[]>([]);
     const [isLoadingCrmStudents, setIsLoadingCrmStudents] = useState(false);
@@ -307,7 +322,7 @@ const Settings: React.FC<{
     const [newUser, setNewUser] = useState<Partial<SystemUser>>({
         full_name: '',
         email: '',
-        phone: '',
+        phone: EMPTY_PHONE_PREFIX,
         avatarUrl: '',
         role: undefined,
         branch_id: '',
@@ -318,18 +333,16 @@ const Settings: React.FC<{
     useEffect(() => {
         loadUsers();
         loadBranches();
+        if (hasUserOnlySettings) return;
         loadCrmStudents();
         loadSchoolNames();
-    }, []);
+    }, [hasUserOnlySettings]);
 
     useEffect(() => {
         if (!supabase) return;
 
-        const reloadCrmStudents = () => {
-            loadCrmStudents();
-        };
-
-        const crmStudentsChannel = supabase
+        const reloadCrmStudents = () => loadCrmStudents();
+        const crmStudentsChannel = hasUserOnlySettings ? null : supabase
             .channel('settings-crm-students-sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'student_profiles' }, reloadCrmStudents)
             .subscribe();
@@ -338,15 +351,15 @@ const Settings: React.FC<{
             .channel('settings-system-users-sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'system_users' }, () => {
                 loadUsers();
-                reloadCrmStudents();
+                if (!hasUserOnlySettings) reloadCrmStudents();
             })
             .subscribe();
 
         return () => {
-            supabase.removeChannel(crmStudentsChannel);
+            if (crmStudentsChannel) supabase.removeChannel(crmStudentsChannel);
             supabase.removeChannel(systemUsersChannel);
         };
-    }, []);
+    }, [hasUserOnlySettings]);
 
     // Load definitions
     useEffect(() => {
@@ -683,12 +696,12 @@ const Settings: React.FC<{
         setNewUser({
             full_name: '',
             email: '',
-            phone: '',
+            phone: EMPTY_PHONE_PREFIX,
             avatarUrl: '',
             role: undefined,
-            branch_id: '',
+            branch_id: isBranchManager ? currentUser?.branch_id || '' : '',
             status: 'active',
-            parent_user_id: ''
+            parent_user_id: isBranchManager ? currentUser?.id || '' : ''
         });
     };
 
@@ -698,12 +711,13 @@ const Settings: React.FC<{
     };
 
     const openEditUserModal = (user: SystemUser) => {
+        if (!canManageUser(user)) return;
         setEditingUserId(user.id);
         setNewUserPassword('');
         setNewUser({
             full_name: user.full_name,
             email: user.email,
-            phone: user.phone,
+            phone: formatPhoneForInput(user.phone),
             avatarUrl: user.avatarUrl,
             role: user.role,
             branch_id: user.branch_id,
@@ -719,15 +733,30 @@ const Settings: React.FC<{
             alert('Rol seçimi zorunludur.');
             return;
         }
+        const normalizedPhone = newUser.phone === EMPTY_PHONE_PREFIX ? '' : newUser.phone || '';
+        if (normalizedPhone && !/^05\d{9}$/.test(normalizedPhone)) {
+            alert('Telefon numarası 05 ile başlamalı ve ardından 9 rakam içermelidir.');
+            return;
+        }
+
+        if (isBranchManager && !editingUserId
+            && ![UserRole.CONSULTANT, UserRole.REPRESENTATIVE].includes(newUser.role)) {
+            alert('Şube Müdürü yalnızca Danışman veya Temsilci oluşturabilir.');
+            return;
+        }
 
         const createdUser: SystemUser = {
             id: editingUserId || `user-${Date.now()}`,
             full_name: newUser.full_name || '',
             email: newUser.email || '',
-            phone: newUser.phone || '',
+            phone: normalizedPhone,
             role: newUser.role,
-            branch_id: roleRequiresBranch(newUser.role) ? newUser.branch_id || '' : '',
-            parent_user_id: newUser.parent_user_id,
+            branch_id: isBranchManager
+                ? currentUser?.branch_id || ''
+                : roleRequiresBranch(newUser.role) ? newUser.branch_id || '' : '',
+            parent_user_id: isBranchManager && newUser.role === UserRole.CONSULTANT
+                ? currentUser?.id
+                : newUser.parent_user_id,
             status: newUser.status || 'active',
             avatarUrl: newUser.avatarUrl || DEFAULT_USER_AVATAR_URL,
             created_at: new Date().toISOString(),
@@ -740,7 +769,8 @@ const Settings: React.FC<{
                 return;
             }
 
-            const parentUser = users.find(user => user.id === createdUser.parent_user_id);
+            const parentUser = users.find(user => user.id === createdUser.parent_user_id)
+                || (currentUser?.id === createdUser.parent_user_id ? currentUser : undefined);
             const hierarchyValidation = validateUserHierarchy(createdUser, parentUser, users);
             if (!hierarchyValidation.valid) {
                 alert(hierarchyValidation.error);
@@ -835,7 +865,7 @@ const Settings: React.FC<{
     };
 
     const toggleUserStatus = async (user: SystemUser) => {
-        if (!currentUser || user.parent_user_id !== currentUser.id || updatingUserStatusId) return;
+        if (!currentUser || !canManageUser(user) || user.id === currentUser.id || updatingUserStatusId) return;
 
         const nextStatus = user.status === 'active' ? 'passive' : 'active';
         const action = nextStatus === 'passive' ? 'pasife almak' : 'yeniden aktifleştirmek';
@@ -857,7 +887,7 @@ const Settings: React.FC<{
     };
 
     const permanentlyDeleteUser = async (user: SystemUser) => {
-        if (!currentUser || user.parent_user_id !== currentUser.id || deletingUserId) return;
+        if (!currentUser || !canManageUser(user) || user.id === currentUser.id || deletingUserId) return;
         const confirmed = window.confirm(
             `${user.full_name} adlı kullanıcı kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?`
         );
@@ -884,10 +914,24 @@ const Settings: React.FC<{
     };
 
     const getAvailableParents = (role?: UserRole) => {
+        const activeUsers = users.filter(user => user.status === 'active');
+        if (isBranchManager && currentUser && role === UserRole.CONSULTANT) {
+            return [currentUser];
+        }
+        if (isBranchManager && currentUser && role === UserRole.REPRESENTATIVE) {
+            const directConsultants = activeUsers.filter(user =>
+                user.role === UserRole.CONSULTANT
+                && user.branch_id === currentUser.branch_id
+                && user.parent_user_id === currentUser.id
+            );
+            return [currentUser, ...directConsultants]
+                .filter((user, index, list) => list.findIndex(item => item.id === user.id) === index)
+                .sort((a, b) => a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : a.full_name.localeCompare(b.full_name, 'tr-TR'));
+        }
+
         const allowedRoles = getAllowedParentRoles(role);
-        return users
+        return activeUsers
             .filter(user => allowedRoles.includes(user.role))
-            .filter(user => user.status === 'active')
             .filter(user => user.id !== editingUserId)
             .filter(user => {
                 if (roleRequiresSameBranch(role)) return user.branch_id === newUser.branch_id;
@@ -895,6 +939,12 @@ const Settings: React.FC<{
             })
             .filter(user => !wouldCreateHierarchyCycle(editingUserId || undefined, user.id, users))
             .sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr-TR'));
+    };
+
+    const canManageUser = (user: SystemUser): boolean => {
+        if (!currentUser) return false;
+        if (user.id === currentUser.id || user.parent_user_id !== currentUser.id) return false;
+        return isGlobalAdmin || (!!currentUser.branch_id && user.branch_id === currentUser.branch_id);
     };
 
     // --- UNIVERSITY LOGIC ---
@@ -1843,25 +1893,51 @@ const Settings: React.FC<{
 
     const renderUserManagement = () => (
         <div className="space-y-6 animate-fade-in">
-             <div className="flex justify-between items-center">
+             <div className="flex flex-wrap justify-between gap-4 items-center">
                 <div>
                     <h3 className="text-lg font-bold text-slate-800">Kullanıcı Yönetimi</h3>
                     <p className="text-sm text-slate-500">Admin, danışman ve temsilci kullanıcılarını yönetin.</p>
                 </div>
-                <button 
-                    onClick={openAddUserModal}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
-                >
-                    <Plus className="w-4 h-4" />
-                    Yeni Kullanıcı Ekle
-                </button>
+                 <button
+                     onClick={openAddUserModal}
+                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20"
+                 >
+                     <Plus className="w-4 h-4" />
+                     Yeni Kullanıcı Ekle
+                 </button>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <table className="w-full text-left">
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative w-full sm:max-w-md">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="search"
+                        value={userSearchTerm}
+                        onChange={event => setUserSearchTerm(event.target.value)}
+                        placeholder="İsim, şube veya rol ara..."
+                        className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/15"
+                    />
+                </div>
+                <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-slate-600">
+                    <span>Pasifleri göster</span>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={showPassiveUsers}
+                        onClick={() => setShowPassiveUsers(current => !current)}
+                        className={`relative h-6 w-11 rounded-full transition-colors ${showPassiveUsers ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                    >
+                        <span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showPassiveUsers ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                </label>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
                             <th className="px-6 py-4 font-semibold">Kullanıcı</th>
+                            <th className="px-6 py-4 font-semibold">Şube</th>
                             <th className="px-6 py-4 font-semibold">Rol</th>
                             <th className="px-6 py-4 font-semibold">Bağlı Olduğu Yönetici</th>
                             <th className="px-6 py-4 font-semibold">Durum</th>
@@ -1869,10 +1945,10 @@ const Settings: React.FC<{
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {users.map(user => {
+                        {filteredManagedUsers.map(user => {
                             const parent = users.find(u => u.id === user.parent_user_id);
                             const isCurrentUser = currentUser?.id === user.id;
-                            const isDirectReport = currentUser?.id === user.parent_user_id;
+                             const canManage = canManageUser(user);
                             const isUpdatingStatus = updatingUserStatusId === user.id;
                             const isDeleting = deletingUserId === user.id;
                             return (
@@ -1880,19 +1956,25 @@ const Settings: React.FC<{
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             <img src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.full_name}`} alt="" className="w-10 h-10 rounded-full bg-slate-100" />
-                                            <div>
-                                                <p className="font-bold text-slate-800">{user.full_name}</p>
-                                                <p className="text-xs text-slate-500">{user.email}</p>
-                                            </div>
+                                             <div>
+                                                 <p className="font-bold text-slate-800">{user.full_name}</p>
+                                                 <p className="text-xs text-slate-500">{user.email}</p>
+                                                 {user.phone && <p className="text-xs text-slate-400">{user.phone}</p>}
+                                             </div>
                                         </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                                            user.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                            user.role === UserRole.CONSULTANT ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                            user.role === UserRole.REPRESENTATIVE ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                            'bg-slate-100 text-slate-600 border-slate-200'
-                                        }`}>
+                                     </td>
+                                     <td className="px-6 py-4 text-sm font-medium text-slate-600">
+                                         {getBranchName(user.branch_id)}
+                                     </td>
+                                     <td className="px-6 py-4">
+                                         <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                                             user.role === UserRole.SUPER_ADMIN ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                             user.role === UserRole.ADMIN ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                             user.role === UserRole.BRANCH_MANAGER ? 'bg-red-50 text-red-700 border-red-200' :
+                                             user.role === UserRole.CONSULTANT ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                             user.role === UserRole.REPRESENTATIVE ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                             'bg-slate-100 text-slate-600 border-slate-200'
+                                         }`}>
                                             {user.role}
                                         </span>
                                     </td>
@@ -1909,9 +1991,9 @@ const Settings: React.FC<{
                                     <td className="px-6 py-4">
                                          <button
                                              onClick={() => toggleUserStatus(user)}
-                                             disabled={!isDirectReport || updatingUserStatusId !== null}
-                                             title={!isDirectReport ? 'Yalnız doğrudan bağlı kullanıcıların durumu değiştirilebilir' : user.status === 'active' ? 'Kullanıcıyı pasife al' : 'Kullanıcıyı yeniden aktifleştir'}
-                                             aria-label={!isDirectReport ? `${user.full_name} kullanıcısının durumu değiştirilemez` : user.status === 'active' ? `${user.full_name} kullanıcısını pasife al` : `${user.full_name} kullanıcısını yeniden aktifleştir`}
+                                             disabled={!canManage || isCurrentUser || updatingUserStatusId !== null}
+                                             title={!canManage || isCurrentUser ? 'Bu kullanıcının durumu değiştirilemez' : user.status === 'active' ? 'Kullanıcıyı pasife al' : 'Kullanıcıyı yeniden aktifleştir'}
+                                             aria-label={!canManage || isCurrentUser ? `${user.full_name} kullanıcısının durumu değiştirilemez` : user.status === 'active' ? `${user.full_name} kullanıcısını pasife al` : `${user.full_name} kullanıcısını yeniden aktifleştir`}
                                              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                                              user.status === 'active'
                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
@@ -1928,16 +2010,17 @@ const Settings: React.FC<{
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
-                                             <button
-                                                 onClick={() => openEditUserModal(user)}
-                                                 disabled={!isCurrentUser && !isDirectReport}
-                                                 title={!isCurrentUser && !isDirectReport ? 'Yalnız kendi hesabınız veya doğrudan bağlı kullanıcı düzenlenebilir' : 'Kullanıcıyı düzenle'}
-                                                 aria-label={`${user.full_name} kullanıcısını düzenle`}
-                                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                                            >
-                                                <Edit className="w-4 h-4" />
-                                            </button>
-                                             {isDirectReport && (
+                                             {canManage && !isCurrentUser && (
+                                                 <button
+                                                     onClick={() => openEditUserModal(user)}
+                                                     title="Kullanıcıyı düzenle"
+                                                     aria-label={`${user.full_name} kullanıcısını düzenle`}
+                                                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+                                             )}
+                                             {canManage && !isCurrentUser && (
                                                  <button
                                                      onClick={() => permanentlyDeleteUser(user)}
                                                      disabled={deletingUserId !== null}
@@ -1950,10 +2033,17 @@ const Settings: React.FC<{
                                              )}
                                         </div>
                                     </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
+                                 </tr>
+                             );
+                         })}
+                         {filteredManagedUsers.length === 0 && (
+                             <tr>
+                                 <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
+                                     Arama ve filtrelere uygun kullanıcı bulunamadı.
+                                 </td>
+                             </tr>
+                         )}
+                     </tbody>
                 </table>
             </div>
         </div>
@@ -4461,7 +4551,19 @@ const Settings: React.FC<{
     };
 
     const availableParents = getAvailableParents(newUser.role);
-    const showSettingsBackButton = activeTab !== 'users' || !!selectedDefinitionType;
+    const managedUsers = users;
+    const getBranchName = (branchId?: string) => branches.find(branch => branch.id === branchId)?.name || '-';
+    const normalizedUserSearch = userSearchTerm.trim().toLocaleLowerCase('tr');
+    const filteredManagedUsers = managedUsers.filter(user => {
+        if (!showPassiveUsers && user.status === 'passive') return false;
+        if (!normalizedUserSearch) return true;
+        return [user.full_name, user.role, getBranchName(user.branch_id)]
+            .some(value => value.toLocaleLowerCase('tr').includes(normalizedUserSearch));
+    });
+    const availableBranches = isBranchManager && currentUser
+        ? branches.filter(branch => branch.id === currentUser.branch_id)
+        : branches;
+    const showSettingsBackButton = !hasUserOnlySettings && (activeTab !== 'users' || !!selectedDefinitionType);
 
     const returnToSettingsHome = () => {
         setActiveTab('users');
@@ -4500,7 +4602,11 @@ const Settings: React.FC<{
                         <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
                             System Settings
                         </h1>
-                        <p className="text-purple-300/70 mt-1 text-sm">Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.</p>
+                        <p className="text-purple-300/70 mt-1 text-sm">
+                            {hasUserOnlySettings
+                                ? 'Hiyerarşinizdeki kullanıcıları görüntüleyebilir, doğrudan bağlı kullanıcıları yönetebilirsiniz.'
+                                : 'Kullanıcıları, rolleri ve genel tanımlamaları buradan yönetebilirsiniz.'}
+                        </p>
                     </div>
                 </div>
             </motion.div>
@@ -4509,13 +4615,15 @@ const Settings: React.FC<{
             {!selectedDefinitionType && (
                 <>
                     <div className="flex gap-6 border-b border-slate-200">
-                        {[
+                        {(hasUserOnlySettings ? [
+                            { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
+                        ] : [
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
                             { id: 'institutions', label: 'Kurumlar', icon: Building },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
                             { id: 'ai-advisor', label: 'AI Danışman', icon: Bot },
                             { id: 'data', label: 'DATA', icon: Database },
-                        ].map((tab) => (
+                        ]).map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as any)}
@@ -4535,11 +4643,11 @@ const Settings: React.FC<{
 
             {activeTab === 'users' && !selectedDefinitionType && renderUserManagement()}
 
-            {activeTab === 'institutions' && renderInstitutions()}
+            {!hasUserOnlySettings && activeTab === 'institutions' && renderInstitutions()}
 
-            {activeTab === 'ai-advisor' && <AIAdvisorSettings />}
+            {!hasUserOnlySettings && activeTab === 'ai-advisor' && <AIAdvisorSettings />}
 
-            {activeTab === 'definitions' && (
+            {!hasUserOnlySettings && activeTab === 'definitions' && (
                 <>
                     {/* Grid View (Main Menu) */}
                     {!selectedDefinitionType && (
@@ -4623,7 +4731,7 @@ const Settings: React.FC<{
                 </>
             )}
 
-            {activeTab === 'data' && (
+            {!hasUserOnlySettings && activeTab === 'data' && (
                 <>
                     {!selectedDefinitionType && renderDataManager()}
                     {selectedDefinitionType === 'countries' && renderCountryManager()}
@@ -4671,7 +4779,7 @@ const Settings: React.FC<{
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Üniversite Seçimi</label>
-                                    <select 
+                                    <select
                                         required
                                         value={universityProgramForm.universityId} 
                                         onChange={e => setUniversityProgramForm({...universityProgramForm, universityId: e.target.value})}
@@ -4860,41 +4968,59 @@ const Settings: React.FC<{
                                 <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
-                                        <select
-                                            required
-                                            value={newUser.role || ''}
-                                            onChange={e => {
-                                                const role = e.target.value as UserRole;
-                                                setNewUser({
-                                                    ...newUser,
-                                                    role,
-                                                    branch_id: roleRequiresBranch(role) ? newUser.branch_id : '',
-                                                    parent_user_id: ''
-                                                });
+                                         <select
+                                             required
+                                             disabled={!!editingUserId && !isGlobalAdmin}
+                                             value={newUser.role || ''}
+                                             onChange={e => {
+                                                 const role = e.target.value as UserRole;
+                                                 setNewUser({
+                                                     ...newUser,
+                                                     role,
+                                                     branch_id: isBranchManager
+                                                         ? currentUser?.branch_id || ''
+                                                         : roleRequiresBranch(role) ? newUser.branch_id : '',
+                                                     parent_user_id: isBranchManager && role === UserRole.CONSULTANT
+                                                         ? currentUser?.id || ''
+                                                         : ''
+                                                 });
                                             }}
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                        >
-                                            <option value="">Rol Seçin</option>
-                                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
-                                            <option value={UserRole.ADMIN}>Admin</option>
-                                            <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>
-                                            <option value={UserRole.CONSULTANT}>Danışman</option>
-                                            <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
-                                            <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilcisi</option>
-                                            <option value={UserRole.STUDENT}>Öğrenci</option>
-                                        </select>
-                                    </div>
-                                    {newUser.role && roleRequiresBranch(newUser.role) && (
+                                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                                         >
+                                             {editingUserId && !isGlobalAdmin ? (
+                                                 <option value={newUser.role}>{newUser.role}</option>
+                                             ) : (
+                                                 <>
+                                                     <option value="">Rol Seçin</option>
+                                                     {!isBranchManager && <option value={UserRole.SUPER_ADMIN}>Super Admin</option>}
+                                                     {!isBranchManager && <option value={UserRole.ADMIN}>Admin</option>}
+                                                     {!isBranchManager && <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>}
+                                                     <option value={UserRole.CONSULTANT}>Danışman</option>
+                                                     <option value={UserRole.REPRESENTATIVE}>Temsilci</option>
+                                                     {!isBranchManager && <option value={UserRole.STUDENT_REPRESENTATIVE}>Öğrenci Temsilcisi</option>}
+                                                     {!isBranchManager && <option value={UserRole.STUDENT}>Öğrenci</option>}
+                                                 </>
+                                             )}
+                                         </select>
+                                     </div>
+                                     {newUser.role && roleRequiresBranch(newUser.role) && (
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">Şube</label>
-                                            <select
-                                                required={roleRequiresBranch(newUser.role)}
+                                             <select
+                                                 required={roleRequiresBranch(newUser.role)}
+                                                 disabled={!!editingUserId && !isGlobalAdmin}
                                                 value={newUser.branch_id}
-                                                onChange={e => setNewUser({ ...newUser, branch_id: e.target.value, parent_user_id: '' })}
-                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                                onChange={e => setNewUser({
+                                                    ...newUser,
+                                                    branch_id: isBranchManager ? currentUser?.branch_id || '' : e.target.value,
+                                                    parent_user_id: isBranchManager && newUser.role === UserRole.CONSULTANT
+                                                        ? currentUser?.id || ''
+                                                        : ''
+                                                })}
+                                                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                                             >
                                                 <option value="">Şube Seçin</option>
-                                                {branches.map(branch => (
+                                                {availableBranches.map(branch => (
                                                     <option key={branch.id} value={branch.id}>
                                                         {branch.name}
                                                     </option>
@@ -4913,8 +5039,8 @@ const Settings: React.FC<{
                                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
+                                     <div>
+                                         <label className="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
                                         <input
                                             required
                                             type="email"
@@ -4922,7 +5048,18 @@ const Settings: React.FC<{
                                             onChange={e => setNewUser({...newUser, email: e.target.value})}
                                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
                                         />
-                                    </div>
+                                     </div>
+                                     <div>
+                                         <label className="block text-sm font-medium text-slate-700 mb-1">Telefon <span className="text-slate-400">(Opsiyonel)</span></label>
+                                         <input
+                                             type="tel"
+                                             inputMode="numeric"
+                                             maxLength={11}
+                                             value={newUser.phone || EMPTY_PHONE_PREFIX}
+                                             onChange={e => setNewUser({...newUser, phone: formatPhoneForInput(e.target.value)})}
+                                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                         />
+                                     </div>
                                     {!editingUserId && (
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1">Sisteme Giriş Şifresi</label>
@@ -4945,11 +5082,17 @@ const Settings: React.FC<{
                                     <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Bağlı Olduğu Yönetici
                                     </label>
-                                    <select
-                                        required
+                                     <select
+                                         required
+                                         disabled={!!editingUserId && !isGlobalAdmin}
                                         value={newUser.parent_user_id || ''}
-                                        onChange={e => setNewUser({...newUser, parent_user_id: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        onChange={e => setNewUser({
+                                            ...newUser,
+                                            parent_user_id: isBranchManager && newUser.role === UserRole.CONSULTANT
+                                                ? currentUser?.id || ''
+                                                : e.target.value
+                                        })}
+                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                                     >
                                         <option value="">Yönetici Seçin</option>
                                         {availableParents.map(parent => (
@@ -4962,7 +5105,10 @@ const Settings: React.FC<{
                                         {newUser.role === UserRole.ADMIN ? 'Admin kullanıcıları Super Admin altında çalışır.' :
                                          newUser.role === UserRole.BRANCH_MANAGER ? 'Şube Müdürleri Admin altında çalışır.' :
                                          newUser.role === UserRole.CONSULTANT ? 'Danışmanlar Şube Müdürüne bağlıdır.' :
-                                         newUser.role === UserRole.REPRESENTATIVE ? 'Temsilciler aynı şubedeki Danışman veya Şube Müdürüne bağlıdır.' :
+                                         newUser.role === UserRole.REPRESENTATIVE
+                                             ? isBranchManager
+                                                 ? 'Temsilciyi kendinize veya doğrudan size bağlı bir Danışmana atayabilirsiniz.'
+                                                 : 'Temsilciler aynı şubedeki Danışman veya Şube Müdürüne bağlıdır.' :
                                          newUser.role === UserRole.STUDENT_REPRESENTATIVE ? 'Öğrenci Temsilcileri yalnızca aynı şubedeki Danışmana bağlıdır.' :
                                          'Öğrenciler aynı şubedeki Danışman, Temsilci veya Öğrenci Temsilcisine bağlıdır.'}
                                     </p>
