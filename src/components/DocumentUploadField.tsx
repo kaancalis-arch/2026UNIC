@@ -82,7 +82,12 @@ export default function DocumentUploadField({
       <div className="flex flex-wrap items-start gap-2">
         {matchingDocuments.length > 0 ? <FileCheck className="mt-0.5 h-4 w-4 text-emerald-600" /> : <CircleX className="mt-0.5 h-4 w-4 text-rose-500" />}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-slate-700">{label}{required && <span className="ml-1 text-rose-500">*</span>}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-700">{label}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${required ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
+              {required ? 'Zorunlu' : 'İsteğe Bağlı'}
+            </span>
+          </div>
           {description && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p>}
         </div>
         <label htmlFor={inputId} className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">

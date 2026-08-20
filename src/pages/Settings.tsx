@@ -1666,6 +1666,19 @@ const Settings: React.FC<{
         }
     };
 
+    const handleToggleDocumentTypeRequirement = async (documentType: DocumentTypeDefinition) => {
+        try {
+            const savedDocumentType = await documentTypeService.save({
+                ...documentType,
+                isRequired: !documentType.isRequired,
+            });
+            setDocumentTypes(prev => prev.map(item => item.id === savedDocumentType.id ? savedDocumentType : item));
+        } catch (error: any) {
+            console.error('Failed to update document type requirement', error);
+            alert(`Evrak zorunluluğu güncellenemedi: ${error?.message || 'Bilinmeyen hata'}`);
+        }
+    };
+
     const handleDeleteDocumentType = async (id: string) => {
         if (!window.confirm('Bu evrak türünü silmek istediğinize emin misiniz?')) return;
         try {
@@ -2744,7 +2757,7 @@ const Settings: React.FC<{
 
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-left">
+                    <table className="w-full min-w-[880px] text-left">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
                                 <th className="px-6 py-4 font-semibold">Evrak Adı</th>
@@ -2752,20 +2765,21 @@ const Settings: React.FC<{
                                 <th className="px-6 py-4 font-semibold">Evrak Notu</th>
                                 <th className="px-6 py-4 font-semibold">Dosya Türü</th>
                                 <th className="px-6 py-4 font-semibold">Evrak Adedi</th>
+                                <th className="px-6 py-4 font-semibold">Zorunluluk</th>
                                 <th className="px-6 py-4 font-semibold text-right">İşlemler</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {isLoadingDocumentTypes ? (
                                 <tr>
-                                    <td colSpan={6} className="p-10 text-center text-slate-500">
+                                    <td colSpan={7} className="p-10 text-center text-slate-500">
                                         <Loader2 className="inline-block w-5 h-5 mr-2 animate-spin" />
                                         Evrak türleri yükleniyor...
                                     </td>
                                 </tr>
                             ) : documentTypes.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="p-10 text-center text-slate-500">Henüz evrak türü tanımlanmadı.</td>
+                                    <td colSpan={7} className="p-10 text-center text-slate-500">Henüz evrak türü tanımlanmadı.</td>
                                 </tr>
                             ) : documentTypes.map(documentType => (
                                 <tr key={documentType.id} className="hover:bg-slate-50/50 transition-colors">
@@ -2786,6 +2800,16 @@ const Settings: React.FC<{
                                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${documentType.allowMultiple ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
                                             {documentType.allowMultiple ? 'Birden Çok Evrak' : 'Tek Evrak'}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleToggleDocumentTypeRequirement(documentType)}
+                                            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold transition-colors ${documentType.isRequired ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                            title="Zorunluluk durumunu değiştir"
+                                        >
+                                            {documentType.isRequired ? 'Zorunlu' : 'İsteğe Bağlı'}
+                                        </button>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
@@ -5682,7 +5706,34 @@ const Settings: React.FC<{
                                     </label>
                                 </div>
                             </fieldset>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                            <fieldset>
+                                <legend className="block text-sm font-bold text-slate-700 mb-3">Zorunluluk</legend>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${documentTypeForm.isRequired ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentRequirement"
+                                            checked={documentTypeForm.isRequired}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, isRequired: true })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">ZORUNLU</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Başvuru tamamlanma hesabına dahil edilir.</span>
+                                    </label>
+                                    <label className={`cursor-pointer rounded-2xl border p-4 transition-all ${!documentTypeForm.isRequired ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-500/10' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <input
+                                            type="radio"
+                                            name="documentRequirement"
+                                            checked={!documentTypeForm.isRequired}
+                                            onChange={() => setDocumentTypeForm({ ...documentTypeForm, isRequired: false })}
+                                            className="sr-only"
+                                        />
+                                        <span className="block text-sm font-extrabold text-slate-800">İSTEĞE BAĞLI</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Listede görünür ancak eksik evrak sayılmaz.</span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
                                     <input
                                         type="checkbox"
@@ -5691,15 +5742,6 @@ const Settings: React.FC<{
                                         className="h-4 w-4 rounded border-slate-300 text-rose-600"
                                     />
                                     <span className="text-sm font-bold text-slate-700">Aktif</span>
-                                </label>
-                                <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={documentTypeForm.isRequired}
-                                        onChange={event => setDocumentTypeForm({ ...documentTypeForm, isRequired: event.target.checked })}
-                                        className="h-4 w-4 rounded border-slate-300 text-rose-600"
-                                    />
-                                    <span className="text-sm font-bold text-slate-700">Zorunlu</span>
                                 </label>
                                 <label className="block rounded-xl border border-slate-200 p-3">
                                     <span className="text-xs font-bold text-slate-500">Sıra</span>
