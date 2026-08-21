@@ -27,6 +27,31 @@ import DocumentUploadField from '../components/DocumentUploadField';
 import { getPublicStorageUrl } from '../services/supabaseClient';
 
 const UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
+const PARENT_RELATIONSHIP_OPTIONS = ['Anne', 'Baba', 'Vasi', 'Kardeş', 'Akraba', 'Diğer'];
+
+const createInitialStudentFormData = (): Partial<Student> => ({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '0',
+    dob: '',
+    hasForeignCitizenship: false,
+    foreignCitizenshipNote: '',
+    hasGreenPassport: false,
+    parentInfo: {
+        fullName: '',
+        relationship: '',
+        phone: '',
+        email: ''
+    },
+    parent2Info: {
+        fullName: '',
+        relationship: '',
+        phone: '',
+        email: ''
+    },
+    targetPrograms: []
+});
 
 interface StudentListProps {
     onSelectStudent: (student: Student) => void;
@@ -187,9 +212,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         phone: '',
         email: '',
         parentName: '',
+        parentRelationship: '',
         parentPhone: '',
         parentEmail: '',
         parent2Name: '',
+        parent2Relationship: '',
         parent2Phone: '',
         parent2Email: ''
     });
@@ -235,29 +262,28 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     }, [initialStageFilter]);
 
     // Form State for New Student
-    const [formData, setFormData] = useState<Partial<Student>>({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '0',
-        dob: '',
-        hasForeignCitizenship: false,
-        foreignCitizenshipNote: '',
-        hasGreenPassport: false,
-        parentInfo: {
-            fullName: '',
-            relationship: '',
-            phone: '',
-            email: ''
-        },
-        parent2Info: {
-            fullName: '',
-            relationship: '',
-            phone: '',
-            email: ''
-        },
-        targetPrograms: []
-    });
+    const [formData, setFormData] = useState<Partial<Student>>(createInitialStudentFormData);
+
+    const resetNewStudentForm = () => {
+        setFormData(createInitialStudentFormData());
+        setShowParentInfo(false);
+        setCalculatedAge('');
+        setDuplicateWarning('');
+        setIsCheckingDuplicate(false);
+        setFormErrors({});
+        setEmailMarkedUnavailable(false);
+        setPhoneMarkedUnavailable(false);
+    };
+
+    const openNewStudentModal = () => {
+        resetNewStudentForm();
+        setIsModalOpen(true);
+    };
+
+    const closeNewStudentModal = () => {
+        setIsModalOpen(false);
+        resetNewStudentForm();
+    };
 
     const formatReminderDate = (date?: string) => {
         if (!date) return '-';
@@ -410,8 +436,12 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
     }, []);
 
     const loadOptions = async () => {
+        void documentTypeService.getAll()
+            .then(definitions => setDocumentTypes(definitions.filter(definition => definition.isActive)))
+            .catch(error => console.error('Evrak türleri yüklenemedi.', error));
+
         try {
-            const [programs, mainDegs, categories, junctions, countries, turkeyHighSchoolData, turkeyUniversityData, documentTypeData] = await Promise.all([
+            const [programs, mainDegs, categories, junctions, countries, turkeyHighSchoolData, turkeyUniversityData] = await Promise.all([
                 interestedProgramService.getAll(),
                 mainDegreeService.getAll(),
                 mainCategoryService.getAll(),
@@ -419,7 +449,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 countryService.getAll(),
                 schoolNameService.getAll('high_school'),
                 schoolNameService.getAll('university'),
-                documentTypeService.getAll(),
             ]);
             setAllPrograms(getUniqueProgramNames(programs));
             setAllMainDegreesObjects(mainDegs);
@@ -429,7 +458,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             setAllCountries(countries.map(c => c.name));
             setTurkeyHighSchools(turkeyHighSchoolData);
             setTurkeyUniversities(turkeyUniversityData);
-            setDocumentTypes(documentTypeData.filter(definition => definition.isActive));
         } catch (error) {
             console.error("Failed to load options", error);
         }
@@ -687,30 +715,6 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         }));
     };
 
-    const handleDobPartChange = (field: 'day' | 'month' | 'year', value: string) => {
-        const currentDob = formData.dob || '';
-        let [y = '', m = '', d = ''] = currentDob.split('-');
-
-        const normalizedValue = value ? (field === 'year' ? value : value.padStart(2, '0')) : '';
-
-        if (field === 'year') y = normalizedValue;
-        if (field === 'month') m = normalizedValue;
-        if (field === 'day') d = normalizedValue;
-
-        if (!y && !m && !d) {
-            setFormData(prev => ({
-                ...prev,
-                dob: ''
-            }));
-            return;
-        }
-
-        setFormData(prev => ({
-            ...prev,
-            dob: [y, m, d].filter(Boolean).join('-')
-        }));
-    };
-
     const validateRequiredFields = () => {
         const emailError = validateEmail(formData.email, emailMarkedUnavailable);
         const phoneError = validatePhone(formData.phone, phoneMarkedUnavailable);
@@ -819,23 +823,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             const createdStudent = await studentService.create(newStudentPayload);
             setStudents(prev => [createdStudent, ...prev]);
             setIsModalOpen(false);
-            setFormData({
-                firstName: '',
-                lastName: '',
-                email: '',
-                phone: '0',
-                dob: '',
-                hasForeignCitizenship: false,
-                foreignCitizenshipNote: '',
-                hasGreenPassport: false,
-                parentInfo: { fullName: '', relationship: '', phone: '', email: '' },
-                parent2Info: { fullName: '', relationship: '', phone: '', email: '' },
-                targetPrograms: []
-            });
-            setDuplicateWarning('');
-            setFormErrors({});
-            setEmailMarkedUnavailable(false);
-            setPhoneMarkedUnavailable(false);
+            resetNewStudentForm();
 
             if (goToAnalysis) {
                 // Open analysis modal for the newly created student
@@ -885,6 +873,13 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             social: student.analysis?.social || {},
             preferences: prefs,
             budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
+            citizenship: {
+                isTurkishCitizen: true,
+                hasGreenPassport: student.hasGreenPassport,
+                hasForeignCitizenship: student.hasForeignCitizenship,
+                foreignCitizenshipNote: student.foreignCitizenshipNote,
+                ...student.analysis?.citizenship,
+            },
             documents
         });
         setStudentAcademicInfo({
@@ -898,9 +893,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             phone: student.phone || '',
             email: student.email || '',
             parentName: student.parentInfo?.fullName || '',
+            parentRelationship: student.parentInfo?.relationship || '',
             parentPhone: student.parentInfo?.phone || '',
             parentEmail: student.parentInfo?.email || '',
             parent2Name: student.parent2Info?.fullName || '',
+            parent2Relationship: student.parent2Info?.relationship || '',
             parent2Phone: student.parent2Info?.phone || '',
             parent2Email: student.parent2Info?.email || ''
         });
@@ -992,14 +989,14 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             parentInfo: {
                 ...selectedStudentForAnalysis.parentInfo,
                 fullName: studentContactInfo.parentName,
-                relationship: selectedStudentForAnalysis.parentInfo?.relationship || '',
+                relationship: studentContactInfo.parentRelationship,
                 phone: studentContactInfo.parentPhone,
                 email: studentContactInfo.parentEmail,
             },
             parent2Info: {
                 ...selectedStudentForAnalysis.parent2Info,
                 fullName: studentContactInfo.parent2Name,
-                relationship: selectedStudentForAnalysis.parent2Info?.relationship || '',
+                relationship: studentContactInfo.parent2Relationship,
                 phone: studentContactInfo.parent2Phone,
                 email: studentContactInfo.parent2Email,
             },
@@ -1048,6 +1045,18 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 ...(prev as any)[section],
                 [field]: formattedValue
             }
+        }));
+    };
+
+    const updateAnalysisPassportType = (passportType: 'bordo' | 'green' | 'black' | 'nonTurkish') => {
+        setAnalysisForm(prev => ({
+            ...prev,
+            citizenship: {
+                ...prev.citizenship,
+                isTurkishCitizen: passportType !== 'nonTurkish',
+                hasGreenPassport: passportType === 'green',
+                hasBlackPassport: passportType === 'black',
+            },
         }));
     };
 
@@ -1930,32 +1939,46 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 <div className="space-y-4">
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input
-                            type="checkbox"
-                            checked={!!analysisForm.citizenship?.isTurkishCitizen}
-                            onChange={(e) => updateAnalysisField('citizenship', 'isTurkishCitizen', e.target.checked)}
+                            type="radio"
+                            name="analysis-passport-type"
+                            checked={analysisForm.citizenship?.isTurkishCitizen !== false && !analysisForm.citizenship?.hasGreenPassport && !analysisForm.citizenship?.hasBlackPassport}
+                            onChange={() => updateAnalysisPassportType('bordo')}
                             className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span className="text-sm font-medium text-slate-700">Türk Vatandaşı</span>
+                        <span className="text-sm font-medium text-slate-700">Bordo Pasaport</span>
                     </label>
 
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input
-                            type="checkbox"
-                            checked={!!analysisForm.citizenship?.hasGreenPassport}
-                            onChange={(e) => updateAnalysisField('citizenship', 'hasGreenPassport', e.target.checked)}
+                            type="radio"
+                            name="analysis-passport-type"
+                            checked={analysisForm.citizenship?.isTurkishCitizen !== false && !!analysisForm.citizenship?.hasGreenPassport}
+                            onChange={() => updateAnalysisPassportType('green')}
                             className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                         />
-                        <span className="text-sm font-medium text-slate-700">Yeşil Pasaportu Var</span>
+                        <span className="text-sm font-medium text-slate-700">Yeşil Pasaport</span>
                     </label>
 
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input
-                            type="checkbox"
-                            checked={!!analysisForm.citizenship?.hasBlackPassport}
-                            onChange={(e) => updateAnalysisField('citizenship', 'hasBlackPassport', e.target.checked)}
+                            type="radio"
+                            name="analysis-passport-type"
+                            checked={analysisForm.citizenship?.isTurkishCitizen !== false && !!analysisForm.citizenship?.hasBlackPassport}
+                            onChange={() => updateAnalysisPassportType('black')}
                             className="w-5 h-5 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
                         />
-                        <span className="text-sm font-medium text-slate-700">Siyah Pasaportu Var</span>
+                        <span className="text-sm font-medium text-slate-700">Siyah Pasaport</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="analysis-passport-type"
+                            checked={analysisForm.citizenship?.isTurkishCitizen === false}
+                            onChange={() => updateAnalysisPassportType('nonTurkish')}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700">TC Vatandaşı Değil</span>
                     </label>
 
                     <div className="space-y-3">
@@ -1963,10 +1986,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             <input
                                 type="checkbox"
                                 checked={!!analysisForm.citizenship?.hasResidencePermit}
-                                onChange={(e) => {
-                                    updateAnalysisField('citizenship', 'hasResidencePermit', e.target.checked);
-                                    if (!e.target.checked) updateAnalysisField('citizenship', 'residencePermitNote', '');
-                                }}
+                                onChange={(e) => updateAnalysisField('citizenship', 'hasResidencePermit', e.target.checked)}
                                 className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
                             <span className="text-sm font-medium text-slate-700">Oturum İzni Var</span>
@@ -1988,10 +2008,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             <input
                                 type="checkbox"
                                 checked={!!analysisForm.citizenship?.hasForeignCitizenship}
-                                onChange={(e) => {
-                                    updateAnalysisField('citizenship', 'hasForeignCitizenship', e.target.checked);
-                                    if (!e.target.checked) updateAnalysisField('citizenship', 'foreignCitizenshipNote', '');
-                                }}
+                                onChange={(e) => updateAnalysisField('citizenship', 'hasForeignCitizenship', e.target.checked)}
                                 className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
                             <span className="text-sm font-medium text-slate-700">Farklı bir Vatandaşlığı Var</span>
@@ -2042,9 +2059,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <h4 className="text-sm font-semibold text-slate-700 mb-4">1. Veli</h4>
                 <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
-                        <input value={studentContactInfo.parentName} onChange={e => setStudentContactInfo({ ...studentContactInfo, parentName: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                            <input value={studentContactInfo.parentName} onChange={e => setStudentContactInfo({ ...studentContactInfo, parentName: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-slate-600 mb-1">Yakınlık Derecesi</label>
+                            <select value={studentContactInfo.parentRelationship} onChange={e => setStudentContactInfo({ ...studentContactInfo, parentRelationship: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm">
+                                <option value="">Seçiniz</option>
+                                {studentContactInfo.parentRelationship && !PARENT_RELATIONSHIP_OPTIONS.includes(studentContactInfo.parentRelationship) && (
+                                    <option value={studentContactInfo.parentRelationship}>{studentContactInfo.parentRelationship}</option>
+                                )}
+                                {PARENT_RELATIONSHIP_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -2062,9 +2091,21 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <h4 className="text-sm font-semibold text-slate-700 mb-4">2. Veli</h4>
                 <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
-                        <input value={studentContactInfo.parent2Name} onChange={e => setStudentContactInfo({ ...studentContactInfo, parent2Name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                            <input value={studentContactInfo.parent2Name} onChange={e => setStudentContactInfo({ ...studentContactInfo, parent2Name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-slate-600 mb-1">Yakınlık Derecesi</label>
+                            <select value={studentContactInfo.parent2Relationship} onChange={e => setStudentContactInfo({ ...studentContactInfo, parent2Relationship: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm">
+                                <option value="">Seçiniz</option>
+                                {studentContactInfo.parent2Relationship && !PARENT_RELATIONSHIP_OPTIONS.includes(studentContactInfo.parent2Relationship) && (
+                                    <option value={studentContactInfo.parent2Relationship}>{studentContactInfo.parent2Relationship}</option>
+                                )}
+                                {PARENT_RELATIONSHIP_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -2344,7 +2385,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         <span className="hidden sm:inline">Excel Yükle</span>
                     </button>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={openNewStudentModal}
                         className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 font-medium"
                     >
                         <Plus className="w-5 h-5" />
@@ -2536,7 +2577,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
             {isModalOpen && ReactDOM.createPortal(
                 <div
                     className={`fixed inset-y-0 right-0 ${isSidebarCollapsed ? 'left-[80px]' : 'left-[256px]'} z-[9999] bg-slate-900/40 backdrop-blur-sm transition-all duration-300 overflow-y-auto animate-fade-in-only`}
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={closeNewStudentModal}
                 >
                     <div
                         className="min-h-full flex items-start justify-center p-8 pt-[160px] pb-16"
@@ -2637,45 +2678,16 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="block text-sm font-medium text-slate-700 mb-1.5">Doğum Tarihi</label>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 relative">
-                                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                                                <select
-                                                    value={formData.dob?.split('-')[2] || ''}
-                                                    onChange={(e) => handleDobPartChange('day', e.target.value)}
-                                                    className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
-                                                >
-                                                    <option value="">Gün</option>
-                                                    {Array.from({ length: 31 }, (_, i) => (
-                                                        <option key={i + 1} value={(i + 1).toString().padStart(2, '0')}>{i + 1}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="flex-1">
-                                                <select
-                                                    value={formData.dob?.split('-')[1] || ''}
-                                                    onChange={(e) => handleDobPartChange('month', e.target.value)}
-                                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
-                                                >
-                                                    <option value="">Ay</option>
-                                                    {['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'].map((month, i) => (
-                                                        <option key={i + 1} value={(i + 1).toString().padStart(2, '0')}>{month}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="flex-1">
-                                                <select
-                                                    value={formData.dob?.split('-')[0] || ''}
-                                                    onChange={(e) => handleDobPartChange('year', e.target.value)}
-                                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
-                                                >
-                                                    <option value="">Yıl</option>
-                                                    {Array.from({ length: 81 }, (_, i) => {
-                                                        const year = 2030 - i;
-                                                        return <option key={year} value={year.toString()}>{year}</option>;
-                                                    })}
-                                                </select>
-                                            </div>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                                            <input
+                                                type="date"
+                                                name="dob"
+                                                value={formData.dob || ''}
+                                                max={todayIso}
+                                                onChange={handleInputChange}
+                                                className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none hover:border-indigo-300 transition-all bg-white text-sm"
+                                            />
                                         </div>
                                         {calculatedAge && <p className="text-xs text-indigo-600 font-medium mt-1.5 ml-1">Yaş: {calculatedAge}</p>}
                                         <p className="text-xs text-slate-500 mt-1.5 ml-1">İsteğe bağlıdır.</p>
@@ -2891,7 +2903,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3 sticky bottom-0 bg-white pb-0">
                                 <button
                                     type="button"
-                                    onClick={() => setIsModalOpen(false)}
+                                    onClick={closeNewStudentModal}
                                     className="px-5 py-2.5 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors"
                                 >
                                     İptal

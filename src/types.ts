@@ -165,6 +165,7 @@ export interface AnalysisReport {
     residencePermitNote?: string;
     hasForeignCitizenship?: boolean;
     foreignCitizenshipNote?: string;
+    notes?: string;
   };
   documents?: StudentDocument[];
 }
