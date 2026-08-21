@@ -85,6 +85,8 @@ interface RequiredDocumentDefinition {
   isRequired: boolean;
 }
 
+const PARENT_RELATIONSHIP_OPTIONS = ['Anne', 'Baba', 'Vasi', 'Kardeş', 'Akraba', 'Diğer'];
+
 const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
   active ? createPortal(children, document.body) : <>{children}</>;
 
@@ -117,6 +119,39 @@ const formatExamDate = (dateString?: string): string => {
     return `${d} ${m} ${y}`;
 };
 
+const getTodayIso = () => {
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+
+    return `${today.getFullYear()}-${month}-${day}`;
+};
+
+const formatBirthDate = (dateString?: string): string => {
+    if (!dateString) return '-';
+
+    const date = new Date(`${dateString}T00:00:00`);
+    return Number.isNaN(date.getTime())
+        ? dateString
+        : date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const calculateAge = (dateString?: string): number | null => {
+    if (!dateString) return null;
+
+    const birthDate = new Date(`${dateString}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDifference = today.getMonth() - birthDate.getMonth();
+    if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+
+    return age;
+};
+
 const convertImageBlobToPng = async (blob: Blob): Promise<ArrayBuffer> => {
     const image = await createImageBitmap(blob);
     const canvas = document.createElement('canvas');
@@ -147,6 +182,11 @@ const isExamExpired = (dateString?: string): boolean => {
 const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, onBack, isSidebarCollapsed }) => {
   // Local state to handle updates immediately
   const [student, setStudent] = useState<Student>(initialStudent);
+  const studentAge = calculateAge(student.dob);
+  const citizenshipInfo = student.analysis?.citizenship;
+  const hasGreenPassport = citizenshipInfo?.hasGreenPassport ?? student.hasGreenPassport ?? false;
+  const hasForeignCitizenship = citizenshipInfo?.hasForeignCitizenship ?? student.hasForeignCitizenship ?? false;
+  const foreignCitizenshipNote = citizenshipInfo?.foreignCitizenshipNote || student.foreignCitizenshipNote;
   const [activeTab, setActiveTab] = useState<StudentDetailTab>('profile');
   const [currentStage, setCurrentStage] = useState<PipelineStage>(student.pipelineStage);
   
@@ -202,10 +242,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       lastName: student.lastName || '',
       phone: student.phone || '',
       email: student.email || '',
+      dob: student.dob || '',
       parentName: student.parentInfo?.fullName || '',
+      parentRelationship: student.parentInfo?.relationship || '',
       parentPhone: student.parentInfo?.phone || '',
       parentEmail: student.parentInfo?.email || '',
       parent2Name: student.parent2Info?.fullName || '',
+      parent2Relationship: student.parent2Info?.relationship || '',
       parent2Phone: student.parent2Info?.phone || '',
       parent2Email: student.parent2Info?.email || ''
   });
@@ -262,15 +305,17 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     setCurrentStage(initialStudent.pipelineStage);
     setStudentDocuments(initialStudent.documents || initialStudent.analysis?.documents || []);
     let cancelled = false;
-    void Promise.all([
-      studentDocumentService.list(initialStudent.id),
-      documentTypeService.getAll(),
-    ]).then(([documents, definitions]) => {
+    void studentDocumentService.list(initialStudent.id).then(documents => {
       if (cancelled) return;
       setStudentDocuments(documents);
-      setDocumentTypes(definitions.filter(definition => definition.isActive));
     }).catch(error => {
       console.error('Öğrenci belgeleri yüklenemedi.', error);
+    });
+    void documentTypeService.getAll().then(definitions => {
+      if (cancelled) return;
+      setDocumentTypes(definitions.filter(definition => definition.isActive));
+    }).catch(error => {
+      console.error('Evrak türleri yüklenemedi.', error);
     });
     loadTuitionRanges();
     loadOptions();
@@ -645,6 +690,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         return;
     }
 
+    if (currentPrograms.length >= 3) {
+        alert('En fazla 3 program seçebilirsiniz.');
+        return;
+    }
+
     const updatedPrograms = [...currentPrograms, programName];
     setIsSavingTargetProgram(true);
 
@@ -951,7 +1001,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const documentStatus = useMemo(() => {
-    const definitions: RequiredDocumentDefinition[] = documentTypes.map(definition => ({
+    const allDefinitions: RequiredDocumentDefinition[] = documentTypes.map(definition => ({
       id: definition.id,
       label: definition.name,
       englishName: definition.englishName,
@@ -959,14 +1009,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       allowMultiple: definition.allowMultiple,
       isRequired: definition.isRequired,
     }));
-    const required = definitions.filter(definition => definition.isRequired);
+    const uploadedIds = new Set(
+      studentDocuments
+        .filter(document => document.status !== 'archived')
+        .map(document => document.documentTypeId)
+    );
+    const required = allDefinitions.filter(definition => definition.isRequired);
     const total = required.length;
-    const uploadedIds = studentDocuments.filter(document => document.status !== 'archived').map(document => document.documentTypeId);
-    const completed = required.filter(r => uploadedIds.includes(r.id)).length;
-    const missing = required.filter(r => !uploadedIds.includes(r.id));
+    const completed = required.filter(r => uploadedIds.has(r.id)).length;
+    const missing = required.filter(r => !uploadedIds.has(r.id));
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 100;
 
-    return { definitions, required, completed, total, percentage, missing };
+    return { definitions: allDefinitions, required, completed, total, percentage, missing };
   }, [documentTypes, studentDocuments]);
 
   const whatsAppDocumentMessage = [
@@ -1110,6 +1164,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           languageProgramPreference: student.analysis?.languageProgramPreference || {},
           highSchoolProgramPreference: student.analysis?.highSchoolProgramPreference || {},
           budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
+          citizenship: {
+              hasGreenPassport: student.hasGreenPassport,
+              hasForeignCitizenship: student.hasForeignCitizenship,
+              foreignCitizenshipNote: student.foreignCitizenshipNote,
+              ...student.analysis?.citizenship
+          },
           documents: student.analysis?.documents
       });
       setEditAcademicInfo({
@@ -1122,10 +1182,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           lastName: student.lastName || '',
           phone: student.phone || '',
           email: student.email || '',
+          dob: student.dob || '',
           parentName: student.parentInfo?.fullName || '',
+          parentRelationship: student.parentInfo?.relationship || '',
           parentPhone: student.parentInfo?.phone || '',
           parentEmail: student.parentInfo?.email || '',
           parent2Name: student.parent2Info?.fullName || '',
+          parent2Relationship: student.parent2Info?.relationship || '',
           parent2Phone: student.parent2Info?.phone || '',
           parent2Email: student.parent2Info?.email || ''
       });
@@ -1139,6 +1202,18 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             ...(prev as any)[section],
             [field]: value
         }
+    }));
+  };
+
+  const updateEditPassportType = (passportType: 'bordo' | 'green' | 'black' | 'nonTurkish') => {
+    setEditForm(prev => ({
+        ...prev,
+        citizenship: {
+            ...prev.citizenship,
+            isTurkishCitizen: passportType !== 'nonTurkish',
+            hasGreenPassport: passportType === 'green',
+            hasBlackPassport: passportType === 'black',
+        },
     }));
   };
 
@@ -1252,15 +1327,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           educationStatus: editAcademicInfo.educationStatus as any,
           phone: editContactInfo.phone,
           email: editContactInfo.email,
+          dob: editContactInfo.dob || undefined,
+          hasGreenPassport: editForm.citizenship?.hasGreenPassport,
+          hasForeignCitizenship: editForm.citizenship?.hasForeignCitizenship,
+          foreignCitizenshipNote: editForm.citizenship?.foreignCitizenshipNote,
           parentInfo: {
               ...student.parentInfo,
               fullName: editContactInfo.parentName,
+              relationship: editContactInfo.parentRelationship,
               phone: editContactInfo.parentPhone,
               email: editContactInfo.parentEmail,
           },
           parent2Info: {
               ...student.parent2Info,
               fullName: editContactInfo.parent2Name,
+              relationship: editContactInfo.parent2Relationship,
               phone: editContactInfo.parent2Phone,
               email: editContactInfo.parent2Email,
           },
@@ -2351,37 +2432,65 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
                 <Flag className="w-4 h-4 text-indigo-500" />
-                Vatandaşlık ve Pasaport Bilgileri
+                Vatandaşlık ve Doğum Tarihi
             </h4>
             <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Doğum Tarihi</label>
+                    <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <input
+                            type="date"
+                            value={editContactInfo.dob}
+                            max={getTodayIso()}
+                            onChange={(e) => setEditContactInfo(prev => ({ ...prev, dob: e.target.value }))}
+                            className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
+                        />
+                    </div>
+                </div>
+
                 <label className="flex items-center gap-3 cursor-pointer">
                     <input 
-                        type="checkbox"
-                        checked={editForm.citizenship?.isTurkishCitizen !== false}
-                        onChange={(e) => updateEditField('citizenship', 'isTurkishCitizen', e.target.checked)}
+                        type="radio"
+                        name="edit-passport-type"
+                        checked={editForm.citizenship?.isTurkishCitizen !== false && !editForm.citizenship?.hasGreenPassport && !editForm.citizenship?.hasBlackPassport}
+                        onChange={() => updateEditPassportType('bordo')}
                         className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     />
-                    <span className="text-sm font-medium text-slate-700">Türk Vatandaşı</span>
+                    <span className="text-sm font-medium text-slate-700">Bordo Pasaport</span>
                 </label>
                 
                 <label className="flex items-center gap-3 cursor-pointer">
                     <input 
-                        type="checkbox"
-                        checked={!!editForm.citizenship?.hasGreenPassport}
-                        onChange={(e) => updateEditField('citizenship', 'hasGreenPassport', e.target.checked)}
+                        type="radio"
+                        name="edit-passport-type"
+                        checked={editForm.citizenship?.isTurkishCitizen !== false && !!editForm.citizenship?.hasGreenPassport}
+                        onChange={() => updateEditPassportType('green')}
                         className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    <span className="text-sm font-medium text-slate-700">Yeşil Pasaportu Var</span>
+                    <span className="text-sm font-medium text-slate-700">Yeşil Pasaport</span>
                 </label>
                 
                 <label className="flex items-center gap-3 cursor-pointer">
                     <input 
-                        type="checkbox"
-                        checked={!!editForm.citizenship?.hasBlackPassport}
-                        onChange={(e) => updateEditField('citizenship', 'hasBlackPassport', e.target.checked)}
+                        type="radio"
+                        name="edit-passport-type"
+                        checked={editForm.citizenship?.isTurkishCitizen !== false && !!editForm.citizenship?.hasBlackPassport}
+                        onChange={() => updateEditPassportType('black')}
                         className="w-5 h-5 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
                     />
-                    <span className="text-sm font-medium text-slate-700">Siyah Pasaportu Var</span>
+                    <span className="text-sm font-medium text-slate-700">Siyah Pasaport</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                        type="radio"
+                        name="edit-passport-type"
+                        checked={editForm.citizenship?.isTurkishCitizen === false}
+                        onChange={() => updateEditPassportType('nonTurkish')}
+                        className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">TC Vatandaşı Değil</span>
                 </label>
                 
                 <div className="space-y-3">
@@ -2389,13 +2498,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         <input 
                             type="checkbox"
                             checked={!!editForm.citizenship?.hasResidencePermit}
-                            onChange={(e) => {
-                                updateEditField('citizenship', 'hasResidencePermit', e.target.checked);
-                                if(!e.target.checked) updateEditField('citizenship', 'residencePermitNote', '');
-                            }}
+                            onChange={(e) => updateEditField('citizenship', 'hasResidencePermit', e.target.checked)}
                             className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span className="text-sm font-medium text-slate-700">Oturum İzni Var</span>
+                        <span className="text-sm font-medium text-slate-700">Oturum İzni</span>
                     </label>
                     {editForm.citizenship?.hasResidencePermit && (
                         <div className="ml-8">
@@ -2414,13 +2520,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         <input 
                             type="checkbox"
                             checked={!!editForm.citizenship?.hasForeignCitizenship}
-                            onChange={(e) => {
-                                updateEditField('citizenship', 'hasForeignCitizenship', e.target.checked);
-                                if(!e.target.checked) updateEditField('citizenship', 'foreignCitizenshipNote', '');
-                            }}
+                            onChange={(e) => updateEditField('citizenship', 'hasForeignCitizenship', e.target.checked)}
                             className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span className="text-sm font-medium text-slate-700">Farklı bir Vatandaşlığı Var</span>
+                        <span className="text-sm font-medium text-slate-700">Farklı bir Vatandaşlık</span>
                     </label>
                     {editForm.citizenship?.hasForeignCitizenship && (
                         <div className="ml-8">
@@ -2432,6 +2535,16 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             />
                         </div>
                     )}
+                </div>
+
+                <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Not</label>
+                    <textarea
+                        value={editForm.citizenship?.notes || ''}
+                        onChange={(e) => updateEditField('citizenship', 'notes', e.target.value)}
+                        placeholder="Vatandaşlık, pasaport veya oturum izni ile ilgili notlar..."
+                        className="min-h-[88px] w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    />
                 </div>
             </div>
         </div>
@@ -2468,9 +2581,19 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
               <h4 className="text-sm font-semibold text-slate-700 mb-4">1. Veli</h4>
               <div className="space-y-4">
-                  <div>
-                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
-                      <input value={editContactInfo.parentName} onChange={e => setEditContactInfo({...editContactInfo, parentName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                          <input value={editContactInfo.parentName} onChange={e => setEditContactInfo({...editContactInfo, parentName: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Yakınlık Derecesi</label>
+                          <select value={editContactInfo.parentRelationship} onChange={e => setEditContactInfo({...editContactInfo, parentRelationship: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm">
+                              <option value="">Seçiniz</option>
+                              {editContactInfo.parentRelationship && !PARENT_RELATIONSHIP_OPTIONS.includes(editContactInfo.parentRelationship) && <option value={editContactInfo.parentRelationship}>{editContactInfo.parentRelationship}</option>}
+                              {PARENT_RELATIONSHIP_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                      </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -2488,9 +2611,19 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
               <h4 className="text-sm font-semibold text-slate-700 mb-4">2. Veli</h4>
               <div className="space-y-4">
-                  <div>
-                      <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
-                      <input value={editContactInfo.parent2Name} onChange={e => setEditContactInfo({...editContactInfo, parent2Name: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Veli Adı Soyadı</label>
+                          <input value={editContactInfo.parent2Name} onChange={e => setEditContactInfo({...editContactInfo, parent2Name: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm text-slate-600 mb-1">Yakınlık Derecesi</label>
+                          <select value={editContactInfo.parent2Relationship} onChange={e => setEditContactInfo({...editContactInfo, parent2Relationship: e.target.value})} className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm">
+                              <option value="">Seçiniz</option>
+                              {editContactInfo.parent2Relationship && !PARENT_RELATIONSHIP_OPTIONS.includes(editContactInfo.parent2Relationship) && <option value={editContactInfo.parent2Relationship}>{editContactInfo.parent2Relationship}</option>}
+                              {PARENT_RELATIONSHIP_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                      </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -2865,45 +2998,44 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const renderInterestedProgramsCard = () => (
-    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-2">
+    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex shrink-0 items-center gap-2">
                 <BookOpen className="w-5 h-5 text-indigo-600 print:text-black" />
                 <h3 className="font-bold text-slate-800">İlgilendiği Programlar</h3>
+                <button
+                    type="button"
+                    onClick={() => setShowProgramAddForm(prev => !prev)}
+                    className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition-colors hover:bg-indigo-700 print:hidden"
+                    title="Program tanımları"
+                    aria-label="Program tanımlarını aç veya kapat"
+                >
+                    <Plus className={`h-4 w-4 transition-transform ${showProgramAddForm ? 'rotate-45' : ''}`} />
+                </button>
             </div>
-            <button
-                type="button"
-                onClick={() => setShowProgramAddForm(prev => !prev)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700 print:hidden"
-            >
-                {showProgramAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                Program Tanımları
-            </button>
-        </div>
 
-        {(student.targetPrograms || []).length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {(student.targetPrograms || []).length > 0 && (
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
                 {(student.targetPrograms || []).map((program, index) => {
                     const logo = getProgramLogo(program);
                     const ProgramLogoIcon = logo.Icon;
 
                     return (
-                    <div key={`${program}-${index}`} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start gap-3 print:bg-white print:border-slate-300">
-                        <div className={`relative w-9 h-9 rounded-xl border ${logo.bg} ${logo.color} ${logo.border} flex items-center justify-center shrink-0 shadow-sm print:bg-white`}>
-                            <ProgramLogoIcon className="w-4.5 h-4.5" />
+                    <div key={`${program}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 print:border-slate-300 print:bg-white">
+                        <div className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${logo.bg} ${logo.color} ${logo.border} shadow-sm print:bg-white`}>
+                            <ProgramLogoIcon className="h-3.5 w-3.5" />
                             {logo.withStar && (
-                                <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
+                                <Star className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-white fill-amber-400 p-0.5 text-amber-400 shadow-sm" />
                             )}
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight print:text-slate-500">Program</p>
-                            <p className="text-sm font-semibold text-slate-800 break-words">{program}</p>
+                            <p className="break-words text-xs font-semibold text-slate-800">{program}</p>
                         </div>
                         <button
                             type="button"
                             onClick={() => handleRemoveTargetProgram(program)}
                             disabled={isSavingTargetProgram}
-                            className="ml-auto rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
+                            className="ml-auto rounded-md p-1 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 print:hidden"
                             title="Programı kaldır"
                         >
                             <X className="h-4 w-4" />
@@ -2912,12 +3044,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     );
                 })}
             </div>
-        )}
+            )}
+        </div>
 
         {showProgramAddForm && <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3 print:hidden">
             <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-xs font-black uppercase tracking-widest text-slate-500">Program Tanımları</p>
-                <span className="text-[10px] font-bold text-slate-400">Seçili olmayanlar</span>
+                <span className="text-[10px] font-bold text-slate-400">{(student.targetPrograms || []).length}/3 seçili</span>
             </div>
             {allPrograms.filter(program => !(student.targetPrograms || []).some(selected => selected.toLocaleLowerCase('tr-TR') === program.toLocaleLowerCase('tr-TR'))).length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -2932,7 +3065,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     key={program}
                                     type="button"
                                     onClick={() => handleAddTargetProgram(program)}
-                                    disabled={isSavingTargetProgram}
+                                    disabled={isSavingTargetProgram || (student.targetPrograms || []).length >= 3}
                                     className="flex min-h-[48px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/40 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${logo.bg} ${logo.color} ${logo.border}`}>
@@ -2950,6 +3083,90 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 <p className="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-center text-sm text-slate-400">Tüm program tipleri seçilmiş.</p>
             )}
         </div>}
+    </div>
+  );
+
+  const renderCitizenshipCard = () => (
+    <div>
+        <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <span className="font-bold text-slate-700">Doğum Tarihi:</span>
+                        <span className="text-slate-700">{formatBirthDate(student.dob)}</span>
+                        {studentAge !== null && (
+                            <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">
+                                Yaşı: {studentAge}
+                            </span>
+                        )}
+                    </div>
+                    <button
+                        onClick={() => openEditModal('citizenship')}
+                        className="-my-1 shrink-0 rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-100 hover:text-indigo-600 print:hidden"
+                        title="Düzenle"
+                    >
+                        <Edit2 className="h-4 w-4" />
+                    </button>
+                </div>
+                {studentAge !== null && studentAge < 18 && (
+                    <div className="mt-2 flex items-center gap-2 text-xs font-bold text-amber-700">
+                        <AlertTriangle className="h-4 w-4" />
+                        Guardian Ayarlanmalı
+                    </div>
+                )}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                <div className={`grid min-w-0 flex-1 grid-cols-1 gap-3 ${(hasForeignCitizenship || citizenshipInfo?.hasResidencePermit) ? 'sm:grid-cols-2' : ''}`}>
+                    <div className={`flex min-h-9 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-bold text-white shadow-sm ${citizenshipInfo?.isTurkishCitizen === false ? 'bg-blue-700' : hasGreenPassport ? 'bg-emerald-800' : citizenshipInfo?.hasBlackPassport ? 'bg-slate-950' : 'bg-[#7a1831]'}`}>
+                        {citizenshipInfo?.isTurkishCitizen === false ? 'TC Vatandaşı Değil' : hasGreenPassport ? 'Yeşil Pasaport' : citizenshipInfo?.hasBlackPassport ? 'Siyah Pasaport' : 'Bordo Pasaport'}
+                    </div>
+                    {(hasForeignCitizenship || citizenshipInfo?.hasResidencePermit) && (
+                        <div className="flex min-h-12 flex-col justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-xs text-white shadow-sm">
+                            {hasForeignCitizenship && (
+                                <div>
+                                    <p className="font-bold">Yabancı Vatandaşlık</p>
+                                    <p className="mt-0.5 text-[10px] font-medium text-blue-100">{foreignCitizenshipNote || 'Not belirtilmedi'}</p>
+                                </div>
+                            )}
+                            {citizenshipInfo?.hasResidencePermit && (
+                                <div className={hasForeignCitizenship ? 'border-t border-blue-500 pt-2' : ''}>
+                                    <p className="font-bold">Oturum İzni</p>
+                                    <p className="mt-0.5 text-[10px] font-medium text-blue-100">{citizenshipInfo.residencePermitNote || 'Not belirtilmedi'}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex sm:w-44 print:hidden">
+                    {studentDocuments.some(document => document.status !== 'archived' && document.documentTypeId === documentTypes.find(type => type.englishName.toLocaleLowerCase('tr-TR') === 'passport')?.id) ? (
+                        <button
+                            onClick={() => setActiveTab('documents')}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100"
+                        >
+                            <FileCheck className="w-4 h-4" />
+                            Pasaport Yüklendi
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setActiveTab('documents')}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 shadow-sm transition-colors hover:bg-slate-50"
+                        >
+                            <FileDown className="w-4 h-4 text-slate-400" />
+                            Pasaport Yükle
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {citizenshipInfo?.notes && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
+                    <span className="font-bold text-slate-700">Not:</span> {citizenshipInfo.notes}
+                </div>
+            )}
+
+        </div>
     </div>
   );
 
@@ -3021,106 +3238,83 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       
       {/* Compact Header */}
       <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 border-b border-slate-200 pb-4 print:border-none">
-        <div className="flex items-center gap-4 flex-1">
-          <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors print:hidden shrink-0">
-            <ArrowLeft className="w-5 h-5 text-slate-600" />
+        <div className="flex flex-1 items-center gap-3 rounded-2xl border border-indigo-900/60 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 px-3 py-3 shadow-sm print:border-slate-300 print:bg-white">
+          <button onClick={onBack} className="shrink-0 rounded-full p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white print:hidden">
+            <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="min-w-0">
-            <div className="flex items-center flex-wrap gap-4">
-              <h2 className="text-2xl font-bold text-slate-800 truncate">{student.firstName} {student.lastName}</h2>
-                  <button 
-                      onClick={() => openEditModal('contact')}
-                      className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all flex items-center justify-center shrink-0"
-                      title="Düzenle"
-                  >
-                      <Edit2 className="w-4 h-4" />
-                  </button>
+          <div className="min-w-0 flex-1 overflow-x-auto px-1">
+            <div className="grid min-w-[680px] grid-cols-[minmax(210px,1fr)_1px_130px_1px_minmax(290px,1fr)] items-center gap-x-3 gap-y-3 text-[13px] text-slate-300 print:text-slate-600">
+                <div className="flex min-w-0 items-center gap-2">
+                    <h2 className="truncate text-2xl font-bold text-white print:text-slate-800">{student.firstName} {student.lastName}</h2>
+                    <button
+                        onClick={() => openEditModal('contact')}
+                        className="flex shrink-0 items-center justify-center rounded-lg p-2 text-slate-400 transition-all hover:bg-white/10 hover:text-white print:hover:bg-slate-100 print:hover:text-indigo-600"
+                        title="Düzenle"
+                    >
+                        <Edit2 className="h-4 w-4" />
+                    </button>
+                </div>
+                <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                <span className="flex items-center gap-1.5 whitespace-nowrap font-bold text-slate-100 print:text-slate-800">
+                    <Phone className="h-4 w-4 shrink-0 text-slate-400" />
+                    {formatPhone(student.phone) || '-'}
+                </span>
+                <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                <span className="flex min-w-0 items-center gap-1.5 pl-6 font-bold text-slate-100 print:text-slate-800">
+                    <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="truncate">{student.email || '-'}</span>
+                </span>
 
-
-              <div className="flex items-center gap-3 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                  <div className="flex items-center gap-1.5">
-                      <Phone className="w-4 h-4 text-slate-400" />
-                      {formatPhone(student.phone) || '-'}
-                  </div>
-                  <div className="w-px h-4 bg-slate-200"></div>
-                  <div className="flex items-center gap-1.5 break-all">
-                      <Mail className="w-4 h-4 text-slate-400" />
-                      {student.email || '-'}
-                  </div>
-              </div>
-            </div>
-            
-            <div className="mt-3 flex flex-col gap-2">
-                
-                {/* Veli Bilgileri */}
                 {student.parentInfo?.fullName && (
-                    <div className="flex items-center gap-2 text-[13px] text-slate-600 font-medium whitespace-nowrap overflow-x-auto print:whitespace-normal">
-                        <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        <span className="font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md text-[10px]">1. Veli</span>
-                        <span className="text-slate-800">{student.parentInfo.fullName} <span className="text-slate-400 text-xs font-normal">({student.parentInfo.relationship || 'Belirtilmemiş'})</span></span>
-                        <span className="text-slate-300 mx-1">|</span>
-                        <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {formatPhone(student.parentInfo.phone)}</span>
-                        {student.parentInfo.email && (
-                             <>
-                                <span className="text-slate-300 mx-1">|</span>
-                                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {student.parentInfo.email}</span>
-                             </>
-                        )}
-                    </div>
+                    <>
+                        <div className="flex min-w-0 items-center gap-2 font-medium">
+                            <User className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                            <span className="shrink-0 rounded-md bg-indigo-400/15 px-1.5 py-0.5 text-[10px] font-bold text-indigo-200 print:bg-indigo-50 print:text-indigo-600">
+                                {student.parentInfo.relationship || 'Veli'}
+                            </span>
+                            <span className="truncate text-slate-100 print:text-slate-800">{student.parentInfo.fullName}</span>
+                        </div>
+                        <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                        <span className="flex items-center gap-1 whitespace-nowrap font-medium">
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            {formatPhone(student.parentInfo.phone)}
+                        </span>
+                        <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                        <span className="flex min-w-0 items-center gap-1 pl-6 font-medium">
+                            <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="truncate">{student.parentInfo.email || '-'}</span>
+                        </span>
+                    </>
                 )}
-                
+
                 {student.parent2Info?.fullName && (
-                    <div className="flex items-center gap-2 text-[13px] text-slate-600 font-medium whitespace-nowrap overflow-x-auto print:whitespace-normal">
-                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md text-[10px]">2. Veli</span>
-                        <span className="text-slate-800">{student.parent2Info.fullName} <span className="text-slate-400 text-xs font-normal">({student.parent2Info.relationship || 'Belirtilmemiş'})</span></span>
-                        <span className="text-slate-300 mx-1">|</span>
-                        <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {formatPhone(student.parent2Info.phone)}</span>
-                        {student.parent2Info.email && (
-                             <>
-                                <span className="text-slate-300 mx-1">|</span>
-                                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {student.parent2Info.email}</span>
-                             </>
-                        )}
-                    </div>
+                    <>
+                        <div className="flex min-w-0 items-center gap-2 font-medium">
+                            <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-200 print:bg-slate-100 print:text-slate-500">
+                                {student.parent2Info.relationship || 'Veli'}
+                            </span>
+                            <span className="truncate text-slate-100 print:text-slate-800">{student.parent2Info.fullName}</span>
+                        </div>
+                        <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                        <span className="flex items-center gap-1 whitespace-nowrap font-medium">
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            {formatPhone(student.parent2Info.phone)}
+                        </span>
+                        <span className="h-5 w-px bg-white/15 print:bg-slate-200" />
+                        <span className="flex min-w-0 items-center gap-1 pl-6 font-medium">
+                            <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="truncate">{student.parent2Info.email || '-'}</span>
+                        </span>
+                    </>
                 )}
             </div>
           </div>
         </div>
           
-          {/* Action Area for Stages */}
-        <div className="flex flex-col items-end gap-3 print:hidden shrink-0 mt-2 xl:mt-0">
-             <div className="flex flex-wrap items-center justify-end gap-2">
-                 <div className="relative print:hidden shrink-0 mr-1">
-                    <select
-                        value={currentStage}
-                        onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
-                        className={`appearance-none cursor-pointer pl-3 pr-8 py-2 rounded-lg text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-offset-1 transition-all shadow-sm border border-transparent hover:brightness-95 ${
-                            currentStage === PipelineStage.STUDENT ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
-                            currentStage === PipelineStage.ENROLLMENT ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
-                            currentStage === PipelineStage.NOT_INTERESTED ? 'bg-slate-200 text-slate-700 focus:ring-slate-500' :
-                            'bg-indigo-100 text-indigo-700 focus:ring-indigo-500'
-                        }`}
-                    >
-                        {Object.values(PipelineStage).map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                        ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
-                 </div>
-
-
-                 <button 
-                    onClick={() => setActiveTab('ai-advisor')}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition-colors shadow-sm text-xs font-bold"
-                >
-                <BrainCircuit className="w-4 h-4" />
-                AI Danışman
-              </button>
-             </div>
-
+        <div className="flex w-full shrink-0 flex-col items-end gap-3 mt-2 xl:mt-0 xl:w-auto">
              {currentStage === PipelineStage.ANALYSE && (
-                <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
+                <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto print:hidden">
                     {(['Mid', 'Hot', 'Super Hot'] as AnalyseStatus[]).map(status => (
                         <button 
                             key={status}
@@ -3149,6 +3343,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-slate-200 print:hidden">
+        <div className="relative mb-2 shrink-0 self-start">
+          <select
+            value={currentStage}
+            onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
+            className={`appearance-none cursor-pointer pl-3 pr-8 py-2 rounded-lg text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-offset-1 transition-all shadow-sm border border-transparent hover:brightness-95 ${
+              currentStage === PipelineStage.STUDENT ? 'bg-emerald-100 text-emerald-700 focus:ring-emerald-500' :
+              currentStage === PipelineStage.ENROLLMENT ? 'bg-purple-100 text-purple-700 focus:ring-purple-500' :
+              currentStage === PipelineStage.NOT_INTERESTED ? 'bg-slate-200 text-slate-700 focus:ring-slate-500' :
+              'bg-indigo-100 text-indigo-700 focus:ring-indigo-500'
+            }`}
+          >
+            {Object.values(PipelineStage).map((stage) => (
+              <option key={stage} value={stage}>{stage}</option>
+            ))}
+          </select>
+          <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-current" />
+        </div>
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
           { id: 'documents', label: 'Belgeler', icon: FileCheck, visible: true },
@@ -3206,7 +3417,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     <div className="flex flex-col gap-5">
                         <div className="flex flex-col gap-1.5">
                             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Eğitim Durumu</label>
-                            <div className="text-[14px] font-medium text-slate-800 flex items-center gap-1 flex-wrap">
+                            <div className="flex flex-wrap items-center gap-1 text-base font-medium text-slate-800">
                                 {(() => {
                                     const statusMap: Record<string, string> = {
                                         'Primary': 'İlköğretim',
@@ -3236,11 +3447,16 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     </>
                                 )}
                             </div>
-                            <div className="text-[13px] text-slate-600 flex items-center gap-1 flex-wrap">
+                            <div className="flex flex-wrap items-center gap-1 text-[15px] text-slate-600">
                                 <span>Yaklaşık Not Ortalaması: <strong className="text-slate-800">{student.analysis?.academic?.gpa || '-'}</strong></span>
                             </div>
                         </div>
-                        <DisplayField label="Akademik Notlar" value={student.analysis?.academic?.academicNotes} fullWidth />
+                        {student.analysis?.academic?.academicNotes?.trim() && (
+                            <div className="col-span-2">
+                                <label className="mb-1 block text-xs font-medium uppercase text-slate-500">Akademik Notlar</label>
+                                <p className="break-words text-base font-medium text-slate-800">{student.analysis.academic.academicNotes}</p>
+                            </div>
+                        )}
                     </div>
                 </div>}
 
@@ -3444,6 +3660,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                               </div>
                         </div>
                     </div>
+                    {shouldShowProfileBox('budget') && (
+                        <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+                            <div>
+                                <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-slate-400">Yıllık Bütçe Aralığı</label>
+                                <p className="text-base font-bold text-slate-800">
+                                    {student.analysis?.budget?.range || student.analysis?.budget?.ranges?.join(', ') || '-'}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => openEditModal('budget')}
+                                className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-100 hover:text-indigo-600 print:hidden"
+                                title="Bütçe aralığını düzenle"
+                            >
+                                <Edit2 className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
                     {student.analysis?.preferences?.notes && (
                         <div className="mt-6 pt-4 border-t border-slate-100">
                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Tercih Notları</label>
@@ -3606,26 +3839,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                 </div>}
 
+                {shouldShowProfileBox('citizenship') && renderCitizenshipCard()}
 
 
 
-                {shouldShowProfileBox('budget') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                            <CreditCard className="w-5 h-5 text-indigo-600 print:text-black" />
-                            <h3 className="font-bold text-slate-800">Bütçe Aralığı</h3>
-                        </div>
-                        <button 
-                            onClick={() => openEditModal('budget')}
-                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
-                            title="Düzenle"
-                        >
-                            <Edit2 className="w-4 h-4" />
-                        </button>
-
-                    </div>
-                    <DisplayField label="Yıllık Bütçe Aralığı" value={student.analysis?.budget?.range} />
-                </div>}
 
                 {/* Social Activities */}
                 {shouldShowProfileBox('social') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
@@ -3651,76 +3868,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     </div>
                 </div>}
 
-                {/* Citizenship Info */}
-                 {shouldShowProfileBox('citizenship') && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none">
-                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                            <Flag className="w-5 h-5 text-indigo-600 print:text-black" />
-                            <h3 className="font-bold text-slate-800">Vatandaşlık & Pasaport</h3>
-                        </div>
-                        <button 
-                            onClick={() => openEditModal('citizenship')}
-                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-all print:hidden"
-                            title="Düzenle"
-                        >
-                            <Edit2 className="w-4 h-4" />
-                        </button>
-
-                    </div>
-                    <div className="space-y-3">
-                        <div className="flex flex-wrap gap-2">
-                            {student.analysis?.citizenship?.isTurkishCitizen !== false && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
-                                    <CheckCircle className="w-3.5 h-3.5" /> Türk Vatandaşı
-                                </span>
-                            )}
-                            {student.analysis?.citizenship?.hasGreenPassport && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
-                                    <CheckCircle className="w-3.5 h-3.5" /> Yeşil Pasaport
-                                </span>
-                            )}
-                            {student.analysis?.citizenship?.hasBlackPassport && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
-                                    <CheckCircle className="w-3.5 h-3.5" /> Siyah Pasaport
-                                </span>
-                            )}
-                        </div>
-                        
-                        {student.analysis?.citizenship?.hasResidencePermit && (
-                            <div className="text-sm">
-                                <span className="font-bold text-slate-700">Oturum İzni:</span> 
-                                <span className="ml-2 text-slate-600">{student.analysis.citizenship.residencePermitNote || 'Var'}</span>
-                            </div>
-                        )}
-                        
-                        {student.analysis?.citizenship?.hasForeignCitizenship && (
-                            <div className="text-sm">
-                                <span className="font-bold text-slate-700">Diğer Vatandaşlık:</span> 
-                                <span className="ml-2 text-slate-600">{student.analysis.citizenship.foreignCitizenshipNote || 'Var'}</span>
-                            </div>
-                        )}
-
-                        <div className="pt-3 border-t border-slate-100 mt-4 print:hidden">
-                            {studentDocuments.some(document => document.status !== 'archived' && document.documentTypeId === documentTypes.find(type => type.englishName.toLocaleLowerCase('tr-TR') === 'passport')?.id) ? (
-                                <button 
-                                    onClick={() => setActiveTab('documents')}
-                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors rounded-xl text-sm font-bold border border-emerald-200 shadow-sm"
-                                >
-                                    <FileCheck className="w-4 h-4" />
-                                    Pasaport Yüklendi (Görüntüle)
-                                </button>
-                            ) : (
-                                <button 
-                                    onClick={() => setActiveTab('documents')}
-                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-white text-indigo-600 hover:bg-slate-50 transition-colors rounded-xl text-sm font-bold border border-slate-200 shadow-sm"
-                                >
-                                    <FileDown className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
-                                    Pasaport Yükle
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>}
             </div>
 
           </div>
