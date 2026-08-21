@@ -181,6 +181,12 @@ export interface StudentDocument {
   checksumSha256?: string;
   version?: number;
   status?: 'uploaded' | 'approved' | 'rejected' | 'archived';
+  driveSyncStatus?: 'pending' | 'processing' | 'synced' | 'failed' | 'deleting';
+  driveFileId?: string;
+  driveFileName?: string;
+  driveSyncedAt?: string;
+  driveSyncStartedAt?: string;
+  driveSyncNextRetryAt?: string;
   archivedAt?: string;
   activeShare?: {
     id: string;

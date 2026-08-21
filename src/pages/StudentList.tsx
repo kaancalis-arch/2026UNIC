@@ -947,6 +947,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
         await refreshAnalysisDocuments();
     };
 
+    const retryAnalysisDocumentDriveSync = async (document: StudentDocument) => {
+        await studentDocumentService.retryDriveSync(document.id);
+        await refreshAnalysisDocuments();
+    };
+
     const createAnalysisDocumentShare = async (document: StudentDocument, hours: 24 | 72 | 168) => {
         const share = await studentDocumentService.createShareLink(document.id, hours);
         await refreshAnalysisDocuments();
@@ -2214,6 +2219,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     onUpload={(file) => uploadAnalysisDocument(definition.id, file)}
                     onView={viewAnalysisDocument}
                     onArchive={archiveAnalysisDocument}
+                    onRetryDriveSync={retryAnalysisDocumentDriveSync}
                     onCreateShare={createAnalysisDocumentShare}
                     onRevokeShare={revokeAnalysisDocumentShare}
                 />

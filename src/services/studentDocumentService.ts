@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient';
 type DocumentOperation =
   | 'list'
   | 'archive'
+  | 'retry_drive_sync'
   | 'create_share_link'
   | 'revoke_share_link'
   | 'permanent_delete';
@@ -62,6 +63,12 @@ const mapDocument = (value: any): StudentDocument => ({
   checksumSha256: value.checksum_sha256,
   version: value.version,
   status: value.status,
+  driveSyncStatus: value.drive_sync_status,
+  driveFileId: value.drive_file_id || undefined,
+  driveFileName: value.drive_file_name || undefined,
+  driveSyncedAt: value.drive_synced_at || undefined,
+  driveSyncStartedAt: value.drive_sync_started_at || undefined,
+  driveSyncNextRetryAt: value.drive_sync_next_retry_at || undefined,
   uploadedAt: value.created_at,
   archivedAt: value.archived_at || undefined,
   activeShare: value.active_share ? {
@@ -101,6 +108,10 @@ export const studentDocumentService = {
 
   async archive(documentId: string): Promise<void> {
     await jsonOperation('archive', { document_id: documentId });
+  },
+
+  async retryDriveSync(documentId: string): Promise<void> {
+    await jsonOperation('retry_drive_sync', { document_id: documentId });
   },
 
   async createShareLink(
