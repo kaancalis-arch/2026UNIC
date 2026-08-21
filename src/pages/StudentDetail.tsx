@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
+import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, StudentProfileNote, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { studentService } from '../services/studentService';
+import { studentProfileNoteService } from '../services/studentProfileNoteService';
 import { studentDocumentService } from '../services/studentDocumentService';
 import { documentTypeService, type DocumentTypeDefinition } from '../services/documentTypeService';
 import { systemService } from '../services/systemService';
@@ -134,6 +135,13 @@ const formatBirthDate = (dateString?: string): string => {
     return Number.isNaN(date.getTime())
         ? dateString
         : date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const formatNoteDateTime = (dateString: string): string => {
+    const date = new Date(dateString);
+    return Number.isNaN(date.getTime())
+        ? '-'
+        : date.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
 const calculateAge = (dateString?: string): number | null => {
@@ -279,6 +287,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [showProgramAddForm, setShowProgramAddForm] = useState(false);
   const [newTargetProgramName, setNewTargetProgramName] = useState('');
   const [isSavingTargetProgram, setIsSavingTargetProgram] = useState(false);
+  const [profileNotes, setProfileNotes] = useState<StudentProfileNote[]>([]);
+  const [newProfileNote, setNewProfileNote] = useState('');
+  const [isLoadingProfileNotes, setIsLoadingProfileNotes] = useState(true);
+  const [isSavingProfileNote, setIsSavingProfileNote] = useState(false);
+  const [pendingProfileNoteId, setPendingProfileNoteId] = useState<string | null>(null);
+  const [profileNoteError, setProfileNoteError] = useState('');
+  const [reminderDateInput, setReminderDateInput] = useState(student.reminderDate || '');
+  const [isSavingReminderDate, setIsSavingReminderDate] = useState(false);
   const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
   const [isGeneratingDocumentsPdf, setIsGeneratingDocumentsPdf] = useState(false);
 
@@ -304,7 +320,20 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
     setStudentDocuments(initialStudent.documents || initialStudent.analysis?.documents || []);
+    setReminderDateInput(initialStudent.reminderDate || '');
+    setProfileNotes([]);
+    setProfileNoteError('');
+    setIsLoadingProfileNotes(true);
     let cancelled = false;
+    void studentProfileNoteService.list(initialStudent.id).then(notes => {
+      if (cancelled) return;
+      setProfileNotes(notes);
+    }).catch(error => {
+      if (cancelled) return;
+      setProfileNoteError(error instanceof Error ? error.message : 'Notlar yüklenemedi.');
+    }).finally(() => {
+      if (!cancelled) setIsLoadingProfileNotes(false);
+    });
     void studentDocumentService.list(initialStudent.id).then(documents => {
       if (cancelled) return;
       setStudentDocuments(documents);
@@ -707,6 +736,55 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         alert("Program eklenirken bir hata oluştu.");
     } finally {
         setIsSavingTargetProgram(false);
+    }
+  };
+
+  const handleAddProfileNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const text = newProfileNote.trim();
+    if (!text || text.length > 2000 || isLoadingProfileNotes || isSavingProfileNote) return;
+
+    setIsSavingProfileNote(true);
+    setProfileNoteError('');
+    try {
+      const note = await studentProfileNoteService.create(student.id, text);
+      setProfileNotes(previous => [note, ...previous]);
+      setNewProfileNote('');
+    } catch (error) {
+      setProfileNoteError(error instanceof Error ? error.message : 'Not kaydedilemedi.');
+    } finally {
+      setIsSavingProfileNote(false);
+    }
+  };
+
+  const handleSetProfileNoteCompleted = async (noteId: string, completed: boolean) => {
+    if (isLoadingProfileNotes || pendingProfileNoteId) return;
+
+    setPendingProfileNoteId(noteId);
+    setProfileNoteError('');
+    try {
+      const updatedNote = await studentProfileNoteService.setCompleted(student.id, noteId, completed);
+      setProfileNotes(previous => previous.map(note => note.id === noteId ? updatedNote : note));
+    } catch (error) {
+      setProfileNoteError(error instanceof Error ? error.message : 'Not durumu güncellenemedi.');
+    } finally {
+      setPendingProfileNoteId(null);
+    }
+  };
+
+  const handleSaveReminderDate = async (reminderDate: string | null) => {
+    if (isSavingReminderDate) return;
+
+    setIsSavingReminderDate(true);
+    setProfileNoteError('');
+    try {
+      const savedReminderDate = await studentProfileNoteService.setReminderDate(student.id, reminderDate);
+      setStudent(previous => ({ ...previous, reminderDate: savedReminderDate || undefined }));
+      setReminderDateInput(savedReminderDate || '');
+    } catch (error) {
+      setProfileNoteError(error instanceof Error ? error.message : 'Hatırlatma tarihi kaydedilemedi.');
+    } finally {
+      setIsSavingReminderDate(false);
     }
   };
 
@@ -3870,6 +3948,109 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
             </div>
 
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:border-slate-300 print:shadow-none">
+            <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-indigo-600 print:text-black" />
+                <div>
+                  <h3 className="font-bold text-slate-800">Notlar / Yapılacaklar</h3>
+                  <p className="text-xs text-slate-500">Öğrenciye özel takip notları</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-2 print:hidden">
+                <label className="flex flex-col gap-1 text-xs font-bold text-slate-500">
+                  <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-indigo-500" /> Hatırlatma Tarihi</span>
+                  <input
+                    type="date"
+                    value={reminderDateInput}
+                    onChange={(event) => setReminderDateInput(event.target.value)}
+                    disabled={isSavingReminderDate}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveReminderDate(reminderDateInput || null)}
+                  disabled={isSavingReminderDate || reminderDateInput === (student.reminderDate || '')}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSavingReminderDate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  Kaydet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveReminderDate(null)}
+                  disabled={isSavingReminderDate || (!student.reminderDate && !reminderDateInput)}
+                  className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Temizle
+                </button>
+              </div>
+            </div>
+
+            {profileNoteError && (
+              <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{profileNoteError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddProfileNote} className="mb-4 print:hidden">
+              <textarea
+                value={newProfileNote}
+                onChange={(event) => setNewProfileNote(event.target.value)}
+                rows={2}
+                maxLength={2000}
+                disabled={isSavingProfileNote}
+                className="min-h-[72px] w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
+                placeholder="Yeni bir takip notu veya yapılacak ekleyin..."
+              />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-400">{newProfileNote.length}/2000</span>
+                <button
+                  type="submit"
+                  disabled={isLoadingProfileNotes || !newProfileNote.trim() || isSavingProfileNote || pendingProfileNoteId !== null}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSavingProfileNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Not Ekle
+                </button>
+              </div>
+            </form>
+
+            {isLoadingProfileNotes ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" /> Notlar yükleniyor...
+              </div>
+            ) : profileNotes.length > 0 ? (
+              <div className="space-y-2.5">
+                {profileNotes.map(note => (
+                  <div key={note.id} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 print:bg-white">
+                    <button
+                      type="button"
+                      onClick={() => void handleSetProfileNoteCompleted(note.id, note.completed ? false : true)}
+                      disabled={isLoadingProfileNotes || pendingProfileNoteId !== null || isSavingProfileNote}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 print:hidden ${note.completed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200 hover:text-emerald-700'}`}
+                    >
+                      {pendingProfileNoteId === note.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : note.completed ? <CheckCircle className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                      {note.completed ? 'Yeniden Aç' : 'Tamamla'}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${note.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                        {note.text}
+                      </p>
+                      <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+                        {note.authorName} · {formatNoteDateTime(note.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-4 text-sm italic text-slate-400">Henüz not veya yapılacak eklenmedi.</p>
+            )}
           </div>
           </div>
         )}
