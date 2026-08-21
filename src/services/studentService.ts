@@ -58,14 +58,46 @@ function mapDbToStudent(row: any): Student {
     };
 }
 
+type StudentDateField = 'dob' | 'reminderDate' | 'visaApplicationDate';
+
+const STUDENT_DATE_FIELD_LABELS: Record<StudentDateField, string> = {
+    dob: 'Doğum tarihi',
+    reminderDate: 'Hatırlatma tarihi',
+    visaApplicationDate: 'Vize başvuru tarihi'
+};
+
+function mapOptionalStudentDate(student: Partial<Student>, key: StudentDateField): string | null | undefined {
+    if (!Object.prototype.hasOwnProperty.call(student, key)) return undefined;
+
+    const value = student[key];
+    if (value === '' || value === null || value === undefined) return null;
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (match) {
+        const [, year, month, day] = match;
+        const date = new Date(`${value}T00:00:00Z`);
+        if (
+            !Number.isNaN(date.getTime())
+            && Number(year) > 0
+            && date.getUTCFullYear() === Number(year)
+            && date.getUTCMonth() + 1 === Number(month)
+            && date.getUTCDate() === Number(day)
+        ) {
+            return value;
+        }
+    }
+
+    throw new Error(`${STUDENT_DATE_FIELD_LABELS[key]} YYYY-MM-DD biçiminde geçerli bir tarih olmalıdır.`);
+}
+
 function mapStudentToDb(student: Partial<Student>): any {
     const dbObj: any = {
         first_name: student.firstName,
         last_name: student.lastName,
         email: student.email,
         phone: student.phone,
-        dob: (student.dob && /^\d{4}-\d{2}-\d{2}$/.test(student.dob)) ? student.dob : null,
-        reminder_date: student.reminderDate,
+        dob: mapOptionalStudentDate(student, 'dob'),
+        reminder_date: mapOptionalStudentDate(student, 'reminderDate'),
         pipeline_stage: student.pipelineStage,
         gpa: student.gpa,
         target_degree: student.targetDegree,
@@ -111,7 +143,7 @@ function mapStudentToDb(student: Partial<Student>): any {
         analyse_status: student.analyseStatus,
         applications: student.applications,
         visa_status: student.visaStatus,
-        visa_application_date: (student.visaApplicationDate && /^\d{4}-\d{2}-\d{2}$/.test(student.visaApplicationDate)) ? student.visaApplicationDate : null,
+        visa_application_date: mapOptionalStudentDate(student, 'visaApplicationDate'),
         visa_type: student.visaType,
         visa_country: student.visaCountry,
         visa_reports: student.visaReports
