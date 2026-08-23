@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, StudentProfileNote, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
 import { studentService } from '../services/studentService';
@@ -295,6 +295,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [profileNoteError, setProfileNoteError] = useState('');
   const [reminderDateInput, setReminderDateInput] = useState(student.reminderDate || '');
   const [isSavingReminderDate, setIsSavingReminderDate] = useState(false);
+  const currentStudentIdRef = useRef(initialStudent.id);
+  const addProfileNoteOperationRef = useRef<symbol | null>(null);
+  const completeProfileNoteOperationRef = useRef<symbol | null>(null);
+  const saveReminderDateOperationRef = useRef<symbol | null>(null);
   const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
   const [isGeneratingDocumentsPdf, setIsGeneratingDocumentsPdf] = useState(false);
 
@@ -305,6 +309,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [visaChecklistExpanded, setVisaChecklistExpanded] = useState(false);
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
   const [hiddenAnalysisReportSections, setHiddenAnalysisReportSections] = useState<Record<string, boolean>>({});
+
+  currentStudentIdRef.current = initialStudent.id;
 
   const normalizedTargetDegree = student.targetDegree || '';
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
@@ -324,6 +330,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     setProfileNotes([]);
     setProfileNoteError('');
     setIsLoadingProfileNotes(true);
+    setIsSavingProfileNote(false);
+    setPendingProfileNoteId(null);
+    setIsSavingReminderDate(false);
+    addProfileNoteOperationRef.current = null;
+    completeProfileNoteOperationRef.current = null;
+    saveReminderDateOperationRef.current = null;
     let cancelled = false;
     void studentProfileNoteService.list(initialStudent.id).then(notes => {
       if (cancelled) return;
@@ -744,47 +756,76 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     const text = newProfileNote.trim();
     if (!text || text.length > 2000 || isLoadingProfileNotes || isSavingProfileNote) return;
 
+    const studentId = student.id;
+    if (currentStudentIdRef.current !== studentId) return;
+    const operation = Symbol();
+    addProfileNoteOperationRef.current = operation;
     setIsSavingProfileNote(true);
     setProfileNoteError('');
     try {
-      const note = await studentProfileNoteService.create(student.id, text);
+      const note = await studentProfileNoteService.create(studentId, text);
+      if (currentStudentIdRef.current !== studentId || addProfileNoteOperationRef.current !== operation) return;
       setProfileNotes(previous => [note, ...previous]);
       setNewProfileNote('');
     } catch (error) {
+      if (currentStudentIdRef.current !== studentId || addProfileNoteOperationRef.current !== operation) return;
       setProfileNoteError(error instanceof Error ? error.message : 'Not kaydedilemedi.');
     } finally {
-      setIsSavingProfileNote(false);
+      if (currentStudentIdRef.current === studentId && addProfileNoteOperationRef.current === operation) {
+        addProfileNoteOperationRef.current = null;
+        setIsSavingProfileNote(false);
+      }
     }
   };
 
   const handleSetProfileNoteCompleted = async (noteId: string, completed: boolean) => {
     if (isLoadingProfileNotes || pendingProfileNoteId) return;
 
+    const studentId = student.id;
+    if (currentStudentIdRef.current !== studentId) return;
+    const operation = Symbol();
+    completeProfileNoteOperationRef.current = operation;
     setPendingProfileNoteId(noteId);
     setProfileNoteError('');
     try {
-      const updatedNote = await studentProfileNoteService.setCompleted(student.id, noteId, completed);
+      const updatedNote = await studentProfileNoteService.setCompleted(studentId, noteId, completed);
+      if (currentStudentIdRef.current !== studentId || completeProfileNoteOperationRef.current !== operation) return;
       setProfileNotes(previous => previous.map(note => note.id === noteId ? updatedNote : note));
     } catch (error) {
+      if (currentStudentIdRef.current !== studentId || completeProfileNoteOperationRef.current !== operation) return;
       setProfileNoteError(error instanceof Error ? error.message : 'Not durumu güncellenemedi.');
     } finally {
-      setPendingProfileNoteId(null);
+      if (currentStudentIdRef.current === studentId && completeProfileNoteOperationRef.current === operation) {
+        completeProfileNoteOperationRef.current = null;
+        setPendingProfileNoteId(null);
+      }
     }
   };
 
   const handleSaveReminderDate = async (reminderDate: string | null) => {
     if (isSavingReminderDate) return;
 
+    const studentId = student.id;
+    if (currentStudentIdRef.current !== studentId) return;
+    const operation = Symbol();
+    saveReminderDateOperationRef.current = operation;
     setIsSavingReminderDate(true);
     setProfileNoteError('');
     try {
-      const savedReminderDate = await studentProfileNoteService.setReminderDate(student.id, reminderDate);
-      setStudent(previous => ({ ...previous, reminderDate: savedReminderDate || undefined }));
+      const savedReminderDate = await studentProfileNoteService.setReminderDate(studentId, reminderDate);
+      if (currentStudentIdRef.current !== studentId || saveReminderDateOperationRef.current !== operation) return;
+      setStudent(previous => previous.id === studentId
+        ? { ...previous, reminderDate: savedReminderDate || undefined }
+        : previous);
       setReminderDateInput(savedReminderDate || '');
     } catch (error) {
+      if (currentStudentIdRef.current !== studentId || saveReminderDateOperationRef.current !== operation) return;
       setProfileNoteError(error instanceof Error ? error.message : 'Hatırlatma tarihi kaydedilemedi.');
     } finally {
-      setIsSavingReminderDate(false);
+      if (currentStudentIdRef.current === studentId && saveReminderDateOperationRef.current === operation) {
+        saveReminderDateOperationRef.current = null;
+        setIsSavingReminderDate(false);
+      }
     }
   };
 
