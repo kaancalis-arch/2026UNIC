@@ -12,3 +12,6 @@ verify_jwt = false
 
 [functions.student-assignments]
 verify_jwt = true
+
+[functions.student-profile-notes]
+verify_jwt = true

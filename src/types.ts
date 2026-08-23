@@ -76,6 +76,19 @@ export interface ExamDetails {
   notes?: string; // For "Other" exam notes
 }
 
+export interface StudentProfileNote {
+  id: string;
+  studentId: string;
+  text: string;
+  completed: boolean;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  completedBy: string | null;
+}
+
 export interface AnalysisReport {
   // 1. Dil Yeterliliği
   language: {
