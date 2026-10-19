@@ -10,40 +10,39 @@ const formatProgramTuitionRange = (row: any) => [
 export const universityProgramService = {
   async getAll(): Promise<UniversityProgramData[]> {
     if (!supabase) return [];
-    
-    // Joint query to get names if possible, or we enrich in UI
-    const { data, error } = await supabase
-      .from('university_programs')
-      .select(`
-        *,
-        universities (name),
-        cat1:main_categories!main_category_id (name),
-        cat2:main_categories!main_category_2_id (name),
-        cat3:main_categories!main_category_3_id (name),
-        deg1:programs!main_degree_id (name),
-        deg2:programs!main_degree_2_id (name),
-        deg3:programs!main_degree_3_id (name)
-      `)
-      .order('created_at', { ascending: false });
-      
-    if (error) {
-      console.error('Fetch university programs failed:', error.message);
-      throw error;
+
+    const rows: any[] = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('university_programs')
+        .select(`
+          *,
+          universities (name),
+          deg1:programs!main_degree_id (name),
+          deg2:programs!main_degree_2_id (name),
+          deg3:programs!main_degree_3_id (name)
+        `)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error('Fetch university programs failed:', error.message);
+        throw error;
+      }
+
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
     }
-    
-    return (data || []).map((row: any) => ({
+
+    return rows.map((row: any) => ({
       id: row.id,
       universityId: row.university_id,
       universityName: row.universities?.name,
       type: row.type || 'Bachelor',
       name: row.name,
       url: row.url,
-      mainCategoryId: row.main_category_id,
-      mainCategoryName: (row as any).cat1?.name,
-      mainCategory2Id: row.main_category_2_id,
-      mainCategory2Name: (row as any).cat2?.name,
-      mainCategory3Id: row.main_category_3_id,
-      mainCategory3Name: (row as any).cat3?.name,
       mainDegreeId: row.main_degree_id,
       mainDegreeName: (row as any).deg1?.name,
       mainDegree2Id: row.main_degree_2_id,
@@ -63,9 +62,6 @@ export const universityProgramService = {
         university_id: program.universityId,
         name: program.name,
         url: program.url,
-        main_category_id: program.mainCategoryId || null,
-        main_category_2_id: program.mainCategory2Id || null,
-        main_category_3_id: program.mainCategory3Id || null,
         main_degree_id: program.mainDegreeId || null,
         main_degree_2_id: program.mainDegree2Id || null,
         main_degree_3_id: program.mainDegree3Id || null,
@@ -90,6 +86,44 @@ export const universityProgramService = {
     }
     
     return data;
+  },
+
+  async updateGrouping(id: string, degreeIds: string[]): Promise<void> {
+    if (!supabase) throw new Error('Supabase is not configured');
+
+    const { data, error } = await supabase
+      .from('university_programs')
+      .update({
+        main_degree_id: degreeIds[0] || null,
+        main_degree_2_id: degreeIds[1] || null,
+        main_degree_3_id: degreeIds[2] || null,
+      })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error('Güncellenecek üniversite bölümü bulunamadı.');
+  },
+
+  async clearGroupings(ids: string[]): Promise<void> {
+    if (!supabase) throw new Error('Supabase is not configured');
+    if (ids.length === 0) return;
+
+    const { data, error } = await supabase
+      .from('university_programs')
+      .update({
+        main_degree_id: null,
+        main_degree_2_id: null,
+        main_degree_3_id: null,
+      })
+      .in('id', ids)
+      .select('id');
+
+    if (error) throw error;
+    if ((data || []).length !== ids.length) {
+      throw new Error('Bazı üniversite bölümlerinin eski gruplandırmaları temizlenemedi.');
+    }
   },
 
   async delete(id: string): Promise<void> {

@@ -11,6 +11,7 @@ import { mainCategoryService } from '../services/mainCategoryService';
 import { interestedProgramService } from '../services/interestedProgramService';
 import { sharedInstitutionService } from '../services/sharedInstitutionService';
 import { universityProgramService } from '../services/universityProgramService';
+import { departmentKeywordRuleService } from '../services/departmentKeywordRuleService';
 import { systemService } from '../services/systemService';
 import { studentService } from '../services/studentService';
 import { ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
@@ -28,6 +29,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
+import { parseUniversityProgramExcelRow, toUniversityProgramExcelRow, UNIVERSITY_PROGRAM_EXCEL_HEADERS } from '../lib/universityProgramExcel';
+import { matchProgramDepartments } from '../lib/departmentMatching';
 import {
     getAllowedParentRoles,
     roleRequiresBranch,
@@ -146,6 +149,19 @@ const parseCommaSeparatedKeywords = (value: string) => value
 
 const formatKeywordArray = (value: string[] | null | undefined) => (value || []).join(', ');
 
+const getExcelCell = (row: Record<string, unknown>, aliases: string[]) => {
+    const normalizedAliases = aliases.map(alias => alias.trim().toLocaleLowerCase('tr-TR'));
+    const matchingKey = Object.keys(row).find(key =>
+        normalizedAliases.includes(key.trim().toLocaleLowerCase('tr-TR'))
+    );
+    return matchingKey ? row[matchingKey] : undefined;
+};
+
+const parseExcelList = (value: unknown) => String(value || '')
+    .split(/[,;/]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+
 const normalizeDepartmentName = (value: string) => value.trim().toLocaleLowerCase('tr');
 
 type UniversitySortKey = 'name' | 'countries' | 'types' | 'links' | 'programs';
@@ -153,6 +169,55 @@ type UniversitySortDirection = 'asc' | 'desc';
 type UniversitySortConfig = {
     key: UniversitySortKey;
     direction: UniversitySortDirection;
+};
+
+type GroupingReportStatus = 'updated' | 'cleared' | 'unchanged' | 'unmatched' | 'failed';
+type GroupingReportEntry = {
+    id: string;
+    universityName: string;
+    programName: string;
+    previousNames: string[];
+    nextNames: string[];
+    matchedKeywords: string[];
+    status: GroupingReportStatus;
+    error?: string;
+};
+type GroupingReport = {
+    createdAt: string;
+    entries: GroupingReportEntry[];
+};
+
+const GROUPING_STATUS_LABELS: Record<GroupingReportStatus, string> = {
+    updated: 'Güncellendi',
+    cleared: 'Temizlendi',
+    unchanged: 'Değişmedi',
+    unmatched: 'Eşleşme Yok',
+    failed: 'Başarısız',
+};
+
+const GROUPING_STATUS_STYLES: Record<GroupingReportStatus, string> = {
+    updated: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    cleared: 'bg-amber-50 text-amber-700 border-amber-200',
+    unchanged: 'bg-slate-50 text-slate-600 border-slate-200',
+    unmatched: 'bg-orange-50 text-orange-700 border-orange-200',
+    failed: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+type SettingsTab = 'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor';
+
+const SETTINGS_TAB_STORAGE_KEY = 'unic-settings-active-tab';
+const SETTINGS_VIEW_STORAGE_KEY = 'unic-settings-selected-view';
+const SETTINGS_TABS: SettingsTab[] = ['users', 'definitions', 'career', 'data', 'institutions', 'ai-advisor'];
+
+const getStoredSettingsTab = (): SettingsTab => {
+    if (typeof window === 'undefined') return 'users';
+    const storedTab = window.sessionStorage.getItem(SETTINGS_TAB_STORAGE_KEY) as SettingsTab | null;
+    return storedTab && SETTINGS_TABS.includes(storedTab) ? storedTab : 'users';
+};
+
+const getStoredSettingsView = () => {
+    if (typeof window === 'undefined') return null;
+    return window.sessionStorage.getItem(SETTINGS_VIEW_STORAGE_KEY);
 };
 
 const Settings: React.FC<{
@@ -163,7 +228,7 @@ const Settings: React.FC<{
     const isBranchManager = currentUser?.role === UserRole.BRANCH_MANAGER;
     const hasUserOnlySettings = isBranchManager;
     const isGlobalAdmin = currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN;
-    const [activeTab, setActiveTab] = useState<'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor'>('users');
+    const [activeTab, setActiveTab] = useState<SettingsTab>(() => hasUserOnlySettings ? 'users' : getStoredSettingsTab());
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showPassiveUsers, setShowPassiveUsers] = useState(false);
@@ -190,7 +255,7 @@ const Settings: React.FC<{
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     
     // Definitions State
-    const [selectedDefinitionType, setSelectedDefinitionType] = useState<string | null>(null);
+    const [selectedDefinitionType, setSelectedDefinitionType] = useState<string | null>(() => hasUserOnlySettings ? null : getStoredSettingsView());
     const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
     const [countries, setCountries] = useState<CountryData[]>([]);
     const [isLoadingCountries, setIsLoadingCountries] = useState(false);
@@ -198,19 +263,17 @@ const Settings: React.FC<{
     // University State
     const [universities, setUniversities] = useState<UniversityData[]>([]);
     const [isLoadingUniversities, setIsLoadingUniversities] = useState(false);
+    const [isSavingUniversity, setIsSavingUniversity] = useState(false);
     const [isUniversityModalOpen, setIsUniversityModalOpen] = useState(false);
     const [universityForm, setUniversityForm] = useState<UniversityData>({
         id: '',
         name: '',
         logo: '',
         countries: [],
+        campuses: [],
         rankingUrl: '',
         websiteUrl: '',
-        departmentsUrl: '',
-        parserProfile: 'auto',
-        consultingType: '',
         universityTypes: [],
-        sharedInstitutionId: '',
         programs: []
     });
     
@@ -219,6 +282,10 @@ const Settings: React.FC<{
     const [universitySortConfig, setUniversitySortConfig] = useState<UniversitySortConfig | null>(null);
     const [expandedUniversityId, setExpandedUniversityId] = useState<string | null>(null);
     const [isImportingUniversities, setIsImportingUniversities] = useState(false);
+    const [isImportingMainDegrees, setIsImportingMainDegrees] = useState(false);
+    const [isImportingCountries, setIsImportingCountries] = useState(false);
+    const [isImportingUniversityPrograms, setIsImportingUniversityPrograms] = useState(false);
+    const [importingSchoolNameType, setImportingSchoolNameType] = useState<SchoolNameType | null>(null);
     const [showLogoUpload, setShowLogoUpload] = useState(false);
     
     // University Types State
@@ -236,6 +303,7 @@ const Settings: React.FC<{
     const [isLoadingMainDegrees, setIsLoadingMainDegrees] = useState(false);
 
     const [isMainDegreeModalOpen, setIsMainDegreeModalOpen] = useState(false);
+    const [isUploadingMainDegreeImage, setIsUploadingMainDegreeImage] = useState(false);
     const [mainDegreeForm, setMainDegreeForm] = useState<MainDegreeData>({
         id: '',
         name: '',
@@ -306,12 +374,13 @@ const Settings: React.FC<{
     const [isUniversityProgramModalOpen, setIsUniversityProgramModalOpen] = useState(false);
     const [universityProgramForm, setUniversityProgramForm] = useState<UniversityProgramData>({
         id: '', universityId: '', type: 'Bachelor', name: '', url: '', 
-        mainCategoryId: '', mainCategory2Id: '', mainCategory3Id: '',
         mainDegreeId: '', mainDegree2Id: '', mainDegree3Id: '',
         language: '', tuitionRange: ''
     });
     const [selectedProgramFilterCountry, setSelectedProgramFilterCountry] = useState<string>('');
     const [universityProgramSearchTerm, setUniversityProgramSearchTerm] = useState('');
+    const [isAutoGroupingPrograms, setIsAutoGroupingPrograms] = useState(false);
+    const [groupingReport, setGroupingReport] = useState<GroupingReport | null>(null);
 
     // Country Edit/Create State
     const [isEditingCountry, setIsEditingCountry] = useState(false);
@@ -337,6 +406,18 @@ const Settings: React.FC<{
         loadCrmStudents();
         loadSchoolNames();
     }, [hasUserOnlySettings]);
+
+    useEffect(() => {
+        window.sessionStorage.setItem(SETTINGS_TAB_STORAGE_KEY, activeTab);
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (selectedDefinitionType) {
+            window.sessionStorage.setItem(SETTINGS_VIEW_STORAGE_KEY, selectedDefinitionType);
+        } else {
+            window.sessionStorage.removeItem(SETTINGS_VIEW_STORAGE_KEY);
+        }
+    }, [selectedDefinitionType]);
 
     useEffect(() => {
         if (!supabase) return;
@@ -625,6 +706,7 @@ const Settings: React.FC<{
         const file = event.target.files?.[0];
         if (!file) return;
 
+        setImportingSchoolNameType(type);
         const reader = new FileReader();
         reader.onload = async (readerEvent) => {
             try {
@@ -648,6 +730,7 @@ const Settings: React.FC<{
                 console.error('School names import failed', error);
                 alert(error?.message || 'Excel yüklenirken hata oluştu.');
             } finally {
+                setImportingSchoolNameType(null);
                 event.target.value = '';
             }
         };
@@ -955,11 +1038,9 @@ const Settings: React.FC<{
             name: '',
             logo: DEFAULT_UNIC_LOGO_URL,
             countries: [],
+            campuses: [],
             rankingUrl: '',
             websiteUrl: '',
-            departmentsUrl: '',
-            parserProfile: 'auto',
-            consultingType: '',
             universityTypes: [],
             programs: []
         });
@@ -970,7 +1051,6 @@ const Settings: React.FC<{
         await loadUniversityTypes();
         setUniversityForm({
             ...uni,
-            parserProfile: uni.parserProfile || 'auto',
             programs: uni.programs || []
         });
         setIsUniversityModalOpen(true);
@@ -978,6 +1058,9 @@ const Settings: React.FC<{
 
     const handleSaveUniversity = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSavingUniversity) return;
+
+        setIsSavingUniversity(true);
         try {
             const savedUni = await universityService.upsert(universityForm);
             setUniversities(prev => {
@@ -993,7 +1076,9 @@ const Settings: React.FC<{
             await loadUniversities();
         } catch (error) {
             console.error("Failed to save university", error);
-            alert("Failed to save university");
+            alert(error instanceof Error ? error.message : 'Üniversite kaydedilemedi. Lütfen tekrar deneyin.');
+        } finally {
+            setIsSavingUniversity(false);
         }
     };
 
@@ -1011,7 +1096,8 @@ const Settings: React.FC<{
     const filteredUniversities = universities.filter(uni => 
         !universitySearchTerm || 
         uni.name?.toLowerCase().includes(universitySearchTerm.toLowerCase()) ||
-        uni.countries?.some(c => c.toLowerCase().includes(universitySearchTerm.toLowerCase()))
+        uni.countries?.some(c => c.toLowerCase().includes(universitySearchTerm.toLowerCase())) ||
+        uni.campuses?.some(campus => campus.toLowerCase().includes(universitySearchTerm.toLowerCase()))
     );
 
     const getUniversitySortValue = (uni: UniversityData, key: UniversitySortKey) => {
@@ -1021,7 +1107,7 @@ const Settings: React.FC<{
             case 'types':
                 return (uni.universityTypes || []).join(', ');
             case 'links':
-                return [uni.websiteUrl, uni.departmentsUrl, uni.rankingUrl].filter(Boolean).length;
+                return [uni.websiteUrl, uni.rankingUrl].filter(Boolean).length;
             case 'programs':
                 return (uni.programs || []).length;
             case 'name':
@@ -1072,13 +1158,10 @@ const Settings: React.FC<{
             'Üniversite Adı': uni.name,
             'Logo URL': uni.logo || '',
             'Website': uni.websiteUrl || '',
-            'Departments URL': uni.departmentsUrl || '',
-            'Parser Profile': uni.parserProfile || 'auto',
             'Ranking URL': uni.rankingUrl || '',
             'Ülkeler': uni.countries?.join(', ') || '',
+            'Kampüsler': uni.campuses?.join(', ') || '',
             'Üniversite Tipleri': uni.universityTypes?.join(', ') || '',
-            'Danışmanlık Türü': uni.consultingType || '',
-            'Paylaşımlı Kurum': uni.sharedInstitutionId || '',
             'Bölüm Sayısı': uni.programs?.length || 0
         }));
 
@@ -1133,27 +1216,33 @@ const Settings: React.FC<{
 
                 let importedCount = 0;
                 let updatedCount = 0;
+                let skippedCount = 0;
+                let failedCount = 0;
                 const defaultLogo = DEFAULT_UNIC_LOGO_URL;
 
                 for (const row of jsonData) {
-                    const uniName = (row['Üniversite Adı'] || row['University Name'] || '').trim();
-                    if (!uniName) continue;
+                    const uniName = String(getExcelCell(row, ['Üniversite Adı', 'University Name']) || '').trim();
+                    if (!uniName) {
+                        skippedCount++;
+                        continue;
+                    }
 
                     // Mevcut üniversiteyi isim bazında ara
                     const existing = universities.find(u => u.name.toLowerCase() === uniName.toLowerCase());
+                    const countryValue = getExcelCell(row, ['Ülkeler', 'Ülke adı', 'Country', 'Countries']);
+                    const campusValue = getExcelCell(row, ['Kampüsler', 'Campuses', 'Şehir', 'City']);
 
                     const uniData: UniversityData = {
                         id: existing?.id || `uni-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                         name: uniName,
-                        logo: row['Logo URL'] || row['Logo'] || existing?.logo || defaultLogo,
-                        websiteUrl: row['Website'] || row['Website URL'] || existing?.websiteUrl || '',
-                        departmentsUrl: row['Departments URL'] || row['Departments'] || existing?.departmentsUrl || '',
-                        parserProfile: row['Parser Profile'] || existing?.parserProfile || 'auto',
-                        rankingUrl: row['Ranking URL'] || row['Ranking'] || existing?.rankingUrl || '',
-                        countries: row['Ülkeler'] ? String(row['Ülkeler']).split(',').map((s: string) => s.trim()) : (existing?.countries || []),
-                        universityTypes: row['Üniversite Tipleri'] ? String(row['Üniversite Tipleri']).split(',').map((s: string) => s.trim()) : (existing?.universityTypes || []),
-                        consultingType: row['Danışmanlık Türü'] || row['Consulting Type'] || existing?.consultingType || '',
-                        sharedInstitutionId: row['Paylaşımlı Kurum'] || row['Shared Institution'] || existing?.sharedInstitutionId || '',
+                        logo: String(getExcelCell(row, ['Logo URL', 'Logo']) || existing?.logo || defaultLogo),
+                        websiteUrl: String(getExcelCell(row, ['Website', 'Website URL', 'Resmî web sitesi', 'Resmi web sitesi']) || existing?.websiteUrl || ''),
+                        rankingUrl: String(getExcelCell(row, ['Ranking URL', 'Ranking', 'QS Rankings linki']) || existing?.rankingUrl || ''),
+                        countries: countryValue ? parseExcelList(countryValue) : (existing?.countries || []),
+                        campuses: campusValue ? parseExcelList(campusValue) : (existing?.campuses || []),
+                        universityTypes: getExcelCell(row, ['Üniversite Tipleri', 'University Types'])
+                            ? parseExcelList(getExcelCell(row, ['Üniversite Tipleri', 'University Types']))
+                            : (existing?.universityTypes || []),
                         programs: existing?.programs || []
                     };
 
@@ -1175,10 +1264,11 @@ const Settings: React.FC<{
                         }
                     } catch (err) {
                         console.error('Failed to import university:', uniName, err);
+                        failedCount++;
                     }
                 }
 
-                alert(`${importedCount} yeni üniversite eklendi, ${updatedCount} mevcut üniversite güncellendi.`);
+                alert(`${importedCount} yeni üniversite eklendi, ${updatedCount} mevcut üniversite güncellendi, ${failedCount} satır kaydedilemedi, ${skippedCount} satır atlandı.`);
             } catch (error) {
                 console.error('Failed to parse Excel file', error);
                 alert('Excel dosyası okunurken bir hata oluştu.');
@@ -1218,7 +1308,7 @@ const Settings: React.FC<{
     };
 
     const updateUniversityField = (field: keyof UniversityData, value: any) => {
-        const urlFields: string[] = ['rankingUrl', 'websiteUrl', 'logo', 'departmentsUrl'];
+        const urlFields: string[] = ['rankingUrl', 'websiteUrl', 'logo'];
         const formattedValue = (typeof value === 'string' && !urlFields.includes(field)) ? formatTitleCase(value) : value;
         setUniversityForm(prev => ({ ...prev, [field]: formattedValue }));
     };
@@ -1371,6 +1461,23 @@ const Settings: React.FC<{
         setIsMainDegreeModalOpen(true);
     };
 
+    const handleMainDegreeImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsUploadingMainDegreeImage(true);
+        try {
+            const imageUrl = await mainDegreeService.uploadImage(file, mainDegreeForm.id);
+            setMainDegreeForm(current => ({ ...current, imageUrl }));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Bölüm görseli yüklenemedi.';
+            alert(message);
+        } finally {
+            setIsUploadingMainDegreeImage(false);
+            event.target.value = '';
+        }
+    };
+
     const handleExportMainDegrees = async () => {
         try {
             const { data: latestKeywordRules, error: keywordRuleError } = await supabase
@@ -1430,6 +1537,7 @@ const Settings: React.FC<{
 
         const reader = new FileReader();
         reader.onload = async (evt) => {
+            setIsImportingMainDegrees(true);
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
@@ -1508,6 +1616,7 @@ const Settings: React.FC<{
                 console.error("Excel import failed", error);
                 alert("Import failed");
             } finally {
+                setIsImportingMainDegrees(false);
                 e.target.value = '';
             }
         };
@@ -2071,13 +2180,14 @@ const Settings: React.FC<{
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer">
+                        <label className={`flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer ${isImportingUniversities ? 'pointer-events-none opacity-60' : ''}`}>
                             {isImportingUniversities ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                            Excel Yükle
+                            {isImportingUniversities ? 'Yükleniyor...' : 'Excel Yükle'}
                             <input 
                                 type="file" 
                                 accept=".xlsx,.xls" 
                                 onChange={handleImportUniversities}
+                                disabled={isImportingUniversities}
                                 className="hidden"
                             />
                         </label>
@@ -2191,11 +2301,6 @@ const Settings: React.FC<{
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex flex-col gap-2">
-                                                        {uni.consultingType && (
-                                                            <span className="w-fit px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold border border-emerald-100">
-                                                                {uni.consultingType}
-                                                            </span>
-                                                        )}
                                                         <div className="flex flex-wrap gap-1">
                                                         {(uni.universityTypes || []).map(t => (
                                                             <span key={t} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-medium border border-indigo-200">{t}</span>
@@ -2208,7 +2313,6 @@ const Settings: React.FC<{
                                                     <div className="flex flex-col gap-1.5">
                                                         <div className="flex items-center gap-3">
                                                             {uni.websiteUrl && <a href={uni.websiteUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Website"><Globe className="w-4 h-4" /></a>}
-                                                            {uni.departmentsUrl && <a href={uni.departmentsUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Departments"><BookOpen className="w-4 h-4" /></a>}
                                                             {uni.rankingUrl && <a href={uni.rankingUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Ranking"><Star className="w-4 h-4" /></a>}
                                                         </div>
                                                     </div>
@@ -2343,16 +2447,17 @@ const Settings: React.FC<{
                                 type="file"
                                 accept=".xlsx, .xls"
                                 onChange={handleImportMainDegrees}
+                                disabled={isImportingMainDegrees}
                                 className="hidden"
                                 id="degree-excel-upload"
                             />
                             <label
                                 htmlFor="degree-excel-upload"
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                                className={`flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors ${isImportingMainDegrees ? 'pointer-events-none opacity-60' : ''}`}
                                 title="Excel'den toplu bölüm yükle"
                             >
-                                <Upload className="w-4 h-4" />
-                                <span className="hidden sm:inline">Excel Yükle</span>
+                                {isImportingMainDegrees ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                <span className="hidden sm:inline">{isImportingMainDegrees ? 'Yükleniyor...' : 'Excel Yükle'}</span>
                             </label>
                         </div>
                     </>
@@ -2985,9 +3090,10 @@ const Settings: React.FC<{
         const file = e.target.files?.[0];
         if (!file) return;
 
-        try {
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
+        setIsImportingCountries(true);
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
@@ -3020,15 +3126,21 @@ const Settings: React.FC<{
                     }
                 }
                 alert(`${successCount} ülke başarıyla içe aktarıldı.`);
-                loadCountries();
-            };
-            reader.readAsBinaryString(file);
-        } catch (error) {
-            console.error("Import error:", error);
-            alert("İçe aktarma sırasında hata oluştu.");
-        } finally {
-            if (e.target) e.target.value = '';
-        }
+                await loadCountries();
+            } catch (error) {
+                console.error("Import error:", error);
+                alert("İçe aktarma sırasında hata oluştu.");
+            } finally {
+                setIsImportingCountries(false);
+                e.target.value = '';
+            }
+        };
+        reader.onerror = () => {
+            setIsImportingCountries(false);
+            e.target.value = '';
+            alert("Excel dosyası okunamadı.");
+        };
+        reader.readAsBinaryString(file);
     };
 
     const renderCountryManager = () => {
@@ -3073,15 +3185,16 @@ const Settings: React.FC<{
                                     type="file"
                                     accept=".xlsx, .xls"
                                     onChange={handleImportCountries}
+                                    disabled={isImportingCountries}
                                     className="hidden"
                                     id="countries-excel-upload"
                                 />
                                 <label
                                     htmlFor="countries-excel-upload"
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                                    className={`flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors ${isImportingCountries ? 'pointer-events-none opacity-60' : ''}`}
                                 >
-                                    <Upload className="w-4 h-4" />
-                                    <span className="hidden sm:inline">Excel Yükle</span>
+                                    {isImportingCountries ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                    <span className="hidden sm:inline">{isImportingCountries ? 'Yükleniyor...' : 'Excel Yükle'}</span>
                                 </label>
                             </div>
                         </div>
@@ -3875,22 +3988,9 @@ const Settings: React.FC<{
 
     const handleExportUniversityPrograms = () => {
         try {
-            const exportData = universityPrograms.map(prog => ({
-                'ID': prog.id.startsWith('new-') ? '' : prog.id,
-                'Üniversite': prog.universityName,
-                'Bölüm Adı': prog.name,
-                'Bölüm Linki': prog.url,
-                'Ana Bölüm 1': prog.mainCategoryName,
-                'Alt Başlık 1': prog.mainDegreeName,
-                'Ana Bölüm 2': prog.mainCategory2Name,
-                'Alt Başlık 2': prog.mainDegree2Name,
-                'Ana Bölüm 3': prog.mainCategory3Name,
-                'Alt Başlık 3': prog.mainDegree3Name,
-                'Dil': prog.language,
-                'Eğitim Bütçesi': prog.tuitionRange
-            }));
+            const exportData = universityPrograms.map(toUniversityProgramExcelRow);
 
-            const ws = XLSX.utils.json_to_sheet(exportData);
+            const ws = XLSX.utils.json_to_sheet(exportData, { header: UNIVERSITY_PROGRAM_EXCEL_HEADERS });
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Üniversite Bölümleri");
             XLSX.writeFile(wb, `universite_bolumleri_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -3911,6 +4011,7 @@ const Settings: React.FC<{
 
         const reader = new FileReader();
         reader.onload = async (evt) => {
+            setIsImportingUniversityPrograms(true);
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
@@ -3927,27 +4028,12 @@ const Settings: React.FC<{
                             continue;
                         }
 
-                        const degName = String(row['Alt Başlık 1'] || row['Bölüm 1'] || row['Alt Başlık'] || '');
-                        const degree = mainDegrees.find(d => d.name.toLowerCase() === degName.toLowerCase());
-
-                        const deg2Name = String(row['Alt Başlık 2'] || row['Bölüm 2'] || '');
-                        const degree2 = mainDegrees.find(d => d.name.toLowerCase() === deg2Name.toLowerCase());
-
-                        const deg3Name = String(row['Alt Başlık 3'] || row['Bölüm 3'] || '');
-                        const degree3 = mainDegrees.find(d => d.name.toLowerCase() === deg3Name.toLowerCase());
-
-                        const dbPayload: any = {
-                            id: row['ID'] || `new-${Date.now()}-${successCount}`,
-                            universityId: university.id,
-                            type: (row['Bölüm Türü'] === 'Master' || row['Tür'] === 'Master') ? 'Master' : 'Bachelor',
-                            name: String(row['Bölüm Adı'] || ''),
-                            url: String(row['Bölüm Linki'] || ''),
-                            mainDegreeId: degree?.id || '',
-                            mainDegree2Id: degree2?.id || '',
-                            mainDegree3Id: degree3?.id || '',
-                            language: String(row['Dil'] || ''),
-                            tuitionRange: String(row['Eğitim Bütçesi'] || '')
-                        };
+                        const dbPayload = parseUniversityProgramExcelRow(
+                            row,
+                            university,
+                            mainDegrees,
+                            `new-${Date.now()}-${successCount}`,
+                        );
 
                         await universityProgramService.upsert(dbPayload);
                         successCount++;
@@ -3962,10 +4048,101 @@ const Settings: React.FC<{
                 console.error("Excel import failed", error);
                 alert("Import failed");
             } finally {
+                setIsImportingUniversityPrograms(false);
                 e.target.value = '';
             }
         };
         reader.readAsBinaryString(file);
+    };
+
+    const handleAutoGroupUniversityPrograms = async () => {
+        if (!window.confirm('Tüm üniversite bölümlerinin eski gruplandırmaları tamamen silinecek ve güncel aktif eşleşme kurallarına göre sıfırdan oluşturulacak. Eşleşmeyen kayıtlar boş bırakılacak. Devam edilsin mi?')) return;
+
+        setIsAutoGroupingPrograms(true);
+        try {
+            const [programs, rules, degrees] = await Promise.all([
+                universityProgramService.getAll(),
+                departmentKeywordRuleService.getActive(),
+                mainDegreeService.getAll(),
+            ]);
+
+            if (degrees.length === 0) throw new Error('Bölüm tanımları yüklenemedi veya henüz tanım bulunmuyor.');
+
+            const degreeNames = new Map(degrees.map(degree => [degree.id, degree.name]));
+            const updates: Array<{ index: number; id: string; degreeIds: string[] }> = [];
+            const entries: GroupingReportEntry[] = programs.map((program, programIndex) => {
+                const previousIds = [program.mainDegreeId, program.mainDegree2Id, program.mainDegree3Id].filter((id): id is string => Boolean(id));
+                const previousNames = previousIds.map(id => degreeNames.get(id) || id);
+                const matches = matchProgramDepartments(program.name, rules, degrees, 3);
+                const nextIds = matches.map(match => match.degree.id);
+                const nextNames = matches.map(match => match.degree.name);
+                const hasChanged = previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index]);
+                let status: GroupingReportStatus = 'unchanged';
+
+                if (hasChanged) status = nextIds.length === 0 ? 'cleared' : 'updated';
+                else if (nextIds.length === 0) status = 'unmatched';
+
+                const entry: GroupingReportEntry = {
+                    id: program.id,
+                    universityName: program.universityName || '-',
+                    programName: program.name,
+                    previousNames,
+                    nextNames,
+                    matchedKeywords: matches.map(match => match.keyword),
+                    status,
+                };
+
+                if (nextIds.length > 0) updates.push({ index: programIndex, id: program.id, degreeIds: nextIds });
+                return entry;
+            });
+
+            for (let offset = 0; offset < programs.length; offset += 100) {
+                await universityProgramService.clearGroupings(
+                    programs.slice(offset, offset + 100).map(program => program.id)
+                );
+            }
+
+            for (let offset = 0; offset < updates.length; offset += 10) {
+                const batch = updates.slice(offset, offset + 10);
+                await Promise.all(batch.map(async update => {
+                    try {
+                        await universityProgramService.updateGrouping(update.id, update.degreeIds);
+                    } catch (error) {
+                        entries[update.index] = {
+                            ...entries[update.index],
+                            status: 'failed',
+                            error: error instanceof Error ? error.message : 'Güncelleme başarısız.',
+                        };
+                    }
+                }));
+            }
+
+            setGroupingReport({ createdAt: new Date().toISOString(), entries });
+            await loadUniversityPrograms();
+        } catch (error) {
+            console.error('University program auto grouping failed', error);
+            alert(error instanceof Error ? error.message : 'Otomatik bölüm eşleştirmesi tamamlanamadı.');
+        } finally {
+            setIsAutoGroupingPrograms(false);
+        }
+    };
+
+    const exportGroupingReport = () => {
+        if (!groupingReport) return;
+
+        const rows = groupingReport.entries.map(entry => ({
+            'Üniversite': entry.universityName,
+            'Bölüm Adı': entry.programName,
+            'Önceki Gruplandırma': entry.previousNames.join(', '),
+            'Yeni Gruplandırma': entry.nextNames.join(', '),
+            'Eşleşen Kelimeler': entry.matchedKeywords.join(', '),
+            'Durum': GROUPING_STATUS_LABELS[entry.status],
+            'Hata': entry.error || '',
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Eşleştirme Raporu');
+        XLSX.writeFile(workbook, `bolum_eslestirme_raporu_${new Date(groupingReport.createdAt).toISOString().split('T')[0]}.xlsx`);
     };
 
     const renderUniversityProgramManager = () => {
@@ -3975,7 +4152,6 @@ const Settings: React.FC<{
             return (
                 prog.name?.toLowerCase().includes(search) ||
                 prog.universityName?.toLowerCase().includes(search) ||
-                prog.mainCategoryName?.toLowerCase().includes(search) ||
                 prog.mainDegreeName?.toLowerCase().includes(search)
             );
         });
@@ -3994,6 +4170,15 @@ const Settings: React.FC<{
                     </div>
                     <div className="flex items-center gap-3">
                         <button
+                            onClick={handleAutoGroupUniversityPrograms}
+                            disabled={isAutoGroupingPrograms || isLoadingUniversityPrograms}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-50 text-teal-700 border border-teal-200 rounded-xl text-sm font-bold hover:bg-teal-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                            title="Eski gruplandırmaları silip güncel Bölüm Eşleşme Kurallarıyla sıfırdan oluştur"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${isAutoGroupingPrograms ? 'animate-spin' : ''}`} />
+                            <span className="hidden xl:inline">Kurallara Göre Eşleştir</span>
+                        </button>
+                        <button
                             onClick={handleExportUniversityPrograms}
                             className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-sm font-bold hover:bg-emerald-100 transition-colors"
                         >
@@ -4005,22 +4190,22 @@ const Settings: React.FC<{
                                 type="file"
                                 accept=".xlsx, .xls"
                                 onChange={handleImportUniversityPrograms}
+                                disabled={isImportingUniversityPrograms}
                                 className="hidden"
                                 id="uni-prog-excel-upload"
                             />
                             <label
                                 htmlFor="uni-prog-excel-upload"
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors"
+                                className={`flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors ${isImportingUniversityPrograms ? 'pointer-events-none opacity-60' : ''}`}
                             >
-                                <Upload className="w-4 h-4" />
-                                <span className="hidden sm:inline">Excel Yükle</span>
+                                {isImportingUniversityPrograms ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                <span className="hidden sm:inline">{isImportingUniversityPrograms ? 'Yükleniyor...' : 'Excel Yükle'}</span>
                             </label>
                         </div>
                         <button 
                             onClick={() => {
                                 setUniversityProgramForm({
                                     id: '', universityId: '', type: 'Bachelor', name: '', url: '', 
-                                    mainCategoryId: '', mainCategory2Id: '', mainCategory3Id: '',
                                     mainDegreeId: '', mainDegree2Id: '', mainDegree3Id: '',
                                     language: '', tuitionRange: ''
                                 });
@@ -4338,6 +4523,7 @@ const Settings: React.FC<{
             : 'Türkiye üniversite okul isimlerini buradan ekleyip yönetin.';
         const records = getSchoolNamesByType(type);
         const fileInputRef = getSchoolNameFileInputRef(type);
+        const isImportingSchoolNames = importingSchoolNameType === type;
 
         return (
             <div className="animate-fade-in flex flex-col h-[calc(100vh-140px)]">
@@ -4358,6 +4544,7 @@ const Settings: React.FC<{
                             accept=".xlsx,.xls"
                             className="hidden"
                             onChange={(event) => handleImportSchoolNames(type, event)}
+                            disabled={isImportingSchoolNames}
                         />
                         <button
                             type="button"
@@ -4370,10 +4557,11 @@ const Settings: React.FC<{
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-700"
+                            disabled={isImportingSchoolNames}
+                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            <Upload className="h-4 w-4" />
-                            Excel Yükle
+                            {isImportingSchoolNames ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                            {isImportingSchoolNames ? 'Yükleniyor...' : 'Excel Yükle'}
                         </button>
                     </div>
                 </div>
@@ -4626,7 +4814,7 @@ const Settings: React.FC<{
                         ]).map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id as any)}
+                                onClick={() => setActiveTab(tab.id as SettingsTab)}
                                 className={`pb-3 flex items-center gap-2 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === tab.id 
                                     ? 'border-indigo-600 text-indigo-600' 
@@ -4742,6 +4930,84 @@ const Settings: React.FC<{
                     {selectedDefinitionType === 'high_school_names' && renderSchoolNameManager('high_school')}
                     {selectedDefinitionType === 'university_school_names' && renderSchoolNameManager('university')}
                 </>
+            )}
+
+            {/* University Program Auto Grouping Report */}
+            {groupingReport && (
+                <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 backdrop-blur-sm animate-fade-in-only">
+                    <div className="mb-10 flex max-h-[calc(100vh-100px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl animate-fade-in">
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-6 py-5">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800">Bölüm Gruplandırma Güncelleme Raporu</h3>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    {new Date(groupingReport.createdAt).toLocaleString('tr-TR')} tarihinde aktif eşleşme kurallarıyla oluşturuldu.
+                                </p>
+                            </div>
+                            <button onClick={() => setGroupingReport(null)} className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 border-b border-slate-100 p-5 sm:grid-cols-3 lg:grid-cols-6">
+                            {[
+                                { label: 'Taranan', value: groupingReport.entries.length, style: 'bg-indigo-50 text-indigo-700' },
+                                { label: 'Güncellendi', value: groupingReport.entries.filter(entry => entry.status === 'updated').length, style: 'bg-emerald-50 text-emerald-700' },
+                                { label: 'Temizlendi', value: groupingReport.entries.filter(entry => entry.status === 'cleared').length, style: 'bg-amber-50 text-amber-700' },
+                                { label: 'Değişmedi', value: groupingReport.entries.filter(entry => entry.status === 'unchanged').length, style: 'bg-slate-100 text-slate-700' },
+                                { label: 'Eşleşme Yok', value: groupingReport.entries.filter(entry => entry.status === 'unmatched').length, style: 'bg-orange-50 text-orange-700' },
+                                { label: 'Başarısız', value: groupingReport.entries.filter(entry => entry.status === 'failed').length, style: 'bg-rose-50 text-rose-700' },
+                            ].map(item => (
+                                <div key={item.label} className={`rounded-xl px-4 py-3 ${item.style}`}>
+                                    <div className="text-2xl font-black">{item.value}</div>
+                                    <div className="text-[10px] font-black uppercase tracking-wider">{item.label}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full min-w-[900px] text-left">
+                                <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        <th className="px-5 py-3">Üniversite / Bölüm</th>
+                                        <th className="px-5 py-3">Önceki</th>
+                                        <th className="px-5 py-3">Yeni</th>
+                                        <th className="px-5 py-3">Eşleşen Kelimeler</th>
+                                        <th className="px-5 py-3">Durum</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {groupingReport.entries.map(entry => (
+                                        <tr key={entry.id} className="align-top hover:bg-slate-50/60">
+                                            <td className="px-5 py-4">
+                                                <div className="text-xs font-semibold text-slate-500">{entry.universityName}</div>
+                                                <div className="mt-1 text-sm font-bold text-slate-800">{entry.programName}</div>
+                                                {entry.error && <div className="mt-1 text-xs text-rose-600">{entry.error}</div>}
+                                            </td>
+                                            <td className="px-5 py-4 text-xs text-slate-600">{entry.previousNames.join(', ') || '-'}</td>
+                                            <td className="px-5 py-4 text-xs font-semibold text-slate-700">{entry.nextNames.join(', ') || '-'}</td>
+                                            <td className="px-5 py-4 text-xs text-teal-700">{entry.matchedKeywords.join(', ') || '-'}</td>
+                                            <td className="px-5 py-4">
+                                                <span className={`inline-flex rounded-lg border px-2 py-1 text-[10px] font-black ${GROUPING_STATUS_STYLES[entry.status]}`}>
+                                                    {GROUPING_STATUS_LABELS[entry.status]}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
+                            <p className="text-xs text-slate-500">Eski gruplandırmalar temizlendi ve güncel aktif kurallara göre sıfırdan oluşturuldu.</p>
+                            <div className="flex gap-2">
+                                <button onClick={exportGroupingReport} className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100">
+                                    <Download className="h-4 w-4" /> Raporu Excel İndir
+                                </button>
+                                <button onClick={() => setGroupingReport(null)} className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-900">Kapat</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* University Program Modal */}
@@ -5301,51 +5567,23 @@ const Settings: React.FC<{
                                                 }}
                                                 className="w-3 h-3 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                                             />
-                                            <span className="text-xs text-slate-700">{c.flag}</span>
                                             <span className="text-xs text-slate-700 truncate">{c.name}</span>
                                         </label>
                                     ))}
                                 </div>
-                            </div>
+                             </div>
 
                             <div>
-                                <label className="block text-xs font-medium text-slate-600 mb-2">Danışmanlık Tipi</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {['Depozito', 'Danışmanlık', 'Kabul Sonrası Danışmanlık', 'Depozito - Paylaşımlı'].map(type => (
-                                        <label key={type} className="flex items-center gap-1 p-2 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
-                                            <input 
-                                                type="radio"
-                                                name="consultingType"
-                                                checked={universityForm.consultingType === type}
-                                                onChange={e => {
-                                                    setUniversityForm({
-                                                        ...universityForm, 
-                                                        consultingType: type,
-                                                        sharedInstitutionId: type === 'Depozito - Paylaşımlı' ? universityForm.sharedInstitutionId : ''
-                                                    });
-                                                }}
-                                                className="w-3 h-3 text-indigo-600 border-slate-300 focus:ring-indigo-500"
-                                            />
-                                            <span className="text-xs text-slate-700">{type}</span>
-                                        </label>
-                                    ))}
-                                </div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Kampüsler</label>
+                                <input
+                                    value={formatKeywordArray(universityForm.campuses)}
+                                    onChange={e => updateUniversityField('campuses', e.target.value.split(',').map(item => item.trim()))}
+                                    onBlur={() => updateUniversityField('campuses', (universityForm.campuses || []).filter(Boolean))}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="Örn: Main Campus, City Campus, London Campus"
+                                />
+                                <p className="mt-1 text-xs text-slate-400">Birden fazla kampüsü virgülle ayırın.</p>
                             </div>
-                            {universityForm.consultingType === 'Depozito - Paylaşımlı' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Paylaşımlı Kurum Seçimi</label>
-                                    <select 
-                                        value={universityForm.sharedInstitutionId || ''} 
-                                        onChange={e => setUniversityForm({...universityForm, sharedInstitutionId: e.target.value})}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                    >
-                                        <option value="">Kurum Seçiniz...</option>
-                                        {sharedInstitutions.map(inst => (
-                                            <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -5365,18 +5603,6 @@ const Settings: React.FC<{
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none" 
                                         placeholder="https://..."
                                     />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Parser Profili</label>
-                                    <select
-                                        value={universityForm.parserProfile || 'auto'}
-                                        onChange={e => setUniversityForm({ ...universityForm, parserProfile: e.target.value })}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                    >
-                                        <option value="auto">Auto</option>
-                                        <option value="generic">Generic</option>
-                                        <option value="birmingham_course_index">Birmingham Course Index</option>
-                                    </select>
                                 </div>
                             </div>
 
@@ -5407,7 +5633,10 @@ const Settings: React.FC<{
 
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsUniversityModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">İptal</button>
-                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Üniversiteyi Kaydet</button>
+                                <button type="submit" disabled={isSavingUniversity} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+                                    {isSavingUniversity && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    {isSavingUniversity ? 'Kaydediliyor...' : 'Üniversiteyi Kaydet'}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -5532,26 +5761,51 @@ const Settings: React.FC<{
                                 </div>
 
                                 <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Resim URL</label>
-                                    <div className="flex gap-4">
-                                        <input 
-                                            value={mainDegreeForm.imageUrl} 
-                                            onChange={e => setMainDegreeForm({...mainDegreeForm, imageUrl: e.target.value})}
-                                            className="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                                            placeholder="https://images.unsplash.com/..."
-                                        />
-                                        {mainDegreeForm.imageUrl && (
-                                            <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0">
-                                                <img src={mainDegreeForm.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Bölüm Görseli</label>
+                                    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+                                        <div className="flex h-28 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white sm:w-44">
+                                            {mainDegreeForm.imageUrl ? (
+                                                <img src={mainDegreeForm.imageUrl} alt="Bölüm görseli önizlemesi" className="h-full w-full object-cover" />
+                                            ) : (
+                                                <BookOpen className="h-8 w-8 text-slate-300" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1">
+                                            <input
+                                                id="main-degree-image-upload"
+                                                type="file"
+                                                accept="image/jpeg,image/png,image/webp"
+                                                disabled={isUploadingMainDegreeImage}
+                                                onChange={handleMainDegreeImageUpload}
+                                                className="sr-only"
+                                            />
+                                            <div className="flex flex-wrap gap-2">
+                                                <label
+                                                    htmlFor="main-degree-image-upload"
+                                                    className={`inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 ${isUploadingMainDegreeImage ? 'pointer-events-none opacity-60' : 'cursor-pointer'}`}
+                                                >
+                                                    {isUploadingMainDegreeImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                                    {isUploadingMainDegreeImage ? 'Yükleniyor...' : 'Resim Yükle'}
+                                                </label>
+                                                {mainDegreeForm.imageUrl && !isUploadingMainDegreeImage && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setMainDegreeForm(current => ({ ...current, imageUrl: '' }))}
+                                                        className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-600 transition hover:bg-rose-50"
+                                                    >
+                                                        Resmi Kaldır
+                                                    </button>
+                                                )}
                                             </div>
-                                        )}
+                                            <p className="mt-2 text-xs text-slate-500">JPG, PNG veya WebP. En fazla 5 MB.</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             
                             <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsMainDegreeModalOpen(false)} className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-colors">Vazgeç</button>
-                                <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">Kaydet</button>
+                                <button type="submit" disabled={isUploadingMainDegreeImage} className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:cursor-wait disabled:opacity-60">Kaydet</button>
                             </div>
                         </form>
                     </div>

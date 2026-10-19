@@ -34,6 +34,13 @@ export interface UniversityApplication {
   notes?: string;
 }
 
+export interface UniversityOffer extends UniversityApplication {
+  country?: string;
+  programType?: 'Bachelor' | 'Master';
+  tuitionRange?: string;
+  programLink?: string;
+}
+
 export enum UserRole {
   SUPER_ADMIN = 'Super Admin',
   ADMIN = 'Admin',
@@ -138,15 +145,19 @@ export interface AnalysisReport {
   preferences: {
     program1Category?: string;
     program1?: string;
+    program1Note?: string;
     program2Category?: string;
     program2?: string;
+    program2Note?: string;
     country1?: string;
     country2?: string;
     country3?: string;
     country4?: string;
     country5?: string;
+    countryPreferenceNote?: string;
     notes?: string;
-    wantsCoaching?: boolean;
+    departmentDecisionStatus?: 'undecided' | 'exploring' | 'decided';
+    isUndecidedAboutDepartment?: boolean;
     budget?: number | string;
   };
   languageProgramPreference?: {
@@ -181,6 +192,7 @@ export interface AnalysisReport {
     notes?: string;
   };
   documents?: StudentDocument[];
+  universityOffers?: UniversityOffer[];
 }
 
 export interface StudentDocument {
@@ -332,12 +344,6 @@ export interface UniversityProgramData {
     type: 'Bachelor' | 'Master';
     name: string;
     url?: string;
-    mainCategoryId?: string;
-    mainCategoryName?: string;
-    mainCategory2Id?: string;
-    mainCategory2Name?: string;
-    mainCategory3Id?: string;
-    mainCategory3Name?: string;
     mainDegreeId?: string;
     mainDegreeName?: string;
     mainDegree2Id?: string;
@@ -366,14 +372,11 @@ export interface UniversityData {
   name: string;
   logo: string;
   countries: string[];
+  campuses?: string[];
   rankingUrl?: string;
   websiteUrl: string;
-  departmentsUrl: string;
-  parserProfile?: string;
   tuitionRange?: string;
-  consultingType?: string;
   universityTypes?: string[];
-  sharedInstitutionId?: string;
   programs?: UniversityProgram[];
 }
 export interface MainCategoryData {

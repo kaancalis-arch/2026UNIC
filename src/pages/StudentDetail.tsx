@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, StudentProfileNote, AnalyseStatus, ApplicationStatus, UniversityApplication, MainDegreeData, CountryData } from '../types';
+import { Student, ExamDetails, PipelineStage, AnalysisReport, StudentDocument, StudentProfileNote, AnalyseStatus, ApplicationStatus, UniversityApplication, UniversityOffer, MainDegreeData, CountryData } from '../types';
 import { studentService } from '../services/studentService';
 import { studentProfileNoteService } from '../services/studentProfileNoteService';
 import { studentDocumentService } from '../services/studentDocumentService';
@@ -68,7 +68,8 @@ import {
   Star,
   Briefcase,
   Eye,
-  EyeOff
+  EyeOff,
+  Trash2
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -86,7 +87,19 @@ interface RequiredDocumentDefinition {
   isRequired: boolean;
 }
 
+interface SuggestedProgramOffer {
+  id: string;
+  universityName: string;
+  country: string;
+  programName: string;
+  programType?: 'Bachelor' | 'Master';
+  tuitionRange?: string;
+  programLink?: string;
+}
+
 const PARENT_RELATIONSHIP_OPTIONS = ['Anne', 'Baba', 'Vasi', 'Kardeş', 'Akraba', 'Diğer'];
+const DEPARTMENT_COACHING_RECOMMENDATION = 'Başvuru sürecinde en önemli karar eğitim alacağın bölüme karar vermektir. Eğitim Koçluğu Desteği alarak başvuru yapacağın bölümlere karar verebilirsin.';
+const DEPARTMENT_DECIDED_RECOMMENDATION = 'Bölüm tercihleri konusunda kararlı olman harika, Yol haritamızı bu doğrultuda belirleyeceğiz. Bölümler konusunda fikir değiştirmen halinde mutlaka bize haber vermelisin. Yol haritanı ona göre güncelleyebiliriz.';
 
 const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
   active ? createPortal(children, document.body) : <>{children}</>;
@@ -201,6 +214,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   // PDF Loading State
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isPrintPreviewReady, setIsPrintPreviewReady] = useState(false);
+  const printPreviewPagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isPrintPreviewOpen) return;
@@ -216,6 +231,57 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isPrintPreviewOpen]);
+
+  useEffect(() => {
+    if (!isPrintPreviewOpen) {
+      setIsPrintPreviewReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    const paginateReport = async () => {
+      const source = document.getElementById('unic-analysis-report-area');
+      const container = printPreviewPagesRef.current;
+      if (!source || !container) return;
+
+      setIsPrintPreviewReady(false);
+      await document.fonts.ready;
+      await Promise.all(Array.from(source.querySelectorAll('img')).map(image => image.decode().catch(() => undefined)));
+      if (cancelled) return;
+
+      container.replaceChildren();
+      const createPage = () => {
+        const page = document.createElement('div');
+        page.dataset.analysisPreviewPage = 'true';
+        page.className = 'analysis-print-report box-border h-[297mm] w-[210mm] shrink-0 overflow-hidden bg-white p-[12mm] shadow-2xl';
+        container.appendChild(page);
+        return page;
+      };
+
+      let page = createPage();
+      Array.from(source.children).forEach(child => {
+        const clone = child.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll<HTMLElement>('[data-pdf-hidden="true"]').forEach(element => element.remove());
+        clone.style.marginTop = page.childElementCount > 0 ? '24px' : '0';
+        page.appendChild(clone);
+
+        if (page.scrollHeight > page.clientHeight + 1 && page.childElementCount > 1) {
+          clone.remove();
+          page = createPage();
+          clone.style.marginTop = '0';
+          page.appendChild(clone);
+        }
+      });
+
+      if (!cancelled) setIsPrintPreviewReady(true);
+    };
+
+    void paginateReport();
+    return () => {
+      cancelled = true;
+      printPreviewPagesRef.current?.replaceChildren();
     };
   }, [isPrintPreviewOpen]);
   
@@ -283,6 +349,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [turkeyUniversities, setTurkeyUniversities] = useState<SchoolNameRecord[]>([]);
   const [suggestedUniversityFilter, setSuggestedUniversityFilter] = useState('');
   const [selectedSuggestedProgramIds, setSelectedSuggestedProgramIds] = useState<string[]>([]);
+  const [addingSuggestedUniversityName, setAddingSuggestedUniversityName] = useState<string | null>(null);
+  const [removingUniversityOfferId, setRemovingUniversityOfferId] = useState<string | null>(null);
+  const universityOffersRef = useRef<HTMLDivElement>(null);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
   const [showProgramAddForm, setShowProgramAddForm] = useState(false);
   const [newTargetProgramName, setNewTargetProgramName] = useState('');
@@ -313,6 +382,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   currentStudentIdRef.current = initialStudent.id;
 
   const normalizedTargetDegree = student.targetDegree || '';
+  const universityOffers = student.analysis?.universityOffers || [];
   const showsLanguageProgramPreference = normalizedTargetDegree === 'Language Course' || normalizedTargetDegree === 'Summer Course';
   const showsAcademicPreference = normalizedTargetDegree === 'Master' || normalizedTargetDegree === 'Undergraduate';
   const showsHighSchoolProgramPreference = normalizedTargetDegree === 'High School';
@@ -387,15 +457,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     student.analysis?.preferences?.country4,
     student.analysis?.preferences?.country5,
   ].map(value => value?.trim()).filter(Boolean) as string[]));
-
-  const getInterestedEducationItems = () => {
-    const countries = getSelectedPreferenceCountries();
-    const programs: string[] = Array.from(new Set<string>((student.targetPrograms || []).map(program => program.trim()).filter(Boolean)));
-
-    if (countries.length === 0 || programs.length === 0) return [];
-
-    return programs.map(program => ({ countries, program }));
-  };
 
   const normalizeDefinitionLookupValue = (value?: string) => (value || '').trim().toLocaleLowerCase('tr-TR');
 
@@ -695,20 +756,53 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
-  const addSuggestedUniversityAsOffer = async (uni: { name: string, country: string }) => {
-    const application: UniversityApplication = {
+  const buildAnalysisWithUniversityOffers = (offers: UniversityOffer[]): AnalysisReport => ({
+    language: {},
+    academic: { exams: {} },
+    social: {},
+    preferences: {},
+    budget: {},
+    ...(student.analysis || {}),
+    universityOffers: offers,
+  });
+
+  const addSuggestedUniversityAsOffer = async (
+    uni: { name: string, country: string },
+    program?: { name?: string; type?: 'Bachelor' | 'Master'; tuitionRange?: string; link?: string }
+  ) => {
+    if (addingSuggestedUniversityName) return;
+
+    const programName = program?.name || student.analysis?.preferences?.program1 || 'Genel Başvuru';
+    const currentOffers = universityOffers;
+    if (currentOffers.some(offer => offer.universityName === uni.name && offer.programName === programName)) {
+        universityOffersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
+
+    const offer: UniversityOffer = {
         id: Math.random().toString(36).substr(2, 9),
         universityName: uni.name,
-        programName: student.analysis?.preferences?.program1 || 'Genel Başvuru',
+        programName,
         status: 'Başvuru Aşamasında',
+        country: uni.country,
+        programType: program?.type,
+        tuitionRange: program?.tuitionRange,
+        programLink: program?.link,
     };
-    const updatedApps = [...(student.applications || []), application];
+    const updatedOffers = [...currentOffers, offer];
+    const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
+    setAddingSuggestedUniversityName(uni.name);
+    setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+    requestAnimationFrame(() => universityOffersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+
     try {
-        await studentService.update(student.id, { applications: updatedApps });
-        setStudent(prev => ({ ...prev, applications: updatedApps }));
-        // Optionally switch tab to applications? No, let's stay on analysis
+        await studentService.update(student.id, { analysis: updatedAnalysis });
     } catch (e) {
         console.error("Failed to add suggested university", e);
+        setStudent(prev => ({ ...prev, analysis: buildAnalysisWithUniversityOffers(currentOffers) }));
+        alert('Üniversite önerilere eklenemedi. Lütfen tekrar deneyin.');
+    } finally {
+        setAddingSuggestedUniversityName(null);
     }
   };
 
@@ -884,27 +978,52 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
-  const addSuggestedProgramsAsOffers = async (programOffers: Array<{ id: string; universityName: string; country: string; programName: string }>) => {
-    const existingOfferKeys = new Set((student.applications || []).map(app => `${app.universityName}::${app.programName}`));
-    const applicationsToAdd: UniversityApplication[] = programOffers
+  const addSuggestedProgramsAsOffers = async (programOffers: SuggestedProgramOffer[]) => {
+    const existingOfferKeys = new Set(universityOffers.map(offer => `${offer.universityName}::${offer.programName}`));
+    const offersToAdd: UniversityOffer[] = programOffers
         .filter(offer => !existingOfferKeys.has(`${offer.universityName}::${offer.programName}`))
         .map(offer => ({
             id: Math.random().toString(36).substr(2, 9),
             universityName: offer.universityName,
             programName: offer.programName,
             status: 'Başvuru Aşamasında',
+            country: offer.country,
+            programType: offer.programType,
+            tuitionRange: offer.tuitionRange,
+            programLink: offer.programLink,
         }));
 
-    if (applicationsToAdd.length === 0) return;
+    if (offersToAdd.length === 0) return;
 
-    const updatedApps = [...(student.applications || []), ...applicationsToAdd];
+    const updatedOffers = [...universityOffers, ...offersToAdd];
+    const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
 
     try {
-        await studentService.update(student.id, { applications: updatedApps });
-        setStudent(prev => ({ ...prev, applications: updatedApps }));
+        await studentService.update(student.id, { analysis: updatedAnalysis });
+        setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
         setSelectedSuggestedProgramIds(prev => prev.filter(id => !programOffers.some(offer => offer.id === id)));
+        requestAnimationFrame(() => universityOffersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } catch (e) {
         console.error("Failed to add selected suggested programs", e);
+        alert('Seçilen üniversiteler önerilere eklenemedi. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const removeUniversityOffer = async (applicationId: string) => {
+    if (removingUniversityOfferId) return;
+
+    const updatedOffers = universityOffers.filter(offer => offer.id !== applicationId);
+    const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
+    setRemovingUniversityOfferId(applicationId);
+
+    try {
+        await studentService.update(student.id, { analysis: updatedAnalysis });
+        setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+    } catch (e) {
+        console.error("Failed to remove university offer", e);
+        alert('Üniversite önerisi tablodan çıkarılamadı. Lütfen tekrar deneyin.');
+    } finally {
+        setRemovingUniversityOfferId(null);
     }
   };
 
@@ -982,41 +1101,30 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const handlePrintAnalysisReport = async () => {
-    const input = document.getElementById('unic-analysis-report-area');
-    if (!input) return;
+    const pages = Array.from(
+      printPreviewPagesRef.current?.querySelectorAll<HTMLElement>('[data-analysis-preview-page="true"]') || []
+    );
+    if (pages.length === 0) return;
 
     setIsGeneratingPDF(true);
     try {
       await document.fonts.ready;
-      await Promise.all(Array.from(input.querySelectorAll('img')).map(image => image.decode().catch(() => undefined)));
-
-      const canvas = await html2canvas(input, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: clonedDocument => {
-          clonedDocument
-            .querySelectorAll<HTMLElement>('#unic-analysis-report-area [data-pdf-hidden="true"]')
-            .forEach(element => element.style.display = 'none');
-        },
-      });
-
-      const a4PageHeight = Math.round(canvas.width * (297 / 210));
+      await Promise.all(pages.flatMap(page => Array.from(page.querySelectorAll('img')).map(image => image.decode().catch(() => undefined))));
       const pageImages: string[] = [];
 
-      for (let offset = 0; offset < canvas.height; offset += a4PageHeight) {
-        const sliceHeight = Math.min(a4PageHeight, canvas.height - offset);
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = sliceHeight;
-        const pageContext = pageCanvas.getContext('2d');
-        if (!pageContext) throw new Error('Baskı görüntüsü oluşturulamadı.');
-
-        pageContext.fillStyle = '#ffffff';
-        pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        pageContext.drawImage(canvas, 0, offset, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
-        pageImages.push(pageCanvas.toDataURL('image/png'));
+      for (const page of pages) {
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          onclone: clonedDocument => {
+            clonedDocument
+              .querySelectorAll<HTMLElement>('[data-analysis-preview-page="true"]')
+              .forEach(element => element.style.boxShadow = 'none');
+          },
+        });
+        pageImages.push(canvas.toDataURL('image/png'));
       }
 
       const printFrame = document.createElement('iframe');
@@ -1275,11 +1383,28 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       }
       setGpaError('');
 
+      const preferences = { ...(student.analysis?.preferences || {}) };
+      const hasLegacyUndecidedPreference = preferences.program1Category === 'kararsiz'
+          || preferences.program2Category === 'kararsiz'
+          || preferences.program1 === 'Bölüm konusunda kesin kararlı değilim'
+          || preferences.program2 === 'Bölüm konusunda kesin kararlı değilim';
+      if (hasLegacyUndecidedPreference) {
+          preferences.isUndecidedAboutDepartment = true;
+          preferences.departmentDecisionStatus = 'undecided';
+          if (preferences.program1Category === 'kararsiz') preferences.program1Category = '';
+          if (preferences.program2Category === 'kararsiz') preferences.program2Category = '';
+          if (preferences.program1 === 'Bölüm konusunda kesin kararlı değilim') preferences.program1 = '';
+          if (preferences.program2 === 'Bölüm konusunda kesin kararlı değilim') preferences.program2 = '';
+      }
+      if (!preferences.departmentDecisionStatus && preferences.isUndecidedAboutDepartment) {
+          preferences.departmentDecisionStatus = 'undecided';
+      }
+
       setEditForm({
           language: student.analysis?.language || {},
           academic: student.analysis?.academic || { exams: {} },
           social: student.analysis?.social || {},
-          preferences: student.analysis?.preferences || {},
+          preferences,
           languageProgramPreference: student.analysis?.languageProgramPreference || {},
           highSchoolProgramPreference: student.analysis?.highSchoolProgramPreference || {},
           budget: student.analysis?.budget || { ranges: student.analysis?.budget?.range ? [student.analysis.budget.range] : [] },
@@ -1749,7 +1874,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm text-slate-600 mb-1">Mevcut Eğitimi</label>
-                         <select 
+                         <select
                             value={editAcademicInfo.educationStatus}
                             onChange={(e) => setEditAcademicInfo(prev => ({ 
                                 ...prev, 
@@ -2304,64 +2429,93 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
                          <label className="block text-sm text-slate-600 mb-1">1. Tercih</label>
-                         <select 
-                             value={editForm.preferences.program1 || ''}
-                             onChange={(e) => updateEditField('preferences', 'program1', e.target.value)}
+                          <select
+                              value={editForm.preferences.program1 || ''}
+                              onChange={(e) => {
+                                  updateEditField('preferences', 'program1', e.target.value);
+                                  if (!e.target.value) updateEditField('preferences', 'program1Note', '');
+                              }}
                              className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                         >
-                             <option value="">Seçiniz</option>
-                             <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
-                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          >
+                              <option value="">Seçiniz</option>
+                              {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                          </select>
+                         <label className="mt-3 block text-xs font-bold uppercase tracking-wider text-slate-400">1. Tercih Ek Not</label>
+                         <textarea
+                             value={editForm.preferences.program1Note || ''}
+                             onChange={(e) => updateEditField('preferences', 'program1Note', e.target.value)}
+                             disabled={!editForm.preferences.program1}
+                             rows={3}
+                             className="mt-1 w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                             placeholder="1. bölüm tercihi için ek not..."
+                         />
                      </div>
                      <div>
                          <label className="block text-sm text-slate-600 mb-1">2. Tercih</label>
                           <select 
-                             value={editForm.preferences.program2 || ''}
-                             onChange={(e) => updateEditField('preferences', 'program2', e.target.value)}
+                              value={editForm.preferences.program2 || ''}
+                              onChange={(e) => {
+                                  updateEditField('preferences', 'program2', e.target.value);
+                                  if (!e.target.value) updateEditField('preferences', 'program2Note', '');
+                              }}
                              className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
-                         >
-                             <option value="">Seçiniz</option>
-                             <option value="Bölüm konusunda kesin kararlı değilim">Bölüm konusunda kesin kararlı değilim</option>
-                             {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          >
+                              <option value="">Seçiniz</option>
+                              {allMainDegrees.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                          </select>
+                         <label className="mt-3 block text-xs font-bold uppercase tracking-wider text-slate-400">2. Tercih Ek Not</label>
+                         <textarea
+                             value={editForm.preferences.program2Note || ''}
+                             onChange={(e) => updateEditField('preferences', 'program2Note', e.target.value)}
+                             disabled={!editForm.preferences.program2}
+                             rows={3}
+                             className="mt-1 w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                             placeholder="2. bölüm tercihi için ek not..."
+                         />
                      </div>
-                </div>
+                 </div>
 
-                {/* Coaching Support Request */}
-                {(editForm.preferences.program1 === "Bölüm konusunda kesin kararlı değilim" || editForm.preferences.program2 === "Bölüm konusunda kesin kararlı değilim") && (
-                    <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden mt-6 animate-fade-in">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
+                 <div className="mt-4">
+                     <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Bölüm Seçimi Durumu</p>
+                     <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                         {([
+                             { value: 'undecided', label: 'Bölüm Konusunda Kararsız' },
+                             { value: 'exploring', label: 'Farklı Bölüm Fikirlerini Araştırabilir' },
+                             { value: 'decided', label: 'Bölüm Seçiminde Kararlı' },
+                         ] as const).map(option => (
+                             <button
+                                 key={option.value}
+                                 type="button"
+                                 onClick={() => {
+                                     updateEditField('preferences', 'departmentDecisionStatus', option.value);
+                                     updateEditField('preferences', 'isUndecidedAboutDepartment', option.value === 'undecided');
+                                 }}
+                                  className={`rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
+                                      editForm.preferences.departmentDecisionStatus === option.value
+                                          ? option.value === 'decided'
+                                              ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-200'
+                                              : 'border-violet-600 bg-violet-600 text-white shadow-md shadow-violet-200'
+                                          : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                                  }`}
+                             >
+                                 {option.label}
+                             </button>
+                         ))}
+                     </div>
+                 </div>
+
+                 {editForm.preferences.departmentDecisionStatus && (
+                    <div className={`p-6 rounded-xl border shadow-sm relative overflow-hidden mt-6 animate-fade-in ${editForm.preferences.departmentDecisionStatus === 'decided' ? 'border-blue-200 bg-blue-50' : 'border-violet-200 bg-violet-50'}`}>
+                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-full opacity-50 -mr-8 -mt-8 ${editForm.preferences.departmentDecisionStatus === 'decided' ? 'bg-blue-100' : 'bg-violet-100'}`}></div>
                         <div className="relative z-10 flex items-start gap-4">
-                            <div className="p-3 bg-white rounded-xl shadow-sm text-violet-600 mt-1">
+                            <div className={`p-3 bg-white rounded-xl shadow-sm mt-1 ${editForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-600' : 'text-violet-600'}`}>
                                 <Sparkles className="w-5 h-5" />
                             </div>
                             <div className="flex-1">
-                                <label className="block text-base font-semibold text-violet-900 mb-3 leading-tight">
-                                    Bölüm çalışması konusunda Koçluk desteği almak ister misiniz?
-                                </label>
-                                <div className="flex gap-3">
-                                    <button 
-                                        onClick={() => updateEditField('preferences', 'wantsCoaching', true)}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                                            editForm.preferences.wantsCoaching === true 
-                                            ? 'bg-violet-600 text-white shadow-md shadow-violet-200 scale-105' 
-                                            : 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-100'
-                                        }`}
-                                    >
-                                        Evet, İstiyorum
-                                    </button>
-                                    <button 
-                                        onClick={() => updateEditField('preferences', 'wantsCoaching', false)}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                                            editForm.preferences.wantsCoaching === false 
-                                            ? 'bg-slate-600 text-white' 
-                                            : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-                                        }`}
-                                    >
-                                        Hayır
-                                    </button>
-                                </div>
+                                 <p className={`text-xs font-black uppercase tracking-widest ${editForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Önerisi</p>
+                                 <p className={`mt-2 text-sm leading-relaxed ${editForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-900' : 'text-violet-900'}`}>
+                                     {editForm.preferences.departmentDecisionStatus === 'decided' ? DEPARTMENT_DECIDED_RECOMMENDATION : DEPARTMENT_COACHING_RECOMMENDATION}
+                                 </p>
                             </div>
                         </div>
                     </div>
@@ -2369,32 +2523,31 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             </div>
 
            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-               <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[1, 2, 3].map(i => (
-                        <div key={i}>
-                            <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
-                            <select 
-                                value={(editForm.preferences as any)[`country${i}`] || ''}
-                                onChange={(e) => updateEditField('preferences', `country${i}`, e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                     {[1, 2, 3].map(i => (
+                         <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                             <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
+                             <select
+                                 value={(editForm.preferences as any)[`country${i}`] || ''}
+                                 onChange={(e) => updateEditField('preferences', `country${i}`, e.target.value)}
+                                 className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
                             >
-                                <option value="">Seçiniz</option>
-                                {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                        </div>
-                    ))}
-               </div>
-           </div>
-
-           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-               <h4 className="text-sm font-semibold text-slate-700 mb-3">Tercih Notları</h4>
-               <textarea 
-                  value={editForm.preferences.notes || ''} 
-                  onChange={(e) => updateEditField('preferences', 'notes', e.target.value)} 
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]" 
-                  placeholder="Tercihlere dair ek notlar..."
-               />
+                                 <option value="">Seçiniz</option>
+                                 {allCountries.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                             </select>
+                         </div>
+                     ))}
+                </div>
+                <div className="mt-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Ülke Tercihi Notu</label>
+                    <textarea
+                        value={editForm.preferences.countryPreferenceNote || ''}
+                        onChange={(e) => updateEditField('preferences', 'countryPreferenceNote', e.target.value)}
+                        className="min-h-[90px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        placeholder="Ülke tercihleriyle ilgili genel not..."
+                    />
+                </div>
            </div>
       </div>
    );
@@ -2961,27 +3114,40 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
     if (reportItems.length === 0) return null;
 
-    return (
-      <AnalysisReportSection
-        sectionKey="country-education"
-        title="Ülke Bazlı Eğitim Bilgileri"
-        className="analysis-print-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none"
-      >
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 className="flex items-center gap-2 font-bold text-slate-800">
-              <Globe className="h-5 w-5 text-indigo-600" />
-              Ülke Bazlı Eğitim Bilgileri
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">System Settings ülke tanımlarından, seçilen eğitim tercihine göre alınır.</p>
-          </div>
-          <span className="inline-flex w-fit rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 ring-1 ring-indigo-100">
-            {reportItems.length} Ülke
-          </span>
-        </div>
+    if (hiddenAnalysisReportSections['country-education']) {
+      return (
+        <AnalysisReportSection
+          sectionKey="country-education"
+          title="Ülke Bazlı Eğitim Bilgileri"
+          className=""
+        >
+          {null}
+        </AnalysisReportSection>
+      );
+    }
 
-        <div className="space-y-4">
-          {reportItems.map(({ countryName, country, educationLevel, selectedPrograms }) => {
+    return (
+      <>
+        <AnalysisReportSection
+          sectionKey="country-education"
+          title="Ülke Bazlı Eğitim Bilgileri"
+          className="analysis-print-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none"
+        >
+          <div className="flex flex-col gap-2 pr-24 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 font-bold text-slate-800">
+                <Globe className="h-5 w-5 text-indigo-600" />
+                Ülke Bazlı Eğitim Bilgileri
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">System Settings ülke tanımlarından, seçilen eğitim tercihine göre alınır.</p>
+            </div>
+            <span className="inline-flex w-fit rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 ring-1 ring-indigo-100">
+              {reportItems.length} Ülke
+            </span>
+          </div>
+        </AnalysisReportSection>
+
+        {reportItems.map(({ countryName, country, educationLevel, selectedPrograms }) => {
             const displayCountryName = country?.name || countryName;
             const countryCode = getCountryCode(displayCountryName);
             const educationTypes = educationLevel === 'master'
@@ -3012,7 +3178,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 key={`${countryName}-${educationLevel}`}
                 sectionKey={`country-${countryName}-${educationLevel}`}
                 title={`${displayCountryName} ${getCountryEducationLevelLabel(educationLevel)} bilgileri`}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:border-slate-300 print:shadow-none"
+                className="analysis-print-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:border-slate-300 print:shadow-none"
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
@@ -3084,9 +3250,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 )}
               </AnalysisReportSection>
             );
-          })}
-        </div>
-      </AnalysisReportSection>
+        })}
+      </>
     );
   };
 
@@ -3708,76 +3873,83 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 {student.analysis?.preferences?.program1 ? (
                                     <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-3 print:bg-transparent print:border-slate-300">
                                         <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm">1</div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight">1. Tercih</span>
-                                            <span className="font-medium">{student.analysis.preferences.program1}</span>
-                                        </div>
+                                         <div className="flex flex-col">
+                                             <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tight">1. Tercih</span>
+                                             <span className="font-medium">{student.analysis.preferences.program1}</span>
+                                             {student.analysis.preferences.program1Note && (
+                                                 <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-500">{student.analysis.preferences.program1Note}</p>
+                                             )}
+                                         </div>
                                     </div>
                                 ) : (
                                     <p className="text-xs text-slate-400 italic">Bölüm tercihi girilmedi.</p>
                                 )}
-                                {student.analysis?.preferences?.program2 && (
+                                 {student.analysis?.preferences?.program2 && (
                                     <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-700 flex items-center gap-3 print:bg-transparent print:border-slate-300">
                                         <div className="w-6 h-6 rounded-lg bg-slate-400 text-white flex items-center justify-center text-[10px] font-bold shadow-sm">2</div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">2. Tercih</span>
-                                            <span className="font-medium">{student.analysis.preferences.program2}</span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ülke Tercihleri</label>
-                              <div className="grid grid-cols-1 gap-2.5">
-                                {student.analysis?.preferences?.country1 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country1) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country1)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country1} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country1)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">1. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country1}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {student.analysis?.preferences?.country2 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country2) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country2)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country2} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country2)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">2. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country2}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {student.analysis?.preferences?.country3 && (
-                                    <div className="flex items-center gap-3 px-3.5 py-3 bg-white border border-slate-200 text-slate-700 text-sm rounded-xl shadow-sm print:shadow-none print:border-slate-300">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-200 shrink-0">
-                                            {getCountryCode(student.analysis.preferences.country3) ? (
-                                                <img src={`https://flagcdn.com/w40/${getCountryCode(student.analysis.preferences.country3)}.png`} className="w-full h-full object-cover" alt={student.analysis.preferences.country3} />
-                                            ) : (
-                                                <span className="text-xl">{getFlagEmoji(student.analysis.preferences.country3)}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase">3. Ülke</span>
-                                            <span className="font-bold truncate">{student.analysis.preferences.country3}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                {!student.analysis?.preferences?.country1 && <p className="text-xs text-slate-400 italic">Ülke tercihi girilmedi.</p>}
-                              </div>
-                        </div>
+                                         <div className="flex flex-col">
+                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">2. Tercih</span>
+                                             <span className="font-medium">{student.analysis.preferences.program2}</span>
+                                             {student.analysis.preferences.program2Note && (
+                                                 <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-500">{student.analysis.preferences.program2Note}</p>
+                                             )}
+                                         </div>
+                                     </div>
+                                 )}
+                                 {(() => {
+                                     const decisionStatus = student.analysis?.preferences?.departmentDecisionStatus
+                                         || (student.analysis?.preferences?.isUndecidedAboutDepartment ? 'undecided' : undefined);
+                                     if (!decisionStatus) return null;
+
+                                     const decisionLabel = decisionStatus === 'undecided'
+                                         ? 'Bölüm Konusunda Kararsız'
+                                         : decisionStatus === 'exploring'
+                                             ? 'Farklı Bölüm Fikirlerini Araştırabilir'
+                                             : 'Bölüm Seçiminde Kararlı';
+
+                                     return (
+                                         <div className={`rounded-xl border p-3.5 text-sm ${decisionStatus === 'decided' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-violet-200 bg-violet-50 text-violet-900'}`}>
+                                             <div className="flex items-center gap-2 font-bold">
+                                                 <Sparkles className={`h-4 w-4 ${decisionStatus === 'decided' ? 'text-blue-600' : 'text-violet-600'}`} />
+                                                 {decisionLabel}
+                                             </div>
+                                             <div className={`mt-3 border-t pt-3 ${decisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
+                                                 <p className={`text-[10px] font-black uppercase tracking-widest ${decisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
+                                                 <p className={`mt-1 text-xs leading-relaxed ${decisionStatus === 'decided' ? 'text-blue-800' : 'text-violet-800'}`}>
+                                                     {decisionStatus === 'decided' ? DEPARTMENT_DECIDED_RECOMMENDATION : DEPARTMENT_COACHING_RECOMMENDATION}
+                                                 </p>
+                                             </div>
+                                         </div>
+                                     );
+                                 })()}
+                             </div>
+                         </div>
+                         <div>
+                              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ülke Tercihleri</label>
+                               <div className="grid grid-cols-1 gap-2.5">
+                                 {[1, 2, 3].map(index => {
+                                     const country = (student.analysis?.preferences as any)?.[`country${index}`] as string | undefined;
+                                     if (!country) return null;
+
+                                     return (
+                                         <div key={index} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 shadow-sm print:border-slate-300 print:shadow-none">
+                                             <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50">
+                                                 {getCountryCode(country) ? (
+                                                     <img src={`https://flagcdn.com/w40/${getCountryCode(country)}.png`} className="h-full w-full object-cover" alt={country} />
+                                                 ) : (
+                                                     <span className="text-xl">{getFlagEmoji(country)}</span>
+                                                 )}
+                                             </div>
+                                             <div className="min-w-0 flex-1">
+                                                 <span className="block text-[10px] font-bold uppercase text-slate-400">{index}. Ülke</span>
+                                                 <span className="block truncate font-bold">{country}</span>
+                                             </div>
+                                         </div>
+                                     );
+                                 })}
+                                 {!student.analysis?.preferences?.country1 && <p className="text-xs text-slate-400 italic">Ülke tercihi girilmedi.</p>}
+                               </div>
+                         </div>
                     </div>
                     {shouldShowProfileBox('budget') && (
                         <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
@@ -3796,12 +3968,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                             </button>
                         </div>
                     )}
-                    {student.analysis?.preferences?.notes && (
-                        <div className="mt-6 pt-4 border-t border-slate-100">
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Tercih Notları</label>
-                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.notes}</p>
-                        </div>
-                    )}
+                     {student.analysis?.preferences?.countryPreferenceNote && (
+                         <div className="mt-6 pt-4 border-t border-slate-100">
+                             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ülke Tercihi Notu</label>
+                             <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{student.analysis.preferences.countryPreferenceNote}</p>
+                         </div>
+                     )}
                 </div>}
 
                 {showLanguageEducationProfileBox && <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border print:border-slate-300 print:shadow-none max-w-2xl">
@@ -4587,15 +4759,15 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 </button>
                             )}
                             <button
-                                type="button"
-                                onClick={isPrintPreviewOpen ? handlePrintAnalysisReport : () => setIsPrintPreviewOpen(true)}
-                                disabled={isGeneratingPDF}
+                                 type="button"
+                                 onClick={isPrintPreviewOpen ? handlePrintAnalysisReport : () => setIsPrintPreviewOpen(true)}
+                                 disabled={isGeneratingPDF || (isPrintPreviewOpen && !isPrintPreviewReady)}
                                 className={isPrintPreviewOpen
                                     ? 'inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-rose-500 disabled:cursor-wait disabled:opacity-60'
                                     : 'inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-600 shadow-sm ring-1 ring-rose-100 transition hover:bg-rose-100'}
                             >
-                                {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                                {isGeneratingPDF ? 'Hazırlanıyor...' : 'Yazdır / PDF'}
+                                 {isGeneratingPDF || (isPrintPreviewOpen && !isPrintPreviewReady) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                                 {isGeneratingPDF || (isPrintPreviewOpen && !isPrintPreviewReady) ? 'Hazırlanıyor...' : 'Yazdır / PDF'}
                             </button>
                         </div>
                     </div>
@@ -4604,7 +4776,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         ? 'flex-1 overflow-auto bg-slate-200 p-3 print:overflow-visible print:bg-white print:p-0 sm:p-8'
                         : ''}>
 
-                    <div id="unic-analysis-report-area" className={`analysis-print-report space-y-6 ${isPrintPreviewOpen ? 'box-border min-h-[297mm] w-[210mm] max-w-none bg-white p-[12mm] shadow-2xl print:min-h-0 print:w-full print:p-0 print:shadow-none sm:mx-auto' : ''}`}>
+                    <div id="unic-analysis-report-area" className={`analysis-print-report space-y-6 ${isPrintPreviewOpen ? 'pointer-events-none fixed left-[-10000px] top-0 box-border w-[210mm] max-w-none bg-white p-[12mm]' : ''}`}>
                       <div className="analysis-print-card analysis-print-header rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
                           <p className="text-xs font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
                           <h2 className="mt-2 text-2xl font-black text-slate-900">{student.firstName} {student.lastName}</h2>
@@ -4677,88 +4849,127 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                          )}
                      </AnalysisReportSection>
 
-                      {getInterestedEducationItems().length > 0 && (
-                         <AnalysisReportSection
-                             sectionKey="interested-education"
-                             title="İlgilendiği Eğitim Tercihleri"
-                             className="analysis-print-card analysis-print-preferences rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm"
-                         >
-                             <div className="mb-3 flex items-center gap-2">
-                                 <Sparkles className="h-4 w-4 text-indigo-600" />
-                                <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilendiği Eğitim Tercihleri</h3>
-                             </div>
-                             <div className="analysis-print-chip-list flex flex-wrap gap-2">
-                                 {getInterestedEducationItems().map(item => (
-                                    <span key={`${item.countries.join('-')}-${item.program}`} className="analysis-print-chip inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm">
-                                        <span className="flex items-center gap-1">
-                                            {item.countries.map((country, index) => {
-                                                const countryCode = getCountryCode(country);
+                      {(() => {
+                           const selectedCountries = getSelectedPreferenceCountries().slice(0, 3);
+                          const selectedDegrees: Array<{ degreeName: string; degreeNote?: string; preferenceNumber: number }> = [];
+                          if (student.analysis?.preferences?.program1) {
+                              selectedDegrees.push({
+                                  degreeName: student.analysis.preferences.program1,
+                                  degreeNote: student.analysis.preferences.program1Note,
+                                  preferenceNumber: 1,
+                              });
+                          }
+                          if (student.analysis?.preferences?.program2) {
+                              selectedDegrees.push({
+                                  degreeName: student.analysis.preferences.program2,
+                                  degreeNote: student.analysis.preferences.program2Note,
+                                  preferenceNumber: 2,
+                              });
+                          }
+                          const departmentDecisionStatus = student.analysis?.preferences?.departmentDecisionStatus
+                              || (student.analysis?.preferences?.isUndecidedAboutDepartment ? 'undecided' : undefined);
+                          const showDepartmentRecommendation = !!departmentDecisionStatus;
+                           const departmentRecommendation = departmentDecisionStatus === 'decided'
+                               ? DEPARTMENT_DECIDED_RECOMMENDATION
+                               : DEPARTMENT_COACHING_RECOMMENDATION;
+                           const hasSecondDepartmentPreference = !!student.analysis?.preferences?.program2;
+                           const countryPreferenceNote = student.analysis?.preferences?.countryPreferenceNote?.trim();
 
-                                                return (
-                                                <span key={country} className="analysis-print-country inline-flex items-center gap-1.5">
-                                                    <span className="analysis-print-flag inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-[10px]">
-                                                        {countryCode ? (
-                                                            <img
-                                                                src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`}
-                                                                alt={country}
-                                                                className="h-full w-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            getFlagEmoji(country)
-                                                        )}
-                                                    </span>
-                                                    <span>{country}{index < item.countries.length - 1 ? ',' : ''}</span>
-                                                </span>
-                                                );
-                                            })}
-                                         </span>
-                                         <span className="text-indigo-300">-</span>
-                                         <span>{normalizeDefinitionLookupValue(item.program) === 'üniversite' ? 'Üniversite Eğitimi' : `${item.program} tercihi`}</span>
-                                     </span>
-                                 ))}
-                             </div>
-                             {(() => {
-                                 const selectedDegrees: string[] = Array.from(new Set<string>([
-                                     student.analysis?.preferences?.program1,
-                                     student.analysis?.preferences?.program2,
-                                 ].filter((value): value is string => !!value)));
+                           if (selectedCountries.length === 0 && selectedDegrees.length === 0 && !showDepartmentRecommendation && !countryPreferenceNote) return null;
 
-                                 if (selectedDegrees.length === 0) return null;
+                          return (
+                              <AnalysisReportSection
+                                  sectionKey="interested-education"
+                                  title="İlgilendiği Eğitim Tercihleri"
+                                  className="analysis-print-card analysis-print-preferences rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm"
+                              >
+                                  <div className="mb-4 flex items-center gap-2 pr-24">
+                                      <Sparkles className="h-4 w-4 text-indigo-600" />
+                                      <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilendiği Eğitim Tercihleri</h3>
+                                   </div>
 
-                                 return (
-                                     <div className="mt-5 border-t border-indigo-100 pt-4">
-                                         <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-indigo-500">İlgilendiği Bölümler</p>
-                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                             {selectedDegrees.map(degreeName => {
-                                                 const degree = mainDegreeDetails.find(item => normalizeDefinitionLookupValue(item.name) === normalizeDefinitionLookupValue(degreeName));
+                                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                       <div className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm md:col-span-2">
+                                           <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-indigo-500">Seçtiği Ülkeler</p>
+                                           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                              {selectedCountries.map(country => {
+                                                  const countryCode = getCountryCode(country);
 
-                                                 return (
-                                                     <div key={degreeName} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
-                                                         <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg border border-indigo-100 bg-indigo-50">
-                                                             {degree?.imageUrl ? (
-                                                                 <img src={degree.imageUrl} alt={degreeName} className="h-full w-full object-cover" />
-                                                             ) : (
-                                                                 <div className="flex h-full w-full items-center justify-center text-indigo-300">
-                                                                     <GraduationCap className="h-6 w-6" />
-                                                                 </div>
-                                                             )}
-                                                         </div>
-                                                         <h4 className="text-sm font-black leading-snug text-slate-800">{degreeName}</h4>
-                                                     </div>
-                                                 );
-                                             })}
-                                         </div>
-                                     </div>
-                                 );
-                             })()}
-                          </AnalysisReportSection>
-                     )}
+                                                  return (
+                                                       <div key={country} className="analysis-print-country flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 p-2">
+                                                          <span className="analysis-print-flag inline-flex h-11 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white text-xl shadow-sm">
+                                                              {countryCode ? (
+                                                                  <img
+                                                                      src={`https://flagcdn.com/w80/${countryCode.toLowerCase()}.png`}
+                                                                      alt={country}
+                                                                      className="h-full w-full object-cover"
+                                                                  />
+                                                              ) : (
+                                                                  getFlagEmoji(country)
+                                                              )}
+                                                          </span>
+                                                          <span className="text-sm font-black text-slate-800">{country}</span>
+                                                      </div>
+                                                   );
+                                               })}
+                                           </div>
+                                       </div>
+                                       {countryPreferenceNote && (
+                                           <div className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm md:col-span-2">
+                                               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Ülke Tercihi Notu</p>
+                                               <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{countryPreferenceNote}</p>
+                                           </div>
+                                       )}
+
+                                       {(selectedDegrees.length > 0 || showDepartmentRecommendation) && <div className="space-y-3 md:col-span-2">
+                                           <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Bölüm Tercihleri</p>
+                                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                              {selectedDegrees.map(({ degreeName, degreeNote, preferenceNumber }) => {
+                                                  const degree = mainDegreeDetails.find(item => normalizeDefinitionLookupValue(item.name) === normalizeDefinitionLookupValue(degreeName));
+
+                                                  return (
+                                                      <div key={`${preferenceNumber}-${degreeName}`} className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+                                                          <div className="aspect-square h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50">
+                                                              {degree?.imageUrl ? (
+                                                                  <img src={degree.imageUrl} alt={degreeName} className="h-full w-full object-cover" />
+                                                              ) : (
+                                                                  <div className="flex h-full w-full items-center justify-center text-indigo-300">
+                                                                      <GraduationCap className="h-7 w-7" />
+                                                                  </div>
+                                                              )}
+                                                          </div>
+                                                          <div className="min-w-0 flex-1">
+                                                              <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-indigo-500">{preferenceNumber}. Tercih</p>
+                                                              <h4 className="text-sm font-black leading-snug text-slate-800">{degreeName}</h4>
+                                                              {degreeNote && <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-500">{degreeNote}</p>}
+                                                          </div>
+                                                       </div>
+                                                   );
+                                               })}
+                                               {showDepartmentRecommendation && !hasSecondDepartmentPreference && (
+                                                   <div className={`rounded-xl border bg-white p-4 shadow-sm ${departmentDecisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
+                                                       <p className={`text-[10px] font-black uppercase tracking-widest ${departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
+                                                       <p className="mt-1 text-sm leading-relaxed text-slate-700">{departmentRecommendation}</p>
+                                                   </div>
+                                               )}
+                                           </div>
+                                           {showDepartmentRecommendation && hasSecondDepartmentPreference && (
+                                               <div className={`rounded-xl border bg-white p-4 shadow-sm ${departmentDecisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
+                                                   <p className={`text-[10px] font-black uppercase tracking-widest ${departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
+                                                   <p className="mt-1 text-sm leading-relaxed text-slate-700">{departmentRecommendation}</p>
+                                               </div>
+                                           )}
+                                       </div>}
+                                   </div>
+                               </AnalysisReportSection>
+                          );
+                      })()}
 
                     {renderCountryEducationReport()}
 
                      {/* Preferred Degrees Details */}
                      {student.analysis?.preferences && (
-                        <div className="analysis-print-degree-grid grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="analysis-print-degree-grid grid grid-cols-1 gap-6 mb-6">
                             {[student.analysis.preferences.program1, student.analysis.preferences.program2]
                                 .filter((p): p is string => !!p)
                                 .map((progName) => {
@@ -4810,8 +5021,116 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                     )}
 
+                    <div ref={universityOffersRef} className="scroll-mt-4">
+                      <AnalysisReportSection
+                          sectionKey="university-offers"
+                          title="Üniversite Önerileri"
+                          className="analysis-print-card overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-slate-300 print:shadow-none"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+                            <div>
+                                <h3 className="flex items-center gap-2 font-bold text-slate-800">
+                                    <GraduationCap className="h-5 w-5 text-indigo-600" />
+                                    Üniversite Önerileri
+                                </h3>
+                                <p className="mt-0.5 text-xs text-slate-400">Teklife eklenen üniversite ve bölümler</p>
+                            </div>
+                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                                {universityOffers.length} Öneri
+                            </span>
+                        </div>
+
+                        {universityOffers.length > 0 ? (
+                            <div className="space-y-2 p-6">
+                                {universityOffers.map(offer => {
+                                    const university = allUniversities.find((item: any) => item.name === offer.universityName);
+                                    const countryName = offer.country
+                                        || university?.countries?.[0]
+                                        || '';
+                                    const countryCode = getCountryCode(countryName);
+                                    const normalizedOfferProgramName = offer.programName.toLocaleLowerCase('tr-TR').trim();
+                                    const program = (university?.programs || []).find((item: any) => {
+                                        const normalizedProgramName = String(item.name || '').toLocaleLowerCase('tr-TR').trim();
+                                        return normalizedProgramName === normalizedOfferProgramName
+                                            || normalizedProgramName.includes(normalizedOfferProgramName);
+                                    });
+                                    const programName = program?.name || offer.programName;
+                                    const programType = offer.programType || program?.type;
+                                    const tuitionRange = offer.tuitionRange || program?.tuitionRange || university?.tuitionRange;
+                                    const programLink = offer.programLink || program?.link;
+                                    const currency = allCountriesData.find(country => (
+                                        country.name.toLocaleLowerCase('tr-TR') === countryName.toLocaleLowerCase('tr-TR')
+                                    ))?.currency || '';
+
+                                    return (
+                                        <div key={offer.id} className="analysis-print-university-row flex items-start gap-4 rounded-xl border border-slate-100 p-3.5 transition-all hover:border-indigo-200 hover:bg-indigo-50/30">
+                                            <div className="analysis-print-flag analysis-print-university-flag flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
+                                                {countryCode ? (
+                                                    <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} className="h-full w-full object-cover" alt={countryName} />
+                                                ) : (
+                                                    <GraduationCap className="h-5 w-5 text-slate-300" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="text-sm font-bold text-slate-800">{offer.universityName}</p>
+                                                    {countryName && (
+                                                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-500">{countryName}</span>
+                                                    )}
+                                                </div>
+                                                <div className="mt-3 rounded-xl border border-indigo-100 bg-white/80 p-3">
+                                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                                        {programLink ? (
+                                                            <a
+                                                                href={programLink}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-start gap-1.5 text-sm font-black leading-snug text-slate-900 transition hover:text-indigo-600 hover:underline"
+                                                            >
+                                                                {programName}
+                                                                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                                                            </a>
+                                                        ) : (
+                                                            <div className="text-sm font-black leading-snug text-slate-900">{programName}</div>
+                                                        )}
+                                                    </div>
+                                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                        <span className={`rounded px-2 py-0.5 text-[9px] font-bold ${programType === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                            {programType || 'Bachelor'}
+                                                        </span>
+                                                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
+                                                            Yıllık Yaklaşık Ücret: {tuitionRange || 'Belirtilmedi'}{currency ? ` ${currency}` : ''}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                data-pdf-hidden="true"
+                                                type="button"
+                                                onClick={() => void removeUniversityOffer(offer.id)}
+                                                disabled={removingUniversityOfferId !== null}
+                                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-wait disabled:opacity-50"
+                                            >
+                                                {removingUniversityOfferId === offer.id
+                                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    : <Trash2 className="h-3.5 w-3.5" />}
+                                                Tablodan Çıkar
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="px-6 py-10 text-center">
+                                <p className="text-sm font-semibold text-slate-500">Henüz teklife eklenen üniversite yok.</p>
+                                <p className="mt-1 text-xs text-slate-400">Aşağıdaki önerilerden bölümleri seçip “Seçilenleri Teklife Ekle” butonunu kullanın.</p>
+                            </div>
+                        )}
+                      </AnalysisReportSection>
+                    </div>
+
                     {/* Suggested Universities – filtered from system */}
-                    {(() => {
+                    {!isPrintPreviewOpen && (() => {
                         const prefCountries = [
                             student.analysis?.preferences?.country1,
                             student.analysis?.preferences?.country2,
@@ -4907,20 +5226,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     universityName: uni.name,
                                     country,
                                     programName: program.name,
+                                    programType: program.type,
+                                    tuitionRange: program.tuitionRange,
+                                    programLink: program.link,
                                 }));
                         });
 
                         return (
                             <AnalysisReportSection
                                 sectionKey="suggested-universities"
-                                title="Önerilen Üniversiteler"
+                                title="Uygun Bölümler"
                                 className="analysis-print-card bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:border-slate-300 print:shadow-none"
                             >
                                     <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-center lg:justify-between">
                                      <div>
                                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                              <GraduationCap className="w-5 h-5 text-indigo-600" />
-                                             Önerilen Üniversiteler
+                                             Uygun Bölümler
                                         </h3>
                                         <p className="text-xs text-slate-400 mt-0.5">Tercihlerinize uyan partner üniversitelerimiz</p>
                                     </div>
@@ -4957,7 +5279,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 ) : (
                                     <div className="space-y-2">
                                         {visibleFilteredUnis.map((uni: any, idx: number) => {
-                                            const isAdded = student.applications?.some(app => app.universityName === uni.name);
+                                            const isAdded = universityOffers.some(offer => offer.universityName === uni.name);
                                             const countryName = (uni.countries || [])[0] || '';
                                             const countryCode = getCountryCode(countryName);
                                             const allMatchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
@@ -5013,7 +5335,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                                     (() => {
                                                                         const programSelectionId = getSuggestedProgramSelectionId(uni, program);
                                                                         const isProgramSelected = selectedSuggestedProgramIds.includes(programSelectionId);
-                                                                        const isProgramAdded = student.applications?.some(app => app.universityName === uni.name && app.programName === program.name);
+                                                                        const isProgramAdded = universityOffers.some(offer => offer.universityName === uni.name && offer.programName === program.name);
 
                                                                         return (
                                                                             <label key={program.id || program.name} className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
@@ -5068,15 +5390,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                     {/* Action */}
                                                     <button
                                                         data-pdf-hidden="true"
-                                                         onClick={() => addSuggestedUniversityAsOffer({ name: uni.name, country: countryName })}
-                                                         disabled={isAdded}
+                                                        type="button"
+                                                        onClick={() => void addSuggestedUniversityAsOffer(
+                                                            { name: uni.name, country: countryName },
+                                                            matchingPrograms[0]
+                                                        )}
+                                                        disabled={isAdded || addingSuggestedUniversityName !== null}
                                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
                                                             isAdded
                                                             ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
                                                             : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm hover:shadow-indigo-500/20'
                                                         }`}
                                                     >
-                                                        {isAdded ? (
+                                                        {addingSuggestedUniversityName === uni.name ? (
+                                                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Ekleniyor</>
+                                                        ) : isAdded ? (
                                                             <><CheckCircle className="w-3.5 h-3.5" /> Eklendi</>
                                                         ) : (
                                                             <><Plus className="w-3.5 h-3.5" /> Teklif Ekle</>
@@ -5092,6 +5420,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                     })()}
 
                     </div>
+                    {isPrintPreviewOpen && (
+                        <div
+                            ref={printPreviewPagesRef}
+                            className="flex min-w-max flex-col items-center gap-8 pb-8"
+                            aria-label="A4 analiz raporu sayfaları"
+                        />
+                    )}
                     </div>
                     </div>
                     </FullscreenPortal>

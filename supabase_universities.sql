@@ -8,11 +8,9 @@ CREATE TABLE IF NOT EXISTS public.universities (
     name TEXT NOT NULL,
     logo TEXT,
     countries TEXT[] DEFAULT '{}',
+    campuses TEXT[] NOT NULL DEFAULT '{}',
     ranking_url TEXT,
     website_url TEXT,
-    departments_url TEXT,
-    consulting_type TEXT,
-    shared_institution_id TEXT,
     programs JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

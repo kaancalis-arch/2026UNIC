@@ -2,6 +2,14 @@
 import { supabase } from './supabaseClient';
 import { MainDegreeData } from '../types';
 
+const DEPARTMENT_IMAGE_BUCKET = 'department-images';
+const MAX_DEPARTMENT_IMAGE_SIZE = 5 * 1024 * 1024;
+const DEPARTMENT_IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp'
+};
+
 export const mainDegreeService = {
   async getAll(): Promise<MainDegreeData[]> {
     if (!supabase) return [];
@@ -68,6 +76,26 @@ export const mainDegreeService = {
           sectorStatusTR: data.sector_status_tr,
           imageUrl: data.image_url
     };
+  },
+
+  async uploadImage(file: File, degreeId: string): Promise<string> {
+      const fileExtension = DEPARTMENT_IMAGE_EXTENSIONS[file.type];
+      if (!fileExtension) {
+          throw new Error('Yalnızca JPG, PNG veya WebP formatında görsel yükleyebilirsiniz.');
+      }
+      if (file.size > MAX_DEPARTMENT_IMAGE_SIZE) {
+          throw new Error('Görsel boyutu en fazla 5 MB olabilir.');
+      }
+
+      const safeDegreeId = degreeId.replace(/[^a-zA-Z0-9_-]/g, '') || 'new';
+      const filePath = `${safeDegreeId}/${crypto.randomUUID()}.${fileExtension}`;
+      const { error } = await supabase.storage
+        .from(DEPARTMENT_IMAGE_BUCKET)
+        .upload(filePath, file, { cacheControl: '3600', contentType: file.type });
+
+      if (error) throw new Error(`Bölüm görseli yüklenemedi: ${error.message}`);
+
+      return supabase.storage.from(DEPARTMENT_IMAGE_BUCKET).getPublicUrl(filePath).data.publicUrl;
   },
   
   async delete(id: string): Promise<void> {

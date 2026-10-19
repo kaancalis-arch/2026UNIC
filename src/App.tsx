@@ -41,20 +41,53 @@ const getStageFromHash = () => {
   return params.get('stage');
 };
 
+const CURRENT_PAGE_STORAGE_KEY = 'unic-current-page';
+const SELECTED_UNIVERSITY_STORAGE_KEY = 'unic-selected-university';
+
+const getStoredCurrentPage = () => {
+  if (typeof window === 'undefined') return 'dashboard';
+  return window.sessionStorage.getItem(CURRENT_PAGE_STORAGE_KEY) || 'dashboard';
+};
+
+const getStoredUniversity = (): UniversityData | null => {
+  if (typeof window === 'undefined') return null;
+  const storedUniversity = window.sessionStorage.getItem(SELECTED_UNIVERSITY_STORAGE_KEY);
+  if (!storedUniversity) return null;
+
+  try {
+    return JSON.parse(storedUniversity) as UniversityData;
+  } catch {
+    window.sessionStorage.removeItem(SELECTED_UNIVERSITY_STORAGE_KEY);
+    return null;
+  }
+};
+
 const App: React.FC = () => {
   const { currentUser, isAuthenticated, isLoading, isPasswordRecovery, signOut } = useAuth();
   const { pathname } = useLocation();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState(getStoredCurrentPage);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(null);
+  const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(getStoredUniversity);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
   const shareTokenMatch = pathname.match(/^\/share\/document\/([^/]+)\/?$/);
   const reportShareTokenMatch = pathname.match(/^\/share\/report\/([^/]+)\/?$/);
 
   useEffect(() => {
-    if (!isAuthenticated) setCurrentPage('dashboard');
-  }, [isAuthenticated]);
+    if (!isLoading && !isAuthenticated) setCurrentPage('dashboard');
+  }, [isAuthenticated, isLoading]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(CURRENT_PAGE_STORAGE_KEY, currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (selectedUniversity) {
+      window.sessionStorage.setItem(SELECTED_UNIVERSITY_STORAGE_KEY, JSON.stringify(selectedUniversity));
+    } else {
+      window.sessionStorage.removeItem(SELECTED_UNIVERSITY_STORAGE_KEY);
+    }
+  }, [selectedUniversity]);
 
   const handleStudentSelect = (student: Student) => {
     setSelectedStudent(student);
@@ -82,6 +115,10 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Oturum kapatma isteği tamamlanamadı.', error);
     } finally {
+      window.sessionStorage.removeItem(CURRENT_PAGE_STORAGE_KEY);
+      window.sessionStorage.removeItem(SELECTED_UNIVERSITY_STORAGE_KEY);
+      window.sessionStorage.removeItem('unic-settings-active-tab');
+      window.sessionStorage.removeItem('unic-settings-selected-view');
       setCurrentPage('dashboard');
     }
   };
@@ -116,7 +153,7 @@ const App: React.FC = () => {
         return <UniversityResearch />;
       case 'university-detail':
         return selectedUniversity ? (
-          <UniversityDetail university={selectedUniversity} onBack={handleBackToUniversities} />
+          <UniversityDetail university={selectedUniversity} onBack={handleBackToUniversities} onUniversityUpdated={setSelectedUniversity} />
         ) : (
           <Settings />
         );

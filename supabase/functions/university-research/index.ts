@@ -31,10 +31,8 @@ type ScrapeResult = {
 type UniversityRow = {
   id: string;
   name: string;
-  departments_url: string | null;
   undergraduate_courses_url: string | null;
   master_courses_url: string | null;
-  parser_profile: string | null;
 };
 
 type ParsedProgram = {
@@ -121,7 +119,7 @@ Deno.serve(async (req) => {
 
     const { data: university, error } = await supabase
       .from('universities')
-      .select('id, name, departments_url, undergraduate_courses_url, master_courses_url, parser_profile')
+      .select('id, name, undergraduate_courses_url, master_courses_url')
       .eq('id', payload.university_id)
       .maybeSingle<UniversityRow>();
     console.log('UNIVERSITY_RESEARCH_UNIVERSITY_QUERY_RESULT:', { university, error });
@@ -161,9 +159,9 @@ Deno.serve(async (req) => {
     }
 
     const courseUrl = level === 'undergraduate'
-      ? university.undergraduate_courses_url || university.departments_url
+      ? university.undergraduate_courses_url
       : university.master_courses_url;
-    const parserProfile = normalizeParserProfile(university.parser_profile);
+    const parserProfile: ParserProfile = university.name.toLowerCase().includes('birmingham') ? 'birmingham' : 'auto';
     console.log('UNIVERSITY_RESEARCH_SELECTED_COURSE_URL:', courseUrl);
     console.log('UNIVERSITY_RESEARCH_SELECTED_PARSER_PROFILE:', parserProfile);
 
@@ -784,8 +782,8 @@ function applyDepartmentKeywordRules(parsedPrograms: ParsedProgram[], rules: Dep
       const keyword = normalizeMatchText(rule.keyword);
       const majorKeywords = [keyword, ...normalizeKeywords(rule.major_keywords)].filter(Boolean) as string[];
       const requiredKeywords = normalizeKeywords(rule.required_match_keywords);
-      const requiredMatch = requiredKeywords.find((keyword) => normalizedProgram.includes(keyword));
-      const majorMatch = majorKeywords.find((keyword) => normalizedProgram.includes(keyword));
+      const requiredMatch = requiredKeywords.find((keyword) => containsMatchPhrase(normalizedProgram, keyword));
+      const majorMatch = majorKeywords.find((keyword) => containsMatchPhrase(normalizedProgram, keyword));
       const matchedRuleKeywords = [requiredMatch, majorMatch].filter(Boolean) as string[];
 
       if (matchedRuleKeywords.length === 0) return;
@@ -828,7 +826,30 @@ function normalizeKeywords(keywords: string[] | null) {
 }
 
 function normalizeMatchText(value: string | null | undefined) {
-  return (value || '').toLowerCase().trim();
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/ı/g, 'i');
+}
+
+function containsMatchPhrase(text: string, phrase: string) {
+  const normalizedText = normalizeMatchText(text);
+  const normalizedPhrase = normalizeMatchText(phrase);
+  if (!normalizedPhrase) return false;
+
+  const isWordCharacter = (value: string | undefined) => Boolean(value && /[\p{L}\p{N}]/u.test(value));
+  let index = normalizedText.indexOf(normalizedPhrase);
+  while (index !== -1) {
+    const startsAtBoundary = index === 0 || !isWordCharacter(normalizedText[index - 1]);
+    const endIndex = index + normalizedPhrase.length;
+    const endsAtBoundary = endIndex === normalizedText.length || !isWordCharacter(normalizedText[endIndex]);
+    if (startsAtBoundary && endsAtBoundary) return true;
+    index = normalizedText.indexOf(normalizedPhrase, index + 1);
+  }
+
+  return false;
 }
 
 function extractProgramIntelligence(programName: string, duration?: string) {

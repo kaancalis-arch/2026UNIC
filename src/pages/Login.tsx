@@ -34,15 +34,9 @@ const Login = () => {
       await signIn(email.trim().toLowerCase(), password);
     } catch (caughtError) {
       if (caughtError instanceof AuthServiceError) {
-        if (caughtError.code === 'PASSIVE_ACCOUNT') {
-          setError('Hesabınız pasif durumdadır. Sistem yöneticinizle iletişime geçin.');
-        } else if (caughtError.code === 'PROFILE_NOT_FOUND') {
-          setError('Kullanıcı profiliniz bulunamadı. Sistem yöneticinizle iletişime geçin.');
-        } else {
-          setError('E-posta veya şifre hatalı.');
-        }
+        setError(caughtError.message);
       } else {
-        setError('E-posta veya şifre hatalı.');
+        setError('Giriş işlemi tamamlanamadı. Lütfen tekrar deneyin.');
       }
     } finally {
       submitLock.current = false;

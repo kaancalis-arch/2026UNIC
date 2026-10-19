@@ -12,13 +12,10 @@ const mapUniversityRow = (row: any, fallbackPrograms: UniversityData['programs']
   name: row.name,
   logo: row.logo,
   countries: row.countries || [],
+  campuses: row.campuses || [],
   rankingUrl: row.ranking_url || '',
   websiteUrl: row.website_url || '',
-  departmentsUrl: row.departments_url || '',
-  parserProfile: row.parser_profile || 'auto',
-  consultingType: row.consulting_type ?? row.consultingType ?? '',
   universityTypes: row.university_types ?? row.universityTypes ?? [],
-  sharedInstitutionId: row.shared_institution_id ?? row.sharedInstitutionId ?? '',
   programs: row.university_programs
     ? row.university_programs.map((p: any) => ({
         id: p.id,
@@ -74,19 +71,14 @@ export const universityService = {
   async upsert(university: UniversityData): Promise<UniversityData> {
     if (!supabase) throw new Error('Supabase is not configured');
 
-    const isLocalId = university.id.startsWith('uni-');
-
     const dbPayload: any = {
-        name: university.name,
+        name: university.name.trim(),
         logo: university.logo,
         countries: university.countries || [],
+        campuses: (university.campuses || []).filter(Boolean),
         ranking_url: university.rankingUrl,
         website_url: university.websiteUrl,
-        departments_url: university.departmentsUrl,
-        parser_profile: university.parserProfile || 'auto',
-        consulting_type: university.consultingType || '',
         university_types: (university.universityTypes || []).filter(Boolean),
-        shared_institution_id: university.sharedInstitutionId || null,
         programs: university.programs || []
     };
 
@@ -105,7 +97,10 @@ export const universityService = {
 
       if (error) {
         console.error('University Insert Failed:', error.message, error.details, error.hint);
-        throw new Error(`Kayıt oluşturulamadı: ${error.message}`);
+        const message = error.code === '23505'
+          ? 'Bu üniversite zaten kayıtlı.'
+          : error.message;
+        throw new Error(`Üniversite kaydedilemedi: ${message}`);
       }
       // UI tarafında eski (temp) ID ile eşleştirme yapabilmesi için yeni ID'yi dön
       return mapUniversityRow(data, university.programs || []);

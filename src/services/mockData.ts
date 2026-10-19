@@ -284,7 +284,6 @@ export const MOCK_UNIVERSITIES: UniversityData[] = [
         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Logo_Technical_University_of_Munich.svg/200px-Logo_Technical_University_of_Munich.svg.png',
         countries: ['Germany'],
         websiteUrl: 'https://www.tum.de/en/',
-        departmentsUrl: 'https://www.tum.de/en/studies/degree-programs',
         tuitionRange: '0 - 1.000€ (State)'
     },
     {
@@ -293,7 +292,6 @@ export const MOCK_UNIVERSITIES: UniversityData[] = [
         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/University_of_Amsterdam_logo.svg/200px-University_of_Amsterdam_logo.svg.png',
         countries: ['Netherlands'],
         websiteUrl: 'https://www.uva.nl/en',
-        departmentsUrl: 'https://www.uva.nl/en/education/bachelors/bachelors.html',
         tuitionRange: '10.000€ - 15.000€'
     }
 ];

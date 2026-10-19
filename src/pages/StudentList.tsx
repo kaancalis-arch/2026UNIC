@@ -17,7 +17,7 @@ import {
     User, Phone, Mail, Calendar, School, Users, Globe, FileCheck,
     ClipboardList, Save, CheckCircle, AlertCircle, Trash2, Sparkles,
     GraduationCap, BookOpen, Coins, Activity, BrainCircuit, Flag,
-    Download, Upload, FileDown, Sun, MessageCircle, Star, Briefcase
+    Download, Upload, FileDown, Sun, MessageCircle, Star, Briefcase, Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
@@ -84,6 +84,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
 
     const [students, setStudents] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isImportingExcel, setIsImportingExcel] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Tuition Ranges State
@@ -132,7 +133,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     return;
                 }
 
-                setIsLoading(true);
+                setIsImportingExcel(true);
                 let successCount = 0;
                 let failCount = 0;
 
@@ -171,12 +172,12 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 }
 
                 alert(`${successCount} öğrenci başarıyla eklendi. ${failCount} hata oluştu.`);
-                loadStudents();
+                setStudents(await studentService.getAll());
             } catch (error) {
                 console.error('Excel import error:', error);
                 alert('Excel dosyası okunurken bir hata oluştu.');
             } finally {
-                setIsLoading(false);
+                setIsImportingExcel(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
             }
         };
@@ -860,6 +861,22 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 const junction = allJunctions.find(j => j.program_id === program.id);
                 if (junction) prefs.program2Category = junction.category_id;
             }
+        }
+
+        const hasLegacyUndecidedPreference = prefs.program1Category === 'kararsiz'
+            || prefs.program2Category === 'kararsiz'
+            || prefs.program1 === 'Bölüm konusunda kesin kararlı değilim'
+            || prefs.program2 === 'Bölüm konusunda kesin kararlı değilim';
+        if (hasLegacyUndecidedPreference) {
+            prefs.isUndecidedAboutDepartment = true;
+            prefs.departmentDecisionStatus = 'undecided';
+            if (prefs.program1Category === 'kararsiz') prefs.program1Category = '';
+            if (prefs.program2Category === 'kararsiz') prefs.program2Category = '';
+            if (prefs.program1 === 'Bölüm konusunda kesin kararlı değilim') prefs.program1 = '';
+            if (prefs.program2 === 'Bölüm konusunda kesin kararlı değilim') prefs.program2 = '';
+        }
+        if (!prefs.departmentDecisionStatus && prefs.isUndecidedAboutDepartment) {
+            prefs.departmentDecisionStatus = 'undecided';
         }
 
         setSelectedStudentForAnalysis(student);
@@ -1782,11 +1799,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 onChange={(e) => {
                                     updateAnalysisField('preferences', 'program1Category', e.target.value);
                                     updateAnalysisField('preferences', 'program1', '');
+                                    updateAnalysisField('preferences', 'program1Note', '');
                                 }}
                                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
                             >
                                 <option value="">Önce Ana Bölüm Seçiniz</option>
-                                <option value="kararsiz">Bölüm konusunda kesin kararlı değilim</option>
                                 {allMainCategories.map(cat => (
                                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                                 ))}
@@ -1797,7 +1814,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             <select
                                 disabled={!analysisForm.preferences.program1Category || analysisForm.preferences.program1Category === 'kararsiz'}
                                 value={analysisForm.preferences.program1 || ''}
-                                onChange={(e) => updateAnalysisField('preferences', 'program1', e.target.value)}
+                                onChange={(e) => {
+                                    updateAnalysisField('preferences', 'program1', e.target.value);
+                                    if (!e.target.value) updateAnalysisField('preferences', 'program1Note', '');
+                                }}
                                 className={`w-full px-3 py-2.5 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all ${
                                     (!analysisForm.preferences.program1Category || analysisForm.preferences.program1Category === 'kararsiz')
                                     ? 'bg-slate-100 border-slate-200 text-slate-400'
@@ -1813,6 +1833,17 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 }
                             </select>
                         </div>
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">1. Tercih Ek Not</label>
+                            <textarea
+                                value={analysisForm.preferences.program1Note || ''}
+                                onChange={(e) => updateAnalysisField('preferences', 'program1Note', e.target.value)}
+                                disabled={!analysisForm.preferences.program1}
+                                rows={3}
+                                className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                placeholder="1. bölüm tercihi için ek not..."
+                            />
+                        </div>
                     </div>
 
                     {/* Choice 2 */}
@@ -1824,11 +1855,11 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 onChange={(e) => {
                                     updateAnalysisField('preferences', 'program2Category', e.target.value);
                                     updateAnalysisField('preferences', 'program2', '');
+                                    updateAnalysisField('preferences', 'program2Note', '');
                                 }}
                                 className="w-full px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium"
                             >
                                 <option value="">Önce Ana Bölüm Seçiniz</option>
-                                <option value="kararsiz">Bölüm konusunda kesin kararlı değilim</option>
                                 {allMainCategories.map(cat => (
                                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                                 ))}
@@ -1839,7 +1870,10 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                             <select
                                 disabled={!analysisForm.preferences.program2Category || analysisForm.preferences.program2Category === 'kararsiz'}
                                 value={analysisForm.preferences.program2 || ''}
-                                onChange={(e) => updateAnalysisField('preferences', 'program2', e.target.value)}
+                                onChange={(e) => {
+                                    updateAnalysisField('preferences', 'program2', e.target.value);
+                                    if (!e.target.value) updateAnalysisField('preferences', 'program2Note', '');
+                                }}
                                 className={`w-full px-3 py-2.5 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all ${
                                     (!analysisForm.preferences.program2Category || analysisForm.preferences.program2Category === 'kararsiz')
                                     ? 'bg-slate-100 border-slate-200 text-slate-400'
@@ -1855,43 +1889,63 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                                 }
                             </select>
                         </div>
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">2. Tercih Ek Not</label>
+                            <textarea
+                                value={analysisForm.preferences.program2Note || ''}
+                                onChange={(e) => updateAnalysisField('preferences', 'program2Note', e.target.value)}
+                                disabled={!analysisForm.preferences.program2}
+                                rows={3}
+                                className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                placeholder="2. bölüm tercihi için ek not..."
+                            />
+                        </div>
                     </div>
                 </div>
 
-                {/* Coaching Support Request */}
-                {(analysisForm.preferences.program1Category === "kararsiz" || analysisForm.preferences.program2Category === "kararsiz") && (
-                    <div className="bg-violet-50 p-6 rounded-xl border border-violet-200 shadow-sm relative overflow-hidden mt-6 animate-fade-in">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-violet-100 rounded-bl-full opacity-50 -mr-8 -mt-8"></div>
+                <div className="mt-4">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Bölüm Seçimi Durumu</p>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                        {([
+                            { value: 'undecided', label: 'Bölüm Konusunda Kararsız' },
+                            { value: 'exploring', label: 'Farklı Bölüm Fikirlerini Araştırabilir' },
+                            { value: 'decided', label: 'Bölüm Seçiminde Kararlı' },
+                        ] as const).map(option => (
+                            <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                    updateAnalysisField('preferences', 'departmentDecisionStatus', option.value);
+                                    updateAnalysisField('preferences', 'isUndecidedAboutDepartment', option.value === 'undecided');
+                                }}
+                                className={`rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
+                                    analysisForm.preferences.departmentDecisionStatus === option.value
+                                        ? option.value === 'decided'
+                                            ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-200'
+                                            : 'border-violet-600 bg-violet-600 text-white shadow-md shadow-violet-200'
+                                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                                }`}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {analysisForm.preferences.departmentDecisionStatus && (
+                    <div className={`p-6 rounded-xl border shadow-sm relative overflow-hidden mt-6 animate-fade-in ${analysisForm.preferences.departmentDecisionStatus === 'decided' ? 'border-blue-200 bg-blue-50' : 'border-violet-200 bg-violet-50'}`}>
+                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-full opacity-50 -mr-8 -mt-8 ${analysisForm.preferences.departmentDecisionStatus === 'decided' ? 'bg-blue-100' : 'bg-violet-100'}`}></div>
                         <div className="relative z-10 flex items-start gap-4">
-                            <div className="p-3 bg-white rounded-xl shadow-sm text-violet-600 mt-1">
+                            <div className={`p-3 bg-white rounded-xl shadow-sm mt-1 ${analysisForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-600' : 'text-violet-600'}`}>
                                 <Sparkles className="w-5 h-5" />
                             </div>
                             <div className="flex-1">
-                                <label className="block text-base font-semibold text-violet-900 mb-3 leading-tight">
-                                    Bölüm çalışması konusunda Koçluk desteği almak ister misiniz?
-                                </label>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => updateAnalysisField('preferences', 'wantsCoaching', true)}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                                            analysisForm.preferences.wantsCoaching === true
-                                            ? 'bg-violet-600 text-white shadow-md shadow-violet-200 scale-105'
-                                            : 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-100'
-                                        }`}
-                                    >
-                                        Evet, İstiyorum
-                                    </button>
-                                    <button
-                                        onClick={() => updateAnalysisField('preferences', 'wantsCoaching', false)}
-                                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                                            analysisForm.preferences.wantsCoaching === false
-                                            ? 'bg-slate-600 text-white'
-                                            : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-                                        }`}
-                                    >
-                                        Hayır
-                                    </button>
-                                </div>
+                                <p className={`text-xs font-black uppercase tracking-widest ${analysisForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Önerisi</p>
+                                <p className={`mt-2 text-sm leading-relaxed ${analysisForm.preferences.departmentDecisionStatus === 'decided' ? 'text-blue-900' : 'text-violet-900'}`}>
+                                    {analysisForm.preferences.departmentDecisionStatus === 'decided'
+                                        ? 'Bölüm tercihleri konusunda kararlı olman harika, Yol haritamızı bu doğrultuda belirleyeceğiz. Bölümler konusunda fikir değiştirmen halinde mutlaka bize haber vermelisin. Yol haritanı ona göre güncelleyebiliriz.'
+                                        : 'Başvuru sürecinde en önemli karar eğitim alacağın bölüme karar vermektir. Eğitim Koçluğu Desteği alarak başvuru yapacağın bölümlere karar verebilirsin.'}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -1902,7 +1956,7 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                 <h4 className="text-sm font-semibold text-slate-700 mb-3">Ülke Tercihleri</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i}>
+                        <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                             <label className="block text-sm text-slate-600 mb-1">{i}. Ülke</label>
                             <select
                                 value={(analysisForm.preferences as any)[`country${i}`] || ''}
@@ -1915,16 +1969,15 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                         </div>
                     ))}
                 </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <h4 className="text-sm font-semibold text-slate-700 mb-3">Tercih Notları</h4>
-                <textarea
-                    value={analysisForm.preferences.notes || ''}
-                    onChange={(e) => updateAnalysisField('preferences', 'notes', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm min-h-[80px]"
-                    placeholder="Tercihlere dair ek notlar..."
-                />
+                <div className="mt-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Ülke Tercihi Notu</label>
+                    <textarea
+                        value={analysisForm.preferences.countryPreferenceNote || ''}
+                        onChange={(e) => updateAnalysisField('preferences', 'countryPreferenceNote', e.target.value)}
+                        className="min-h-[90px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        placeholder="Ülke tercihleriyle ilgili genel not..."
+                    />
+                </div>
             </div>
         </div>
     );
@@ -2378,11 +2431,12 @@ const StudentList: React.FC<StudentListProps> = ({ onSelectStudent, initialStage
                     </button>
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 px-4 py-3 bg-white text-slate-700 rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 font-medium shadow-sm"
+                        disabled={isImportingExcel}
+                        className="flex items-center gap-2 px-4 py-3 bg-white text-slate-700 rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                         title="Excel Yükle"
                     >
-                        <Upload className="w-5 h-5 text-indigo-600" />
-                        <span className="hidden sm:inline">Excel Yükle</span>
+                        {isImportingExcel ? <Loader2 className="w-5 h-5 animate-spin text-indigo-600" /> : <Upload className="w-5 h-5 text-indigo-600" />}
+                        <span className="hidden sm:inline">{isImportingExcel ? 'Yükleniyor...' : 'Excel Yükle'}</span>
                     </button>
                     <button
                         onClick={openNewStudentModal}

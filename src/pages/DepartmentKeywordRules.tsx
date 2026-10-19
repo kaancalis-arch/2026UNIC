@@ -1,7 +1,8 @@
-import React, { FormEvent, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Edit2, Loader2, Plus, RefreshCw, Search, TestTube2, Trash2, X, Zap } from 'lucide-react';
+import React, { FormEvent, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Download, Edit2, Loader2, Plus, RefreshCw, Search, TestTube2, Trash2, Upload, X, Zap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabaseClient';
+import { containsMatchPhrase } from '../lib/departmentMatching';
 
 type DepartmentKeywordRule = {
   id: string;
@@ -30,6 +31,37 @@ type RuleForm = {
   notes: string;
 };
 
+type ImportReportStatus = 'created' | 'updated' | 'unchanged' | 'failed';
+
+type ImportReportEntry = {
+  rowNumber: number;
+  departmentName: string;
+  previousValue: string;
+  nextValue: string;
+  status: ImportReportStatus;
+  error?: string;
+};
+
+type ImportReport = {
+  createdAt: string;
+  fileName: string;
+  entries: ImportReportEntry[];
+};
+
+const IMPORT_STATUS_LABELS: Record<ImportReportStatus, string> = {
+  created: 'Eklendi',
+  updated: 'Güncellendi',
+  unchanged: 'Değişmedi',
+  failed: 'Başarısız',
+};
+
+const IMPORT_STATUS_STYLES: Record<ImportReportStatus, string> = {
+  created: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  updated: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  unchanged: 'border-slate-200 bg-slate-50 text-slate-600',
+  failed: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
 const emptyForm: RuleForm = {
   keyword: '',
   matched_department: '',
@@ -43,7 +75,7 @@ const emptyForm: RuleForm = {
 };
 
 const parseCommaSeparated = (value: string) => value
-  .split(',')
+  .split(/[,;/]/)
   .map((item) => item.trim())
   .filter(Boolean);
 
@@ -55,6 +87,32 @@ const formatDate = (value: string | null) => {
   return new Date(value).toLocaleString('tr-TR');
 };
 
+const normalize = (value: string) => value.trim().toLocaleLowerCase('tr-TR');
+
+const getExcelCell = (row: Record<string, unknown>, aliases: string[]) => {
+  const normalizedAliases = aliases.map(normalize);
+  const key = Object.keys(row).find((column) => normalizedAliases.includes(normalize(column)));
+  return key === undefined ? undefined : row[key];
+};
+
+const parseExcelBoolean = (value: unknown, fallback: boolean) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+
+  return ['evet', 'true', '1', 'aktif'].includes(normalize(String(value)));
+};
+
+const formatRuleSummary = (rule: Pick<DepartmentKeywordRule, 'keyword' | 'matched_department' | 'major_keywords' | 'required_match_keywords' | 'priority' | 'is_active' | 'notes' | 'rule_notes'>) => [
+  `Keyword: ${rule.keyword || '-'}`,
+  `Bölüm: ${rule.matched_department || '-'}`,
+  `Major: ${(rule.major_keywords || []).join(', ') || '-'}`,
+  `Zorunlu: ${(rule.required_match_keywords || []).join(', ') || '-'}`,
+  `Öncelik: ${rule.priority ?? 100}`,
+  `Durum: ${(rule.is_active ?? true) ? 'Aktif' : 'Pasif'}`,
+  `Not: ${rule.notes || '-'}`,
+  `Notlar: ${rule.rule_notes || '-'}`,
+].join('\n');
+
 const DepartmentKeywordRules: React.FC = () => {
   const [rules, setRules] = useState<DepartmentKeywordRule[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,10 +120,13 @@ const DepartmentKeywordRules: React.FC = () => {
   const [testMatches, setTestMatches] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [message, setMessage] = useState('');
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<DepartmentKeywordRule | null>(null);
   const [form, setForm] = useState<RuleForm>(emptyForm);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredRules = rules.filter((rule) => {
     const search = searchTerm.trim().toLocaleLowerCase('tr');
@@ -242,8 +303,134 @@ const DepartmentKeywordRules: React.FC = () => {
     XLSX.writeFile(workbook, `UNIC_Bolum_Eslesme_Kurallari_${Date.now()}.xlsx`);
   };
 
+  const importRules = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("Excel'deki bölüm eşleşme kuralları mevcut verilerle karşılaştırılarak güncellenecek. Devam edilsin mi?")) {
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      setIsImporting(true);
+      setMessage('');
+
+      try {
+        const workbook = XLSX.read(new Uint8Array(loadEvent.target?.result as ArrayBuffer), { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+        const knownRules = new Map(rules.map((rule) => [normalize(rule.department_name || ''), rule]));
+        const entries: ImportReportEntry[] = [];
+
+        for (const [index, row] of rows.entries()) {
+          const rowNumber = index + 2;
+          const departmentName = String(getExcelCell(row, ['Bölüm Adı', 'Department Name', 'department_name']) || '').trim();
+
+          if (!departmentName) {
+            entries.push({
+              rowNumber,
+              departmentName: '-',
+              previousValue: '-',
+              nextValue: '-',
+              status: 'failed',
+              error: 'Bölüm Adı boş olamaz.',
+            });
+            continue;
+          }
+
+          const existing = knownRules.get(normalize(departmentName));
+          const majorCell = getExcelCell(row, ['Major Keywords', 'major_keywords']);
+          const requiredCell = getExcelCell(row, ['Zorunlu Eşleşme Kelimeleri', 'Required Match Keywords', 'required_match_keywords']);
+          const priorityCell = getExcelCell(row, ['Öncelik', 'Priority', 'priority']);
+          const parsedPriority = Number(priorityCell);
+          const majorKeywords = majorCell === undefined ? (existing?.major_keywords || []) : parseCommaSeparated(String(majorCell));
+          const requiredMatchKeywords = requiredCell === undefined ? (existing?.required_match_keywords || []) : parseCommaSeparated(String(requiredCell));
+          const keywordCell = getExcelCell(row, ['Keyword', 'keyword']);
+          const matchedDepartmentCell = getExcelCell(row, ['Bölüm', 'Matched Department', 'matched_department']);
+          const notesCell = getExcelCell(row, ['Not', 'Notes', 'notes']);
+          const ruleNotesCell = getExcelCell(row, ['Notlar', 'Rule Notes', 'rule_notes']);
+          const activeCell = getExcelCell(row, ['Aktif', 'Active', 'is_active']);
+          const payload = {
+            keyword: String(keywordCell ?? existing?.keyword ?? '').trim() || majorKeywords[0] || requiredMatchKeywords[0] || departmentName,
+            matched_department: String(matchedDepartmentCell ?? existing?.matched_department ?? '').trim() || departmentName,
+            department_name: departmentName,
+            major_keywords: majorKeywords,
+            required_match_keywords: requiredMatchKeywords,
+            rule_notes: ruleNotesCell === undefined ? (existing?.rule_notes || null) : String(ruleNotesCell).trim() || null,
+            priority: priorityCell === undefined || !Number.isFinite(parsedPriority) ? (existing?.priority ?? 100) : parsedPriority,
+            is_active: parseExcelBoolean(activeCell, existing?.is_active ?? true),
+            notes: notesCell === undefined ? (existing?.notes || null) : String(notesCell).trim() || null,
+            updated_at: new Date().toISOString(),
+          };
+          const previousValue = existing ? formatRuleSummary(existing) : '-';
+          const nextValue = formatRuleSummary(payload);
+
+          try {
+            if (existing && previousValue === nextValue) {
+              entries.push({ rowNumber, departmentName, previousValue, nextValue, status: 'unchanged' });
+              continue;
+            }
+
+            const { data, error } = existing
+              ? await supabase.from('department_keyword_rules').update(payload).eq('id', existing.id).select().single()
+              : await supabase.from('department_keyword_rules').insert(payload).select().single();
+
+            if (error) throw error;
+
+            knownRules.set(normalize(departmentName), data as DepartmentKeywordRule);
+            entries.push({
+              rowNumber,
+              departmentName,
+              previousValue,
+              nextValue,
+              status: existing ? 'updated' : 'created',
+            });
+          } catch (error) {
+            console.error('Department keyword rule row import failed', row, error);
+            entries.push({
+              rowNumber,
+              departmentName,
+              previousValue,
+              nextValue,
+              status: 'failed',
+              error: error instanceof Error ? error.message : 'Satır güncellenemedi.',
+            });
+          }
+        }
+
+        setImportReport({ createdAt: new Date().toISOString(), fileName: file.name, entries });
+        await loadRules();
+        setMessage(`${entries.filter((entry) => entry.status === 'updated').length} kural güncellendi, ${entries.filter((entry) => entry.status === 'created').length} kural eklendi.`);
+      } catch (error) {
+        console.error('Department keyword rules Excel import failed', error);
+        setMessage(error instanceof Error ? error.message : 'Excel dosyası okunamadı.');
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const exportImportReport = () => {
+    if (!importReport) return;
+
+    const worksheet = XLSX.utils.json_to_sheet(importReport.entries.map((entry) => ({
+      'Satır': entry.rowNumber,
+      'Bölüm Adı': entry.departmentName,
+      'Önceki': entry.previousValue,
+      'Yeni': entry.nextValue,
+      'Durum': IMPORT_STATUS_LABELS[entry.status],
+      'Hata': entry.error || '',
+    })));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Güncelleme Raporu');
+    XLSX.writeFile(workbook, `bolum_eslesme_kurallari_guncelleme_raporu_${new Date(importReport.createdAt).toISOString().split('T')[0]}.xlsx`);
+  };
+
   const testRules = () => {
-    const normalizedProgramName = testProgramName.toLocaleLowerCase('tr');
     const matchedDepartments = new Set<string>();
 
     rules
@@ -256,7 +443,7 @@ const DepartmentKeywordRules: React.FC = () => {
           ...(rule.required_match_keywords || []),
         ];
 
-        if (ruleKeywords.some((keyword) => normalizedProgramName.includes(keyword.toLocaleLowerCase('tr')))) {
+        if (ruleKeywords.some((keyword) => containsMatchPhrase(testProgramName, keyword))) {
           matchedDepartments.add(rule.department_name || rule.matched_department);
         }
       });
@@ -288,6 +475,23 @@ const DepartmentKeywordRules: React.FC = () => {
             >
               <Plus className="h-4 w-4" />
               Yeni Kural Ekle
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={importRules}
+              disabled={isImporting}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300/30 bg-blue-500/20 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {isImporting ? 'Yükleniyor...' : 'Excel Yükle'}
             </button>
             <button
               type="button"
@@ -594,6 +798,80 @@ const DepartmentKeywordRules: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {importReport && (
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16 backdrop-blur-sm">
+          <div className="mb-10 flex max-h-[calc(100vh-100px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-6 py-5">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Bölüm Eşleşme Kuralları Güncelleme Raporu</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  {new Date(importReport.createdAt).toLocaleString('tr-TR')} tarihinde {importReport.fileName} dosyasından oluşturuldu.
+                </p>
+              </div>
+              <button type="button" onClick={() => setImportReport(null)} className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-b border-slate-100 p-5 sm:grid-cols-5">
+              {[
+                { label: 'Taranan', value: importReport.entries.length, style: 'bg-indigo-50 text-indigo-700' },
+                { label: 'Eklendi', value: importReport.entries.filter((entry) => entry.status === 'created').length, style: 'bg-blue-50 text-blue-700' },
+                { label: 'Güncellendi', value: importReport.entries.filter((entry) => entry.status === 'updated').length, style: 'bg-emerald-50 text-emerald-700' },
+                { label: 'Değişmedi', value: importReport.entries.filter((entry) => entry.status === 'unchanged').length, style: 'bg-slate-100 text-slate-700' },
+                { label: 'Başarısız', value: importReport.entries.filter((entry) => entry.status === 'failed').length, style: 'bg-rose-50 text-rose-700' },
+              ].map((item) => (
+                <div key={item.label} className={`rounded-xl px-4 py-3 ${item.style}`}>
+                  <div className="text-2xl font-black">{item.value}</div>
+                  <div className="text-[10px] font-black uppercase tracking-wider">{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              <table className="w-full min-w-[900px] text-left">
+                <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <th className="px-5 py-3">Satır / Bölüm</th>
+                    <th className="px-5 py-3">Önceki</th>
+                    <th className="px-5 py-3">Yeni</th>
+                    <th className="px-5 py-3">Durum</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {importReport.entries.map((entry) => (
+                    <tr key={`${entry.rowNumber}-${entry.departmentName}`} className="align-top hover:bg-slate-50/60">
+                      <td className="px-5 py-4">
+                        <div className="text-xs font-semibold text-slate-500">Excel satırı {entry.rowNumber}</div>
+                        <div className="mt-1 text-sm font-bold text-slate-800">{entry.departmentName}</div>
+                        {entry.error && <div className="mt-1 text-xs text-rose-600">{entry.error}</div>}
+                      </td>
+                      <td className="whitespace-pre-line px-5 py-4 text-xs leading-5 text-slate-600">{entry.previousValue}</td>
+                      <td className="whitespace-pre-line px-5 py-4 text-xs font-semibold leading-5 text-slate-700">{entry.nextValue}</td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex rounded-lg border px-2 py-1 text-[10px] font-black ${IMPORT_STATUS_STYLES[entry.status]}`}>
+                          {IMPORT_STATUS_LABELS[entry.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
+              <p className="text-xs text-slate-500">Her Excel satırının önceki ve yeni değerleri karşılaştırmalı olarak gösterilir.</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={exportImportReport} className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100">
+                  <Download className="h-4 w-4" /> Raporu Excel İndir
+                </button>
+                <button type="button" onClick={() => setImportReport(null)} className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-900">Kapat</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

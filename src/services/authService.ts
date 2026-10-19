@@ -117,7 +117,11 @@ export async function signIn(email: string, password: string): Promise<SignInRes
 
   if (error || !data.session || !data.user) {
     if (error) console.error('Supabase giriş işlemi reddedildi.', error);
-    throw new AuthServiceError('INVALID_CREDENTIALS');
+    const invalidCredentials = error?.code === 'invalid_credentials'
+      || /invalid login credentials/i.test(error?.message ?? '');
+    throw new AuthServiceError(invalidCredentials ? 'INVALID_CREDENTIALS' : 'AUTH_ERROR', {
+      cause: error
+    });
   }
 
   try {

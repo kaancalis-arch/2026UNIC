@@ -12,6 +12,9 @@ export const getFlagEmoji = (countryName: string): string => {
     "İrlanda": "🇮🇪",
     "Polonya": "🇵🇱",
     "Macaristan": "🇭🇺",
+    "İspanya": "🇪🇸",
+    "İsviçre": "🇨🇭",
+    "Belçika": "🇧🇪",
     "İngiltere": "🇬🇧",
     "Amerika": "🇺🇸",
     
@@ -26,7 +29,10 @@ export const getFlagEmoji = (countryName: string): string => {
     "Australia": "🇦🇺",
     "Ireland": "🇮🇪",
     "Poland": "🇵🇱",
-    "Hungary": "🇭🇺"
+    "Hungary": "🇭🇺",
+    "Spain": "🇪🇸",
+    "Switzerland": "🇨🇭",
+    "Belgium": "🇧🇪"
   };
   
   // Clean string and try to find flag
@@ -47,6 +53,9 @@ export const getCountryCode = (countryName: string): string => {
     "İrlanda": "ie",
     "Polonya": "pl",
     "Macaristan": "hu",
+    "İspanya": "es",
+    "İsviçre": "ch",
+    "Belçika": "be",
     "İngiltere": "gb",
     "Amerika": "us",
     
@@ -61,7 +70,10 @@ export const getCountryCode = (countryName: string): string => {
     "Australia": "au",
     "Ireland": "ie",
     "Poland": "pl",
-    "Hungary": "hu"
+    "Hungary": "hu",
+    "Spain": "es",
+    "Switzerland": "ch",
+    "Belgium": "be"
   };
   
   return codes[countryName.trim()] || "";

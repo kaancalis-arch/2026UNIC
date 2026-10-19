@@ -3,22 +3,25 @@ import { motion } from 'framer-motion';
 import { 
     ArrowLeft, Globe, BookOpen, Star, ExternalLink, 
     MapPin, Edit2, Trash2, Plus, Save, X, GraduationCap,
-    Link as LinkIcon, Loader2, Info, Upload, Download, Search
+    Link as LinkIcon, Loader2, Info, Upload, Download, Search, ChevronRight
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { UniversityData, UniversityProgram } from '../types';
+import { UniversityData, UniversityProgram, UniversityProgramData } from '../types';
 import { universityService } from '../services/universityService';
+import { universityProgramService } from '../services/universityProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { universityTypeService, UniversityType } from '../services/universityTypeService';
 import { MainDegreeData } from '../types';
 import { formatTitleCase } from '../lib/utils';
+import { getExcelUniversityName, parseUniversityProgramExcelRow, toUniversityProgramExcelRow, UNIVERSITY_PROGRAM_EXCEL_HEADERS } from '../lib/universityProgramExcel';
 
 interface UniversityDetailProps {
     university: UniversityData;
     onBack: () => void;
+    onUniversityUpdated?: (university: UniversityData) => void;
 }
 
-const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack }) => {
+const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack, onUniversityUpdated }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedUniversity, setEditedUniversity] = useState<UniversityData>(university);
     const [mainDegrees, setMainDegrees] = useState<MainDegreeData[]>([]);
@@ -26,7 +29,11 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     const [universityTypes, setUniversityTypes] = useState<UniversityType[]>([]);
     const [programSearchTerm, setProgramSearchTerm] = useState('');
     const [selectedProgramTag, setSelectedProgramTag] = useState('');
+    const [excelPrograms, setExcelPrograms] = useState<UniversityProgramData[]>([]);
+    const [isImportingPrograms, setIsImportingPrograms] = useState(false);
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const logoInputRef = useRef<HTMLInputElement>(null);
 
     const normalizeFilterValue = (value?: string) => (value || '').toLocaleLowerCase('tr-TR').trim();
     const programTagOptions = Array.from(new Set<string>((editedUniversity.programs || []).flatMap(program => [
@@ -46,67 +53,94 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     });
 
     const exportProgramsToExcel = () => {
-        if (!editedUniversity.programs || editedUniversity.programs.length === 0) {
-            alert('Excel\'e aktarılacak bölüm bulunmuyor.');
-            return;
-        }
-        const data = editedUniversity.programs.map(p => ({
-            'Bölüm Adı': p.name || '',
-            'Tür': p.type || '',
-            'Puan Türü': p.groupNames?.join(', ') || '',
-            'Link': p.link || '',
-            'Ücret Aralığı': p.tuitionRange || '',
-            'Kampüs': p.campusLocation || '',
-            'Başvuru Kriterleri': p.applicationCriteria || '',
-            'Dil Puanı': p.languageScore || '',
-            'Notlar': p.notes || ''
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
+        const data = excelPrograms.map(toUniversityProgramExcelRow);
+        const ws = XLSX.utils.json_to_sheet(data, { header: UNIVERSITY_PROGRAM_EXCEL_HEADERS });
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Bölümler');
-        XLSX.writeFile(wb, `${editedUniversity.name}_Bölümler_${Date.now()}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, 'Üniversite Bölümleri');
+        XLSX.writeFile(wb, `${editedUniversity.name}_universite_bolumleri_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     const importProgramsFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!window.confirm("Excel'deki veriler seçili üniversiteye yüklenecek. Devam edilsin mi?")) {
+            e.target.value = '';
+            return;
+        }
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
+            setIsImportingPrograms(true);
             try {
                 const data = new Uint8Array(event.target?.result as ArrayBuffer);
                 const workbook = XLSX.read(data, { type: 'array' });
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet) as any[];
-                const newPrograms: UniversityProgram[] = jsonData.map((row, idx) => ({
-                    id: `prog-${Date.now()}-${idx}`,
-                    type: row['Tür'] || 'Bachelor',
-                    name: row['Bölüm Adı'] || '',
-                    groupNames: row['Puan Türü'] ? row['Puan Türü'].split(',').map((s: string) => s.trim()) : [],
-                    link: row['Link'] || '',
-                    tuitionRange: row['Ücret Aralığı'] || '',
-                    campusLocation: row['Kampüs'] || '',
-                    applicationCriteria: row['Başvuru Kriterleri'] || '',
-                    languageScore: row['Dil Puanı'] || '',
-                    notes: row['Notlar'] || ''
-                }));
-                setEditedUniversity(prev => ({
-                    ...prev,
-                    programs: [...(prev.programs || []), ...newPrograms]
-                }));
-                alert(`${newPrograms.length} bölüm import edildi.`);
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet) as Record<string, unknown>[];
+                const currentProgramIds = new Set(excelPrograms.map(program => program.id));
+                let successCount = 0;
+                let skippedCount = 0;
+
+                for (const [index, row] of jsonData.entries()) {
+                    const rowUniversityName = getExcelUniversityName(row);
+                    const rowId = String(row['ID'] || '');
+                    const belongsToUniversity = !rowUniversityName || rowUniversityName.localeCompare(university.name, 'tr-TR', { sensitivity: 'base' }) === 0;
+                    const hasSafeId = !rowId || currentProgramIds.has(rowId);
+                    if (!belongsToUniversity || !hasSafeId) {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const program = parseUniversityProgramExcelRow(
+                        row,
+                        university,
+                        mainDegrees,
+                        `new-${Date.now()}-${index}`,
+                    );
+                    await universityProgramService.upsert(program);
+                    successCount++;
+                }
+
+                await loadUniversityPrograms();
+                alert(`${successCount} bölüm yüklendi${skippedCount ? `, ${skippedCount} satır atlandı` : ''}.`);
             } catch (error) {
                 console.error('Excel import error', error);
                 alert('Excel dosyası okunurken hata oluştu.');
+            } finally {
+                setIsImportingPrograms(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
             }
         };
         reader.readAsArrayBuffer(file);
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     React.useEffect(() => {
         loadMainDegrees();
         loadUniversityTypes();
+        loadUniversityPrograms();
     }, []);
+
+    const loadUniversityPrograms = async () => {
+        try {
+            const programs = (await universityProgramService.getAll()).filter(program => program.universityId === university.id);
+            setExcelPrograms(programs);
+            setEditedUniversity(prev => ({
+                ...prev,
+                programs: programs.map(program => ({
+                    id: program.id,
+                    type: program.type,
+                    name: program.name,
+                    groupNames: [program.mainDegreeName, program.mainDegree2Name, program.mainDegree3Name].filter((name): name is string => Boolean(name)),
+                    link: program.url || '',
+                    tuitionRange: program.tuitionRange || '',
+                    campusLocation: '',
+                    applicationCriteria: '',
+                    languageScore: '',
+                    notes: '',
+                })),
+            }));
+        } catch (error) {
+            console.error('Failed to load university programs', error);
+        }
+    };
 
     const loadMainDegrees = async () => {
         try {
@@ -134,13 +168,38 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            await universityService.upsert(editedUniversity);
+            const savedUniversity = await universityService.upsert(editedUniversity);
+            setEditedUniversity(savedUniversity);
+            onUniversityUpdated?.(savedUniversity);
             setIsEditing(false);
         } catch (error) {
             console.error('Failed to save university', error);
             alert('Kaydedilirken bir hata oluştu.');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            alert('Lütfen bir görsel dosyası seçin.');
+            event.target.value = '';
+            return;
+        }
+
+        setIsUploadingLogo(true);
+        try {
+            const logoUrl = await universityService.uploadLogo(file);
+            setEditedUniversity(prev => ({ ...prev, logo: logoUrl }));
+        } catch (error) {
+            console.error('Logo upload failed', error);
+            alert(error instanceof Error ? error.message : 'Logo yüklenemedi.');
+        } finally {
+            setIsUploadingLogo(false);
+            event.target.value = '';
         }
     };
 
@@ -193,7 +252,7 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800">{university.name}</h1>
+                        <h1 className="text-2xl font-bold text-slate-800">{editedUniversity.name}</h1>
                         <p className="text-sm text-slate-500">Üniversite Detayları ve Bölüm Yönetimi</p>
                     </div>
                 </div>
@@ -230,17 +289,35 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
             {/* University Info Card */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                 <div className="flex items-start gap-6">
-                    <div className="w-24 h-24 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                        {university.logo ? (
-                            <img src={university.logo} alt={university.name} className="w-full h-full object-contain" />
+                    <button
+                        type="button"
+                        onClick={() => isEditing && !isUploadingLogo && logoInputRef.current?.click()}
+                        disabled={!isEditing || isUploadingLogo}
+                        className="group relative w-24 h-24 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 disabled:cursor-default enabled:hover:border-indigo-300 enabled:hover:ring-4 enabled:hover:ring-indigo-50 transition"
+                        title={isEditing ? 'Logo yüklemek için tıklayın' : undefined}
+                    >
+                        {editedUniversity.logo ? (
+                            <img src={editedUniversity.logo} alt={editedUniversity.name} className="w-full h-full object-contain" />
                         ) : (
                             <img 
-                                src={`https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(university.name)}&backgroundColor=f1f5f9`} 
+                                src={`https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(editedUniversity.name)}&backgroundColor=f1f5f9`}
                                 alt="" 
                                 className="w-full h-full object-cover opacity-60" 
                             />
                         )}
-                    </div>
+                        {isEditing && (
+                            <span className={`absolute inset-0 flex items-center justify-center bg-slate-900/55 text-white transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${isUploadingLogo ? 'opacity-100' : 'opacity-0'}`}>
+                                {isUploadingLogo ? <Loader2 className="w-6 h-6 animate-spin" /> : <Upload className="w-6 h-6" />}
+                            </span>
+                        )}
+                    </button>
+                    <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                    />
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {isEditing ? (
                             <>
@@ -253,26 +330,10 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Logo URL</label>
-                                    <input 
-                                        value={editedUniversity.logo}
-                                        onChange={(e) => updateField('logo', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                    />
-                                </div>
-                                <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Website</label>
                                     <input 
                                         value={editedUniversity.websiteUrl}
                                         onChange={(e) => updateField('websiteUrl', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Departments URL</label>
-                                    <input 
-                                        value={editedUniversity.departmentsUrl}
-                                        onChange={(e) => updateField('departmentsUrl', e.target.value)}
                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                     />
                                 </div>
@@ -295,12 +356,42 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Üniversite Tipleri</label>
-                                    <input 
-                                        value={editedUniversity.universityTypes?.join(', ') || ''}
-                                        onChange={(e) => updateField('universityTypes', e.target.value.split(',').map(s => s.trim()))}
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                        placeholder="Ivy League, Russell Group"
-                                    />
+                                    <details className="group relative">
+                                        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 marker:hidden">
+                                            <span className="truncate">
+                                                {editedUniversity.universityTypes?.length
+                                                    ? editedUniversity.universityTypes.join(', ')
+                                                    : 'Üniversite tipi seçin'}
+                                            </span>
+                                            <ChevronRight className="ml-2 h-4 w-4 shrink-0 rotate-90 text-slate-400 transition-transform group-open:-rotate-90" />
+                                        </summary>
+                                        <div className="absolute left-0 right-0 z-20 mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                                            {universityTypes.length > 0 ? universityTypes.map(type => {
+                                                const isSelected = editedUniversity.universityTypes?.includes(type.name) || false;
+                                                return (
+                                                    <label key={type.id} className="flex cursor-pointer items-start gap-2 rounded-lg p-2 hover:bg-indigo-50">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={(event) => updateField(
+                                                                'universityTypes',
+                                                                event.target.checked
+                                                                    ? [...(editedUniversity.universityTypes || []), type.name]
+                                                                    : (editedUniversity.universityTypes || []).filter(item => item !== type.name),
+                                                            )}
+                                                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        <span>
+                                                            <span className="block text-sm font-medium text-slate-700">{type.name}</span>
+                                                            {type.description && <span className="block text-xs text-slate-400">{type.description}</span>}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            }) : (
+                                                <p className="p-2 text-xs text-slate-400">Tanımlı üniversite tipi bulunamadı.</p>
+                                            )}
+                                        </div>
+                                    </details>
                                 </div>
                             </>
                         ) : (
@@ -309,20 +400,9 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     <Globe className="w-5 h-5 text-slate-400" />
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase">Website</p>
-                                        {university.websiteUrl ? (
-                                            <a href={university.websiteUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
-                                                {university.websiteUrl}
-                                            </a>
-                                        ) : <span className="text-sm text-slate-400">-</span>}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <BookOpen className="w-5 h-5 text-slate-400" />
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-400 uppercase">Departments</p>
-                                        {university.departmentsUrl ? (
-                                            <a href={university.departmentsUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
-                                                {university.departmentsUrl}
+                                        {editedUniversity.websiteUrl ? (
+                                            <a href={editedUniversity.websiteUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
+                                                {editedUniversity.websiteUrl}
                                             </a>
                                         ) : <span className="text-sm text-slate-400">-</span>}
                                     </div>
@@ -331,8 +411,8 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     <Star className="w-5 h-5 text-slate-400" />
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase">Ranking</p>
-                                        {university.rankingUrl ? (
-                                            <a href={university.rankingUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
+                                        {editedUniversity.rankingUrl ? (
+                                            <a href={editedUniversity.rankingUrl} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">
                                                 View Rankings
                                             </a>
                                         ) : <span className="text-sm text-slate-400">-</span>}
@@ -343,7 +423,7 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase">Ülkeler</p>
                                         <div className="flex flex-wrap gap-1 mt-1">
-                                            {(university.countries || []).map(c => (
+                                            {(editedUniversity.countries || []).map(c => (
                                                 <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs font-medium">
                                                     {c}
                                                 </span>
@@ -356,7 +436,7 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase">Üniversite Tipleri</p>
                                         <div className="flex flex-wrap gap-1 mt-1">
-                                            {(university.universityTypes || []).map((type, idx) => (
+                                            {(editedUniversity.universityTypes || []).map((type, idx) => (
                                                 <div key={idx} className="group relative">
                                                     <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium cursor-help">
                                                         {type}
@@ -370,7 +450,7 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                                                     )}
                                                 </div>
                                             ))}
-                                            {(university.universityTypes || []).length === 0 && (
+                                            {(editedUniversity.universityTypes || []).length === 0 && (
                                                 <span className="text-sm text-slate-400">-</span>
                                             )}
                                         </div>
@@ -390,15 +470,13 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                         Bölümler ({filteredPrograms.length}/{editedUniversity.programs?.length || 0})
                     </h2>
                     <div className="flex items-center gap-2">
-                        {(editedUniversity.programs && editedUniversity.programs.length > 0) && (
-                            <button 
-                                onClick={exportProgramsToExcel}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-                            >
-                                <Download className="w-4 h-4" />
-                                Excel İndir
-                            </button>
-                        )}
+                        <button
+                            onClick={exportProgramsToExcel}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                        >
+                            <Download className="w-4 h-4" />
+                            Excel İndir
+                        </button>
                         <input
                             type="file"
                             ref={fileInputRef}
@@ -408,10 +486,11 @@ const UniversityDetail: React.FC<UniversityDetailProps> = ({ university, onBack 
                         />
                         <button 
                             onClick={() => fileInputRef.current?.click()}
+                            disabled={isImportingPrograms}
                             className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
                         >
-                            <Upload className="w-4 h-4" />
-                            Excel Ekle
+                            {isImportingPrograms ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                            Excel Yükle
                         </button>
                         {isEditing && (
                             <button 

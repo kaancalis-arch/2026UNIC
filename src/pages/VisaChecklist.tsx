@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ClipboardCheck, CheckSquare, Square, Info, AlertCircle, Globe, Plus, MessageSquare, Edit2, Check, X, Trash2, MapPin, Building2, CreditCard, Clock, FileText, Link, ExternalLink, Download, Upload, ChevronDown } from 'lucide-react';
+import { ClipboardCheck, CheckSquare, Square, Info, AlertCircle, Globe, Plus, MessageSquare, Edit2, Check, X, Trash2, MapPin, Building2, CreditCard, Clock, FileText, Link, ExternalLink, Download, Upload, ChevronDown, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
 import { countryService } from '../services/countryService';
@@ -37,6 +37,7 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
   }, []);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
 
   const [visaInfo, setVisaInfo] = useState({
     institution: '',
@@ -255,6 +256,7 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
+      setIsImportingExcel(true);
       try {
         setIsLoading(true);
         const bstr = evt.target?.result;
@@ -313,6 +315,7 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
         alert('İçe aktarma hatası: ' + error.message);
       } finally {
         setIsLoading(false);
+        setIsImportingExcel(false);
         e.target.value = '';
       }
     };
@@ -466,8 +469,8 @@ const VisaChecklist: React.FC<VisaChecklistProps> = ({ currentUser }) => {
                     className={`flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-sm font-bold hover:bg-blue-100 cursor-pointer transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
                     title="Excel'den vize verisi yükle"
                   >
-                    <Upload className="w-4 h-4" />
-                    Excel Yükle
+                    {isImportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {isImportingExcel ? 'Yükleniyor...' : 'Excel Yükle'}
                   </label>
                 </div>
               </div>
