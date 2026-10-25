@@ -22,6 +22,7 @@ type CreateSystemUserPayload = {
   parent_user_id: string | null;
   status: 'active' | 'passive';
   avatar_url: string | null;
+  student_profile_id: string | null;
 };
 
 const payloadFields = new Set([
@@ -34,6 +35,7 @@ const payloadFields = new Set([
   'parent_user_id',
   'status',
   'avatar_url',
+  'student_profile_id',
 ]);
 
 Deno.serve(async (req) => {
@@ -66,10 +68,13 @@ Deno.serve(async (req) => {
     }
     if (actor.role === 'Şube Müdürü') {
       await assertBranchManagerCanCreate(admin, actor, payload);
+    } else {
+      await assertGlobalActorCanCreate(admin, actor, payload);
     }
 
     await validateBranch(admin, payload.branch_id);
     await validateUserHierarchy(admin, hierarchyCandidate('', payload));
+    await assertStudentProfileAvailable(admin, payload);
 
     const { data: existingProfile, error: existingError } = await admin
       .from('system_users')
@@ -108,6 +113,8 @@ Deno.serve(async (req) => {
       // The real Auth id makes the final self/cycle check authoritative.
       if (actor.role === 'Şube Müdürü') {
         await assertBranchManagerCanCreate(admin, actor, payload);
+      } else {
+        await assertGlobalActorCanCreate(admin, actor, payload);
       }
       await validateUserHierarchy(admin, hierarchyCandidate(authUserId, payload));
 
@@ -133,6 +140,17 @@ Deno.serve(async (req) => {
           throw new SafeError('EMAIL_ALREADY_EXISTS', 'Bu e-posta adresi zaten kayıtlı.', 409);
         }
         throw new SafeError('PROFILE_CREATE_FAILED', 'Kullanıcı profili oluşturulamadı.', 400);
+      }
+
+      if (payload.student_profile_id) {
+        const { data: linked, error: linkError } = await admin.rpc('link_student_user', {
+          p_student_id: payload.student_profile_id,
+          p_student_user_id: authUserId,
+        });
+        if (linkError || linked !== true) {
+          console.error('Öğrenci hesabı CRM profiline bağlanamadı:', linkError);
+          throw new SafeError('PROFILE_CREATE_FAILED', 'Öğrenci hesabı CRM profiline bağlanamadı.', 409);
+        }
       }
 
       return successResponse(profile, headers);
@@ -191,6 +209,7 @@ async function parsePayload(req: Request): Promise<CreateSystemUserPayload> {
   }
   validateNullableUuid(input.branch_id, 'Şube id');
   validateNullableUuid(input.parent_user_id, 'Üst kullanıcı id');
+  validateNullableUuid(input.student_profile_id, 'Öğrenci profil id');
   if (input.avatar_url !== undefined && input.avatar_url !== null && typeof input.avatar_url !== 'string') {
     throw new SafeError('VALIDATION_ERROR', 'Avatar URL metin olmalıdır.', 400);
   }
@@ -205,7 +224,14 @@ async function parsePayload(req: Request): Promise<CreateSystemUserPayload> {
     parent_user_id: (input.parent_user_id as string | null | undefined) ?? null,
     status: (input.status as 'active' | 'passive' | undefined) ?? 'active',
     avatar_url: typeof input.avatar_url === 'string' ? input.avatar_url.trim() || null : null,
+    student_profile_id: (input.student_profile_id as string | null | undefined) ?? null,
   };
+  if (payload.role === 'Öğrenci' && !payload.student_profile_id) {
+    throw new SafeError('VALIDATION_ERROR', 'Öğrenci hesabı için CRM öğrenci profili seçilmelidir.', 400);
+  }
+  if (payload.role !== 'Öğrenci' && payload.student_profile_id) {
+    throw new SafeError('VALIDATION_ERROR', 'CRM öğrenci profili yalnız Öğrenci rolüne bağlanabilir.', 400);
+  }
   const hierarchyError = validateHierarchyFields(hierarchyCandidate('', payload));
   if (hierarchyError) throw new SafeError('INVALID_HIERARCHY', hierarchyError, 400);
   return payload;
@@ -239,12 +265,71 @@ function isDuplicateEmailError(error: { code?: string; message?: string; status?
 async function rollbackCreatedAuthUser(admin: any, userId: string): Promise<boolean> {
   try {
     const { error } = await admin.auth.admin.deleteUser(userId);
-    if (!error) return true;
-    console.error('KRİTİK: Oluşturulan Auth kullanıcısı rollback ile silinemedi:', { userId, error });
-    return false;
+    if (error) {
+      console.error('KRİTİK: Oluşturulan Auth kullanıcısı rollback ile silinemedi:', { userId, error });
+      return false;
+    }
+    const { error: profileError } = await admin.from('system_users').delete().eq('id', userId);
+    if (profileError) {
+      console.error('KRİTİK: Auth rollback sonrası sistem kullanıcı profili temizlenemedi:', { userId, profileError });
+      return false;
+    }
+    return true;
   } catch (error) {
     console.error('KRİTİK: Auth kullanıcı rollback isteği tamamlanamadı:', { userId, error });
     return false;
+  }
+}
+
+async function assertGlobalActorCanCreate(
+  admin: any,
+  actor: { id: string; role: string },
+  payload: CreateSystemUserPayload,
+): Promise<void> {
+  if (!['Super Admin', 'Admin'].includes(actor.role)) return;
+  if (!payload.parent_user_id) {
+    throw new SafeError('FORBIDDEN', 'Yeni kullanıcı mevcut yönetim hiyerarşinizde bir üst hesaba bağlanmalıdır.', 403);
+  }
+
+  const visited = new Set<string>();
+  let currentId: string | null = payload.parent_user_id;
+  while (currentId) {
+    if (currentId === actor.id) return;
+    if (visited.has(currentId) || visited.size >= 64) break;
+    visited.add(currentId);
+    const { data: current, error } = await admin
+      .from('system_users')
+      .select('id, parent_user_id, status')
+      .eq('id', currentId)
+      .maybeSingle();
+    if (error) {
+      console.error('Kullanıcı oluşturma hiyerarşisi doğrulanamadı:', error);
+      throw new SafeError('INTERNAL_ERROR', 'Yönetim hiyerarşisi doğrulanamadı.', 500);
+    }
+    if (!current || current.status !== 'active') break;
+    currentId = current.parent_user_id;
+  }
+  throw new SafeError('FORBIDDEN', 'Yalnızca kendi aktif kullanıcı hiyerarşiniz altında hesap oluşturabilirsiniz.', 403);
+}
+
+async function assertStudentProfileAvailable(admin: any, payload: CreateSystemUserPayload): Promise<void> {
+  if (!payload.student_profile_id) return;
+  const { data: student, error } = await admin
+    .from('student_profiles')
+    .select('id, branch_id, counselor_id, student_user_id')
+    .eq('id', payload.student_profile_id)
+    .maybeSingle();
+  if (error) {
+    console.error('CRM öğrenci profili doğrulanamadı:', error);
+    throw new SafeError('INTERNAL_ERROR', 'CRM öğrenci profili doğrulanamadı.', 500);
+  }
+  if (!student) throw new SafeError('TARGET_NOT_FOUND', 'CRM öğrenci profili bulunamadı.', 404);
+  if (student.student_user_id) throw new SafeError('CONFLICT', 'CRM öğrenci profili zaten bir hesaba bağlı.', 409);
+  if (!payload.branch_id || student.branch_id !== payload.branch_id) {
+    throw new SafeError('INVALID_BRANCH', 'Öğrenci hesabı ve CRM profili aynı şubede olmalıdır.', 400);
+  }
+  if (!payload.parent_user_id || student.counselor_id !== payload.parent_user_id) {
+    throw new SafeError('INVALID_HIERARCHY', 'Öğrenci hesabı CRM profilinin sorumlu kullanıcısına bağlanmalıdır.', 400);
   }
 }
 

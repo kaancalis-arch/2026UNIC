@@ -61,8 +61,15 @@ export interface SystemUser {
   parent_user_id?: string;
   status: 'active' | 'passive';
   avatarUrl?: string;
+  page_permissions?: string[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface UniversitySearchFilters {
+  degreeId: string;
+  country: string;
+  budget: string;
 }
 
 export interface ParentInfo {
@@ -266,6 +273,7 @@ export interface Student {
   // Assignment (stored in the legacy student_profiles.counselor_id column)
   branchId?: string;
   assignedUserId?: string;
+  studentUserId?: string;
 
   // Stage Specific Data
   analyseStatus?: AnalyseStatus;

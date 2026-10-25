@@ -29,6 +29,8 @@ const EDGE_ERROR_MESSAGES: Record<string, string> = {
   SELF_UPDATE_RESTRICTED: 'Kendi hesabınızda bu değişikliği yapamazsınız.',
   SELF_DELETE_RESTRICTED: 'Kendi hesabınızı kalıcı olarak silemezsiniz.',
   EMAIL_ALREADY_EXISTS: 'Bu e-posta adresi zaten kullanılıyor.',
+  AUTH_CREATE_FAILED: 'Kullanıcının giriş hesabı oluşturulamadı.',
+  PROFILE_CREATE_FAILED: 'Kullanıcı profili oluşturulamadı.',
   DEPENDENT_RECORDS: 'Bu kullanıcıya bağlı kayıtlar var. Önce alt kullanıcı ve öğrenci sorumluluklarını devredin.',
   AUTH_DELETE_FAILED: 'Kullanıcının giriş hesabı silinemedi. Lütfen tekrar deneyin.',
   PROFILE_DELETE_FAILED: 'Kullanıcı profili silinemedi. Lütfen tekrar deneyin.',
@@ -68,7 +70,7 @@ const edgeErrorMessage = (code?: string): string =>
   (code && EDGE_ERROR_MESSAGES[code]) || EDGE_FALLBACK_MESSAGE;
 
 const edgeErrorMessageFromBody = (value: unknown): string | null => {
-  if (isEdgeErrorBody(value)) return edgeErrorMessage(value.code);
+  if (isEdgeErrorBody(value)) return EDGE_ERROR_MESSAGES[value.code] || value.error || EDGE_FALLBACK_MESSAGE;
   return null;
 };
 
@@ -180,24 +182,27 @@ export const systemService = {
       .filter(user => user.parent_user_id === parentUserId);
   },
 
-  async addSystemUserWithAuth(user: SystemUserPayload, password: string): Promise<SystemUser> {
+  async addSystemUserWithAuth(user: SystemUserPayload, password: string, studentProfileId?: string): Promise<SystemUser> {
     if (!supabase) throw new Error('Supabase is not initialized');
     await validateHierarchyWrite(undefined, user);
     const accessToken = await requireAccessToken();
 
+    const body: Record<string, unknown> = {
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone || null,
+      password,
+      role: user.role,
+      branch_id: user.branch_id || null,
+      parent_user_id: user.parent_user_id || null,
+      status: user.status,
+      avatar_url: user.avatarUrl || null
+    };
+    if (studentProfileId) body.student_profile_id = studentProfileId;
+
     const { data, error } = await supabase.functions.invoke('create-system-user', {
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: {
-        full_name: user.full_name,
-        email: user.email,
-        phone: user.phone || null,
-        password,
-        role: user.role,
-        branch_id: user.branch_id || null,
-        parent_user_id: user.parent_user_id || null,
-        status: user.status,
-        avatar_url: user.avatarUrl || null
-      }
+      body
     });
 
     if (error) await throwSafeEdgeError(error, data);
@@ -205,6 +210,29 @@ export const systemService = {
     if (!isEdgeSuccessBody(data)) throw new Error(EDGE_FALLBACK_MESSAGE);
 
     return mapSystemUser(data.user);
+  },
+
+  async uploadUserImage(file: File): Promise<string> {
+    if (!supabase) throw new Error('Supabase is not initialized');
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowedTypes.has(file.type)) throw new Error('Yalnız JPG, PNG veya WEBP formatında resim yükleyebilirsiniz.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Kullanıcı resmi en fazla 5 MB olabilir.');
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const actorId = sessionData.session?.user.id;
+    if (!actorId) throw new Error(SESSION_EXPIRED_MESSAGE);
+
+    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1];
+    const path = `${actorId}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage
+      .from('user-avatars')
+      .upload(path, file, { cacheControl: '3600', contentType: file.type, upsert: false });
+    if (error) {
+      console.error('Kullanıcı resmi yüklenemedi:', error);
+      throw new Error('Kullanıcı resmi yüklenemedi. Lütfen tekrar deneyin.');
+    }
+
+    return supabase.storage.from('user-avatars').getPublicUrl(path).data.publicUrl;
   },
 
   async updateSystemUser(id: string, user: Partial<SystemUserPayload>): Promise<SystemUser> {

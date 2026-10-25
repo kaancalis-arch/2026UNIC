@@ -2,6 +2,16 @@ import { errorResponse, SafeError } from './safeErrors.ts';
 
 const allowedHeaders = 'authorization, x-client-info, apikey, content-type';
 
+const isLocalDevelopmentOrigin = (origin: string): boolean => {
+  try {
+    const url = new URL(origin);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
 export function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin');
   if (!origin) return {};
@@ -25,9 +35,10 @@ export function handleCors(req: Request): Response | null {
       .filter(Boolean),
   );
 
-  if (origin && !allowedOrigins.has(origin)) {
+  if (origin && !allowedOrigins.has(origin) && !isLocalDevelopmentOrigin(origin)) {
     return errorResponse(
       new SafeError('CORS_FORBIDDEN', 'Bu origin için erişime izin verilmiyor.', 403),
+      corsHeaders(req),
     );
   }
 

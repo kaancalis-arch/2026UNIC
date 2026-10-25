@@ -154,7 +154,7 @@ const formatNoteDateTime = (dateString: string): string => {
     const date = new Date(dateString);
     return Number.isNaN(date.getTime())
         ? '-'
-        : date.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' });
+        : `${date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const calculateAge = (dateString?: string): number | null => {
@@ -361,7 +361,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [isLoadingProfileNotes, setIsLoadingProfileNotes] = useState(true);
   const [isSavingProfileNote, setIsSavingProfileNote] = useState(false);
   const [pendingProfileNoteId, setPendingProfileNoteId] = useState<string | null>(null);
-  const [profileNoteError, setProfileNoteError] = useState('');
   const [reminderDateInput, setReminderDateInput] = useState(student.reminderDate || '');
   const [isSavingReminderDate, setIsSavingReminderDate] = useState(false);
   const currentStudentIdRef = useRef(initialStudent.id);
@@ -398,7 +397,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     setStudentDocuments(initialStudent.documents || initialStudent.analysis?.documents || []);
     setReminderDateInput(initialStudent.reminderDate || '');
     setProfileNotes([]);
-    setProfileNoteError('');
     setIsLoadingProfileNotes(true);
     setIsSavingProfileNote(false);
     setPendingProfileNoteId(null);
@@ -412,7 +410,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       setProfileNotes(notes);
     }).catch(error => {
       if (cancelled) return;
-      setProfileNoteError(error instanceof Error ? error.message : 'Notlar yüklenemedi.');
+      console.error('Notlar yüklenemedi.', error);
     }).finally(() => {
       if (!cancelled) setIsLoadingProfileNotes(false);
     });
@@ -845,8 +843,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     }
   };
 
-  const handleAddProfileNote = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleAddProfileNote = async () => {
     const text = newProfileNote.trim();
     if (!text || text.length > 2000 || isLoadingProfileNotes || isSavingProfileNote) return;
 
@@ -855,7 +852,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     const operation = Symbol();
     addProfileNoteOperationRef.current = operation;
     setIsSavingProfileNote(true);
-    setProfileNoteError('');
     try {
       const note = await studentProfileNoteService.create(studentId, text);
       if (currentStudentIdRef.current !== studentId || addProfileNoteOperationRef.current !== operation) return;
@@ -863,7 +859,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       setNewProfileNote('');
     } catch (error) {
       if (currentStudentIdRef.current !== studentId || addProfileNoteOperationRef.current !== operation) return;
-      setProfileNoteError(error instanceof Error ? error.message : 'Not kaydedilemedi.');
+      console.error('Not kaydedilemedi.', error);
     } finally {
       if (currentStudentIdRef.current === studentId && addProfileNoteOperationRef.current === operation) {
         addProfileNoteOperationRef.current = null;
@@ -880,14 +876,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     const operation = Symbol();
     completeProfileNoteOperationRef.current = operation;
     setPendingProfileNoteId(noteId);
-    setProfileNoteError('');
     try {
       const updatedNote = await studentProfileNoteService.setCompleted(studentId, noteId, completed);
       if (currentStudentIdRef.current !== studentId || completeProfileNoteOperationRef.current !== operation) return;
       setProfileNotes(previous => previous.map(note => note.id === noteId ? updatedNote : note));
     } catch (error) {
       if (currentStudentIdRef.current !== studentId || completeProfileNoteOperationRef.current !== operation) return;
-      setProfileNoteError(error instanceof Error ? error.message : 'Not durumu güncellenemedi.');
+      console.error('Not durumu güncellenemedi.', error);
     } finally {
       if (currentStudentIdRef.current === studentId && completeProfileNoteOperationRef.current === operation) {
         completeProfileNoteOperationRef.current = null;
@@ -904,7 +899,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     const operation = Symbol();
     saveReminderDateOperationRef.current = operation;
     setIsSavingReminderDate(true);
-    setProfileNoteError('');
     try {
       const savedReminderDate = await studentProfileNoteService.setReminderDate(studentId, reminderDate);
       if (currentStudentIdRef.current !== studentId || saveReminderDateOperationRef.current !== operation) return;
@@ -914,12 +908,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       setReminderDateInput(savedReminderDate || '');
     } catch (error) {
       if (currentStudentIdRef.current !== studentId || saveReminderDateOperationRef.current !== operation) return;
-      setProfileNoteError(error instanceof Error ? error.message : 'Hatırlatma tarihi kaydedilemedi.');
+      console.error('Hatırlatma tarihi kaydedilemedi.', error);
     } finally {
       if (currentStudentIdRef.current === studentId && saveReminderDateOperationRef.current === operation) {
         saveReminderDateOperationRef.current = null;
         setIsSavingReminderDate(false);
       }
+    }
+  };
+
+  const handleSaveNotesSection = async () => {
+    if (isSavingProfileNote || isSavingReminderDate) return;
+
+    if (newProfileNote.trim()) {
+      await handleAddProfileNote();
+    }
+    if (reminderDateInput !== (student.reminderDate || '')) {
+      await handleSaveReminderDate(reminderDateInput || null);
     }
   };
 
@@ -4061,8 +4066,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 )}
                             </div>
                         ) : (
-                             <div>
-                                 <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tahmini Seviye</label>
+                             <div className="flex items-center gap-2">
+                                 <label className="text-xs font-medium text-slate-500 uppercase">Tahmini Seviye</label>
                                  <span className={`inline-block px-3 py-1.5 font-bold rounded-lg border shadow-sm transition-all ${getLanguageLevelColor(student.analysis?.language?.estimatedLevel)}`}>
                                      {student.analysis?.language?.estimatedLevel || '-'}
                                  </span>
@@ -4070,23 +4075,26 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         )}
 
                         {student.analysis?.language?.otherLanguages && student.analysis.language.otherLanguages.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-4 pb-2">
-                                {student.analysis.language.otherLanguages.map((lang, i) => (
-                                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
-                                        <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
-                                            <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                            <div className="mt-4 pb-2">
+                                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Bildiğin Farklı Diller</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {student.analysis.language.otherLanguages.map((lang, i) => (
+                                        <div key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-indigo-500/5 transition-all group">
+                                            <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-indigo-50 transition-colors">
+                                                <Globe className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">DİL</span>
+                                                <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
+                                            </div>
+                                            <div className="w-px h-6 bg-slate-100 mx-1" />
+                                            <div className="flex flex-col text-right">
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">SEVİYE</span>
+                                                <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">DİL</span>
-                                            <span className="text-sm font-bold text-slate-700 leading-none">{lang.language}</span>
-                                        </div>
-                                        <div className="w-px h-6 bg-slate-100 mx-1" />
-                                        <div className="flex flex-col text-right">
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">SEVİYE</span>
-                                            <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{lang.level}</span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         )}
 
@@ -4096,17 +4104,19 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                 <div className="flex flex-wrap gap-4">
                                     {student.analysis.language.targetExam && (
                                         <div>
-                                            <p className="text-[10px] text-slate-500 uppercase">Hedeflenen Sınav</p>
-                                            <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
+                                            <div className="flex items-baseline gap-2">
+                                                <p className="text-[10px] text-slate-500 uppercase">Hedeflenen Sınav</p>
+                                                <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
+                                            </div>
+                                            {student.analysis.language.preparationNotes?.trim() && (
+                                                <div className="mt-2 border-t border-slate-200/60 pt-2">
+                                                    <p className="text-[10px] text-slate-500 uppercase">Hazırlık Notları</p>
+                                                    <p className="text-xs text-slate-700 leading-relaxed italic">{student.analysis.language.preparationNotes}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
-                                {student.analysis.language.preparationNotes && (
-                                    <div className="mt-2 pt-2 border-t border-slate-200/60">
-                                        <p className="text-[10px] text-slate-500 uppercase">Hazırlık Notları</p>
-                                        <p className="text-xs text-slate-700 leading-relaxed italic">{student.analysis.language.preparationNotes}</p>
-                                    </div>
-                                )}
                             </div>
                         )}
 
@@ -4167,10 +4177,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-indigo-600 print:text-black" />
-                <div>
-                  <h3 className="font-bold text-slate-800">Notlar / Yapılacaklar</h3>
-                  <p className="text-xs text-slate-500">Öğrenciye özel takip notları</p>
-                </div>
+                <h3 className="font-bold text-slate-800">Notlar</h3>
               </div>
               <div className="flex flex-wrap items-end gap-2 print:hidden">
                 <label className="flex flex-col gap-1 text-xs font-bold text-slate-500">
@@ -4185,11 +4192,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                 </label>
                 <button
                   type="button"
-                  onClick={() => void handleSaveReminderDate(reminderDateInput || null)}
-                  disabled={isSavingReminderDate || reminderDateInput === (student.reminderDate || '')}
+                  onClick={() => void handleSaveNotesSection()}
+                  disabled={isLoadingProfileNotes || isSavingReminderDate || isSavingProfileNote || pendingProfileNoteId !== null || (!newProfileNote.trim() && reminderDateInput === (student.reminderDate || ''))}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSavingReminderDate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {isSavingReminderDate || isSavingProfileNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   Kaydet
                 </button>
                 <button
@@ -4203,35 +4210,17 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
               </div>
             </div>
 
-            {profileNoteError && (
-              <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{profileNoteError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleAddProfileNote} className="mb-4 print:hidden">
+            <div className="mb-4 print:hidden">
               <textarea
                 value={newProfileNote}
                 onChange={(event) => setNewProfileNote(event.target.value)}
                 rows={2}
                 maxLength={2000}
                 disabled={isSavingProfileNote}
-                className="min-h-[72px] w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
-                placeholder="Yeni bir takip notu veya yapılacak ekleyin..."
+                className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60"
+                placeholder="Yeni bir not ekleyin..."
               />
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <span className="text-xs text-slate-400">{newProfileNote.length}/2000</span>
-                <button
-                  type="submit"
-                  disabled={isLoadingProfileNotes || !newProfileNote.trim() || isSavingProfileNote || pendingProfileNoteId !== null}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSavingProfileNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Not Ekle
-                </button>
-              </div>
-            </form>
+            </div>
 
             {isLoadingProfileNotes ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
@@ -4255,15 +4244,13 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         {note.text}
                       </p>
                       <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-                        {note.authorName} · {formatNoteDateTime(note.createdAt)}
+                        {formatNoteDateTime(note.createdAt)} - {note.authorName}
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="py-4 text-sm italic text-slate-400">Henüz not veya yapılacak eklenmedi.</p>
-            )}
+            ) : null}
           </div>
           </div>
         )}
@@ -4810,30 +4797,42 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                      )}
                                  </div>
                              ))}
-                             {student.analysis?.language?.estimatedLevel && (
-                                 <div className="rounded-xl border border-sky-100 bg-white p-3">
-                                     <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Tahmini İngilizce Seviyesi</p>
-                                     <span className={`mt-2 inline-block rounded-lg border px-3 py-1.5 text-sm font-black ${getLanguageLevelColor(student.analysis.language.estimatedLevel)}`}>
-                                         {student.analysis.language.estimatedLevel}
-                                     </span>
-                                 </div>
-                             )}
-                             {student.analysis?.language?.targetExam && (
-                                 <div className="rounded-xl border border-violet-100 bg-white p-3">
-                                     <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Hedeflenen Sınav</p>
-                                     <p className="mt-1 text-sm font-black text-slate-800">{student.analysis.language.targetExam}</p>
-                                 </div>
-                             )}
+                              {(student.analysis?.language?.estimatedLevel || (student.analysis?.language?.otherLanguages?.length ?? 0) > 0) && (
+                                  <div className="rounded-xl border border-sky-100 bg-white p-3">
+                                      {student.analysis?.language?.estimatedLevel && (
+                                          <div className="flex items-center gap-2">
+                                              <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Tahmini İngilizce Seviyesi</p>
+                                              <span className={`inline-block rounded-lg border px-3 py-1.5 text-sm font-black ${getLanguageLevelColor(student.analysis.language.estimatedLevel)}`}>
+                                                  {student.analysis.language.estimatedLevel}
+                                              </span>
+                                          </div>
+                                      )}
+                                      {student.analysis?.language?.otherLanguages?.map((language, index) => (
+                                          <div
+                                              key={`${language.language}-${index}`}
+                                              className={`${student.analysis?.language?.estimatedLevel || index > 0 ? 'mt-2 border-t border-sky-100 pt-2' : ''} flex items-center gap-2`}
+                                          >
+                                              <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Tahmini {language.language} Seviyesi</p>
+                                              <span className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-1.5 text-sm font-black text-sky-700">{language.level}</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+                              {student.analysis?.language?.targetExam && (
+                                  <div className="rounded-xl border border-violet-100 bg-white p-3">
+                                      <div className="flex items-baseline gap-2">
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Hedeflenen Sınav</p>
+                                          <p className="text-sm font-black text-slate-800">{student.analysis.language.targetExam}</p>
+                                      </div>
+                                      {student.analysis.language.preparationNotes?.trim() && (
+                                          <div className="mt-3 border-t border-violet-100 pt-2">
+                                              <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">Hazırlık Notları</p>
+                                              <p className="mt-1 text-xs leading-relaxed text-slate-700">{student.analysis.language.preparationNotes}</p>
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
                          </div>
-                         {student.analysis?.language?.otherLanguages && student.analysis.language.otherLanguages.length > 0 && (
-                             <div className="mt-3 flex flex-wrap gap-2">
-                                 {student.analysis.language.otherLanguages.map((language, index) => (
-                                     <span key={`${language.language}-${index}`} className="rounded-full border border-sky-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700">
-                                         {language.language}: <span className="text-sky-700">{language.level}</span>
-                                     </span>
-                                 ))}
-                             </div>
-                         )}
                          {student.analysis?.language?.languageNotes && (
                              <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
                                  <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Dil Yeterliliği Notları</p>

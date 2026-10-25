@@ -1,9 +1,11 @@
 import React from 'react';
-import { Student, PipelineStage, SharedInstitutionData } from '../types';
+import { Student, PipelineStage, MainDegreeData, UniversitySearchFilters } from '../types';
 import { studentService } from '../services/studentService';
-import { sharedInstitutionService } from '../services/sharedInstitutionService';
+import { universityService } from '../services/universityService';
+import { mainDegreeService } from '../services/mainDegreeService';
+import { systemService, BudgetRange } from '../services/systemService';
 import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react';
+import { Banknote, ChevronLeft, ChevronRight, Globe, GraduationCap, Link2, Search, Sparkles } from 'lucide-react';
 import { getFlagEmoji } from '../utils/countryUtils';
 import { motion, type Variants } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -28,7 +30,32 @@ const scaleIn: Variants = {
   visible: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 200, damping: 20 } }
 };
 
-const CHART_COLORS = ['#0f766e', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#22c55e'];
+const COUNTRY_COLORS: Record<string, string> = {
+  Hollanda: '#f97316',
+  Netherlands: '#f97316',
+  İtalya: '#22c55e',
+  Italy: '#22c55e',
+  İngiltere: '#1e3a8a',
+  'Birleşik Krallık': '#1e3a8a',
+  UK: '#1e3a8a',
+  İrlanda: '#166534',
+  Ireland: '#166534',
+  İspanya: '#facc15',
+  Spain: '#facc15',
+  Almanya: '#991b1b',
+  Germany: '#991b1b',
+  Amerika: '#2563eb',
+  'Amerika Birleşik Devletleri': '#2563eb',
+  USA: '#2563eb',
+  Kanada: '#dc2626',
+  Canada: '#dc2626',
+  Polonya: '#fca5a5',
+  Poland: '#fca5a5',
+  Macaristan: '#ca8a04',
+  Hungary: '#ca8a04',
+};
+
+const getCountryColor = (countryName: string) => COUNTRY_COLORS[countryName.trim()] || '#94a3b8';
 
 const STORAGE_ENTRIES_KEY = 'unic_calendar_entries';
 const STORAGE_EVENTS_KEY = 'unic_calendar_events';
@@ -54,12 +81,18 @@ const formatDisplayDate = (dateKey: string) => {
   });
 };
 
-const Dashboard: React.FC = () => {
+const Dashboard: React.FC<{
+  onUniversitySearch: (filters: UniversitySearchFilters) => void;
+  canOpenUniversitySearch: boolean;
+}> = ({ onUniversitySearch, canOpenUniversitySearch }) => {
   const [students, setStudents] = React.useState<Student[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [calendarEntries, setCalendarEntries] = React.useState<CalendarEntry[]>([]);
   const [calendarEvents, setCalendarEvents] = React.useState<CalendarEvent[]>([]);
-  const [sharedInstitutions, setSharedInstitutions] = React.useState<SharedInstitutionData[]>([]);
+  const [degreeOptions, setDegreeOptions] = React.useState<MainDegreeData[]>([]);
+  const [countryOptions, setCountryOptions] = React.useState<string[]>([]);
+  const [budgetOptions, setBudgetOptions] = React.useState<BudgetRange[]>([]);
+  const [searchFilters, setSearchFilters] = React.useState<UniversitySearchFilters>({ degreeId: '', country: '', budget: '' });
   const [selectedTimelineDate, setSelectedTimelineDate] = React.useState(() => formatDateKey(new Date()));
 
   const today = React.useMemo(() => {
@@ -125,8 +158,15 @@ const Dashboard: React.FC = () => {
         setCalendarEntries(nextEntries);
         setCalendarEvents(nextEvents);
 
-        const insts = await sharedInstitutionService.getAll();
-        setSharedInstitutions(insts);
+        const [universities, degrees, budgets] = await Promise.all([
+          universityService.getAll(),
+          mainDegreeService.getAll(),
+          systemService.getBudgetRangesRaw(),
+        ]);
+        setDegreeOptions(degrees.sort((a, b) => a.name.localeCompare(b.name, 'tr-TR')));
+        setCountryOptions(Array.from(new Set(universities.flatMap(university => university.countries || [])))
+          .sort((a, b) => a.localeCompare(b, 'tr-TR')));
+        setBudgetOptions(budgets);
       } catch (err) {
         console.error('Dashboard failed to load students', err);
       } finally {
@@ -154,7 +194,7 @@ const Dashboard: React.FC = () => {
   });
 
   const countryData = Object.entries(countryMap)
-    .map(([name, count]) => ({ name, flag: getFlagEmoji(name), count }))
+    .map(([name, count]) => ({ name, flag: getFlagEmoji(name), count, color: getCountryColor(name) }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
@@ -230,11 +270,19 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleUniversitySearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canOpenUniversitySearch || !Object.values(searchFilters).some(Boolean)) return;
+    onUniversitySearch(searchFilters);
+  };
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload?.length) {
+      const countryName = payload[0]?.payload?.name || payload[0]?.name || label;
+
       return (
         <div className="bg-slate-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-xl shadow-2xl border border-white/10">
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+          <p className="text-xs font-semibold text-slate-200 mb-1">{countryName}</p>
           <p className="text-lg font-bold">{payload[0].value}</p>
         </div>
       );
@@ -337,7 +385,7 @@ const Dashboard: React.FC = () => {
           aria-label="Takvim sayfasini ac"
           onClick={() => handleCardNavigation('calendar')}
           onKeyDown={(event) => handleCardKeyDown(event, 'calendar')}
-          className="flex h-full min-h-[220px] max-h-[360px] flex-col bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-teal-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+          className="order-3 flex min-h-[280px] max-h-[400px] cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-teal-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 xl:col-span-2"
         >
           <div className="flex items-center justify-between p-6 pb-3">
             <div>
@@ -431,15 +479,13 @@ const Dashboard: React.FC = () => {
           aria-label="Statistics sayfasini ac"
           onClick={() => handleCardNavigation('statistics')}
           onKeyDown={(event) => handleCardKeyDown(event, 'statistics')}
-          className="flex h-full min-h-[290px] flex-col bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-teal-500/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+          className="order-2 relative flex h-full min-h-[360px] flex-col overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-white via-blue-100/80 to-blue-200/80 shadow-sm cursor-pointer transition-shadow duration-300 hover:shadow-xl hover:shadow-blue-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
-          <div className="flex items-center justify-between p-6 pb-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Tercih Edilen Ulkeler</h3>
-            </div>
-            <span className="text-[10px] font-bold bg-teal-50 text-teal-700 px-2.5 py-1 rounded-lg uppercase tracking-wider">Country Focus</span>
+          <div className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full bg-blue-400/35 blur-3xl" />
+          <div className="relative flex items-center p-6 pb-2">
+            <h3 className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-blue-700">Tercih Edilen Ulkeler</h3>
           </div>
-          <div className="h-52 sm:h-56 xl:h-[220px] px-4 pt-3">
+          <div className="relative h-52 sm:h-56 xl:h-[220px] px-4 pt-3">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -453,20 +499,20 @@ const Dashboard: React.FC = () => {
                   nameKey="name"
                   stroke="none"
                 >
-                  {countryData.map((entry, index) => (
-                    <Cell key={entry.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  {countryData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="px-6 pb-4 flex flex-wrap content-start justify-center gap-x-4 gap-y-3 text-center">
-            {countryData.map((country, index) => (
+          <div className="relative px-6 pb-4 flex flex-wrap content-start justify-center gap-x-4 gap-y-3 text-center">
+            {countryData.map((country) => (
               <div key={country.name} className="inline-flex items-start justify-center gap-2 min-w-0 max-w-[150px] sm:max-w-[160px] text-slate-800 text-center">
                 <span
                   className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                  style={{ backgroundColor: country.color }}
                   aria-hidden="true"
                 />
                 <div className="min-w-0">
@@ -485,65 +531,56 @@ const Dashboard: React.FC = () => {
             )}
           </div>
         </motion.div>
-      </div>
-
-      <motion.div variants={itemVariants} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
-                <Link2 className="w-5 h-5" />
+      <motion.div variants={itemVariants} className="order-1 relative flex min-h-[360px] flex-col overflow-hidden rounded-3xl border border-teal-100 bg-gradient-to-br from-white via-teal-50/60 to-cyan-50 p-6 shadow-sm xl:aspect-square">
+        <div className="absolute -right-16 -top-16 h-52 w-52 rounded-full bg-teal-200/30 blur-3xl" />
+        <div className="relative flex h-full flex-col">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-teal-700">
+              <Sparkles className="h-3.5 w-3.5" /> Universite Araştırma
             </div>
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Kurum Listesi</h3>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-slate-600">
+              Bölüm, ülke ve bütçe kriterlerinizi seçin; uygun üniversiteleri doğrudan görüntüleyin.
+            </p>
           </div>
-          <button 
-            onClick={() => window.location.hash = 'settings'}
-            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1"
-          >
-            Tümünü Yönet
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-                <th className="px-6 py-4">Kurum Adı</th>
-                <th className="px-6 py-4">Yetkili</th>
-                <th className="px-6 py-4">Telefon</th>
-                <th className="px-6 py-4">E-mail</th>
-                <th className="px-6 py-4">Not</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sharedInstitutions.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-sm italic">Henüz bir kurum kaydı bulunmuyor.</td>
-                </tr>
-              ) : (
-                sharedInstitutions.map((inst) => (
-                  <tr key={inst.id} className="hover:bg-slate-50/30 transition-colors group">
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{inst.name}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-600">{inst.authorizedPerson || '-'}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-600">{inst.phone || '-'}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-600">{inst.email || '-'}</p>
-                    </td>
-                    <td className="px-6 py-4 max-w-[240px]">
-                      <p className="text-xs text-slate-400 italic truncate" title={inst.notes}>{inst.notes || '-'}</p>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <form onSubmit={handleUniversitySearch} className="mt-6 rounded-2xl border border-white bg-white/90 p-3 shadow-lg shadow-teal-900/5 backdrop-blur">
+            <div className="grid gap-3">
+              <label className="relative">
+                <span className="sr-only">Bölüm</span>
+                <GraduationCap className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-600" />
+                <select value={searchFilters.degreeId} onChange={event => setSearchFilters(current => ({ ...current, degreeId: event.target.value }))} disabled={!canOpenUniversitySearch} className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100 disabled:opacity-60">
+                  <option value="">Bölüm Seçiniz</option>
+                  {degreeOptions.map(degree => <option key={degree.id} value={degree.id}>{degree.name}</option>)}
+                </select>
+              </label>
+              <label className="relative">
+                <span className="sr-only">Ülke</span>
+                <Globe className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-600" />
+                <select value={searchFilters.country} onChange={event => setSearchFilters(current => ({ ...current, country: event.target.value }))} disabled={!canOpenUniversitySearch} className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100 disabled:opacity-60">
+                  <option value="">Ülke Seçiniz</option>
+                  {countryOptions.map(country => <option key={country} value={country}>{country}</option>)}
+                </select>
+              </label>
+              <label className="relative">
+                <span className="sr-only">Bütçe</span>
+                <Banknote className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-600" />
+                <select value={searchFilters.budget} onChange={event => setSearchFilters(current => ({ ...current, budget: event.target.value }))} disabled={!canOpenUniversitySearch} className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100 disabled:opacity-60">
+                  <option value="">Bütçe Seçiniz</option>
+                  {budgetOptions.map(budget => <option key={budget.id} value={budget.label}>{budget.label}</option>)}
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={!Object.values(searchFilters).some(Boolean) || !canOpenUniversitySearch}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 text-sm font-bold text-white shadow-lg shadow-teal-600/20 transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+              >
+                <Search className="h-4 w-4" /> Üniversiteleri Göster
+              </button>
+            </div>
+            {!canOpenUniversitySearch && <p className="mt-2 px-1 text-xs font-medium text-amber-700">Bu modül için görüntüleme yetkiniz bulunmuyor.</p>}
+          </form>
         </div>
       </motion.div>
+      </div>
     </motion.div>
   );
 };

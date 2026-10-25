@@ -12,11 +12,14 @@ interface DocumentUploadFieldProps {
   required?: boolean;
   multiple?: boolean;
   documents: StudentDocument[];
+  canUpload?: boolean;
+  canArchive?: boolean;
+  canShare?: boolean;
   onUpload: (file: File) => Promise<void>;
   onView: (document: StudentDocument) => Promise<void>;
-  onArchive: (document: StudentDocument) => Promise<void>;
-  onCreateShare: (document: StudentDocument, hours: 24 | 72 | 168) => Promise<string>;
-  onRevokeShare: (document: StudentDocument) => Promise<void>;
+  onArchive?: (document: StudentDocument) => Promise<void>;
+  onCreateShare?: (document: StudentDocument, hours: 24 | 72 | 168) => Promise<string>;
+  onRevokeShare?: (document: StudentDocument) => Promise<void>;
 }
 
 export default function DocumentUploadField({
@@ -26,6 +29,9 @@ export default function DocumentUploadField({
   required = false,
   multiple = false,
   documents,
+  canUpload = true,
+  canArchive = true,
+  canShare = true,
   onUpload,
   onView,
   onArchive,
@@ -72,6 +78,7 @@ export default function DocumentUploadField({
   };
 
   const createShare = (document: StudentDocument) => run(async () => {
+    if (!onCreateShare) return;
     const url = await onCreateShare(document, shareHours);
     setCreatedShareUrl(url);
     await navigator.clipboard.writeText(url);
@@ -85,10 +92,12 @@ export default function DocumentUploadField({
           <p className="text-sm font-semibold text-slate-700">{label}{required && <span className="ml-1 text-rose-500">*</span>}</p>
           {description && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p>}
         </div>
-        <label htmlFor={inputId} className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
-          <Upload className="h-4 w-4" />
-          {isBusy ? 'İşleniyor...' : matchingDocuments.length && !multiple ? 'Yeni Sürüm Yükle' : 'Evrak Yükle'}
-        </label>
+        {canUpload && (
+          <label htmlFor={inputId} className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
+            <Upload className="h-4 w-4" />
+            {isBusy ? 'İşleniyor...' : matchingDocuments.length && !multiple ? 'Yeni Sürüm Yükle' : 'Evrak Yükle'}
+          </label>
+        )}
         <input
           id={inputId}
           type="file"
@@ -114,21 +123,21 @@ export default function DocumentUploadField({
                   <p className="mt-0.5 text-[10px] text-slate-400">Sürüm {document.version || 1} · {document.sizeBytes ? `${(document.sizeBytes / 1024).toFixed(0)} KB` : 'Legacy kayıt'}</p>
                 </div>
                 <button type="button" disabled={isBusy} onClick={() => void run(() => onView(document))} className="rounded-md p-1.5 text-emerald-700 hover:bg-emerald-50" title="Görüntüle"><Eye className="h-4 w-4" /></button>
-                {document.activeShare ? (
-                  <button type="button" disabled={isBusy} onClick={() => void run(() => onRevokeShare(document))} className="rounded-md p-1.5 text-amber-700 hover:bg-amber-50" title="Paylaşım linkini iptal et"><Link2Off className="h-4 w-4" /></button>
-                ) : (
-                  <div className="flex items-center gap-1">
+                 {canShare && document.activeShare && onRevokeShare ? (
+                   <button type="button" disabled={isBusy} onClick={() => void run(() => onRevokeShare(document))} className="rounded-md p-1.5 text-amber-700 hover:bg-amber-50" title="Paylaşım linkini iptal et"><Link2Off className="h-4 w-4" /></button>
+                 ) : canShare && onCreateShare ? (
+                   <div className="flex items-center gap-1">
                     <select value={shareHours} onChange={event => setShareHours(Number(event.target.value) as 24 | 72 | 168)} disabled={isBusy} className="rounded-md border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600">
                       <option value={24}>24 saat</option>
                       <option value={72}>72 saat</option>
                       <option value={168}>7 gün</option>
                     </select>
                     <button type="button" disabled={isBusy} onClick={() => void createShare(document)} className="rounded-md p-1.5 text-indigo-700 hover:bg-indigo-50" title="Paylaşım linki oluştur ve kopyala"><Link2 className="h-4 w-4" /></button>
-                  </div>
-                )}
-                <button type="button" disabled={isBusy} onClick={() => void run(() => onArchive(document))} className="rounded-md p-1.5 text-rose-600 hover:bg-rose-50" title="Arşivle"><Archive className="h-4 w-4" /></button>
+                   </div>
+                 ) : null}
+                 {canArchive && onArchive && <button type="button" disabled={isBusy} onClick={() => void run(() => onArchive(document))} className="rounded-md p-1.5 text-rose-600 hover:bg-rose-50" title="Arşivle"><Archive className="h-4 w-4" /></button>}
               </div>
-              {document.activeShare && <p className="mt-1 text-[10px] font-medium text-amber-700">Paylaşım {new Date(document.activeShare.expiresAt).toLocaleString('tr-TR')} tarihine kadar açık.</p>}
+              {canShare && document.activeShare && <p className="mt-1 text-[10px] font-medium text-amber-700">Paylaşım {new Date(document.activeShare.expiresAt).toLocaleString('tr-TR')} tarihine kadar açık.</p>}
             </div>
           ))}
         </div>

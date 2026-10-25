@@ -21,9 +21,12 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import SharedStudentDocument from './pages/SharedStudentDocument';
 import SharedAIAdvisorReport from './pages/SharedAIAdvisorReport';
-import { Student, UniversityData } from './types';
+import MyProfile from './pages/MyProfile';
+import MyRoadmap from './pages/MyRoadmap';
+import MyFiles from './pages/MyFiles';
+import { Student, UniversityData, UniversitySearchFilters } from './types';
 import { useAuth } from './auth/AuthContext';
-import { canAccessPage } from './auth/permissions';
+import { canAccessPage, getDefaultPage } from './auth/permissions';
 
 const getStageFromHash = () => {
   if (typeof window === 'undefined') {
@@ -70,12 +73,19 @@ const App: React.FC = () => {
   const [selectedUniversity, setSelectedUniversity] = useState<UniversityData | null>(getStoredUniversity);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [studentStageFilter, setStudentStageFilter] = useState<string | null>(getStageFromHash());
+  const [dashboardSearchRequest, setDashboardSearchRequest] = useState<{ filters: UniversitySearchFilters; id: number } | null>(null);
   const shareTokenMatch = pathname.match(/^\/share\/document\/([^/]+)\/?$/);
   const reportShareTokenMatch = pathname.match(/^\/share\/report\/([^/]+)\/?$/);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) setCurrentPage('dashboard');
   }, [isAuthenticated, isLoading]);
+
+  useEffect(() => {
+    if (currentUser && !canAccessPage(currentUser, currentPage)) {
+      setCurrentPage(getDefaultPage(currentUser));
+    }
+  }, [currentPage, currentUser]);
 
   useEffect(() => {
     window.sessionStorage.setItem(CURRENT_PAGE_STORAGE_KEY, currentPage);
@@ -109,6 +119,12 @@ const App: React.FC = () => {
     setCurrentPage('settings');
   };
 
+  const handleDashboardUniversitySearch = (filters: UniversitySearchFilters) => {
+    if (!currentUser || !canAccessPage(currentUser, 'universities')) return;
+    setDashboardSearchRequest({ filters, id: Date.now() });
+    setCurrentPage('universities');
+  };
+
   const handleLogout = async () => {
     try {
       await signOut();
@@ -124,13 +140,18 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
-    if (!canAccessPage(currentUser!.role, currentPage)) {
-      return <div className="p-10 text-red-500">Access Denied.</div>;
+    if (!canAccessPage(currentUser!, currentPage)) {
+      return <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-amber-800">Bu sayfayı görüntüleme yetkiniz bulunmuyor.</div>;
     }
 
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard />;
+        return (
+          <Dashboard
+            onUniversitySearch={handleDashboardUniversitySearch}
+            canOpenUniversitySearch={canAccessPage(currentUser!, 'universities')}
+          />
+        );
       case 'students':
         return <StudentList onSelectStudent={handleStudentSelect} initialStageFilter={studentStageFilter} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'student-detail':
@@ -148,7 +169,13 @@ const App: React.FC = () => {
       case 'department-keyword-rules':
         return <DepartmentKeywordRules />;
       case 'universities':
-        return <UniversitySearch />;
+        return (
+          <UniversitySearch
+            initialFilters={dashboardSearchRequest?.filters}
+            filterRequestId={dashboardSearchRequest?.id}
+            onFilterRequestHandled={() => setDashboardSearchRequest(null)}
+          />
+        );
       case 'university-research':
         return <UniversityResearch />;
       case 'university-detail':
@@ -160,10 +187,11 @@ const App: React.FC = () => {
       case 'roadmap':
         return <Roadmaps />;
       case 'files':
-        return <div className="p-10 text-center text-slate-500">Global File Manager (Coming Soon)</div>;
+        return <MyFiles userId={currentUser!.id} />;
       case 'my-profile':
-        // For student view simulation
-        return <div className="p-10 text-center text-slate-500">My Student Profile View (Under Construction)</div>;
+        return <MyProfile userId={currentUser!.id} />;
+      case 'my-roadmap':
+        return <MyRoadmap userId={currentUser!.id} />;
       case 'visa-results':
         return <VisaResults />;
       case 'visa-checklist':
@@ -175,7 +203,12 @@ const App: React.FC = () => {
       case 'statistics':
         return <Statistics />;
       default:
-        return <Dashboard />;
+        return (
+          <Dashboard
+            onUniversitySearch={handleDashboardUniversitySearch}
+            canOpenUniversitySearch={canAccessPage(currentUser!, 'universities')}
+          />
+        );
     }
   };
 

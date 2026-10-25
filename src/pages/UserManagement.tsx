@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, Loader2, Trash2, UserRoundCheck, Users, XCircle } from 'lucide-react';
+import { CheckCircle, Loader2, Trash2, User, UserRoundCheck, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { systemService } from '../services/systemService';
 import { type SystemUser, UserRole } from '../types';
@@ -121,11 +121,17 @@ const UserManagement = () => {
             return (
               <article key={user.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <img
-                    src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.full_name}`}
-                    alt=""
-                    className="h-11 w-11 rounded-xl bg-slate-100"
-                  />
+                  {user.avatarUrl ? (
+                    <img
+                      src={user.avatarUrl}
+                      alt=""
+                      className="h-11 w-11 rounded-xl bg-slate-100 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                      <User className="h-5 w-5" />
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate font-bold text-slate-800">{user.full_name}</h2>
                     <p className="truncate text-xs text-slate-500">{user.email}</p>

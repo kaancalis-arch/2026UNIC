@@ -25,7 +25,7 @@ import {
     Briefcase, Globe, MapPin, Banknote, Users2, ArrowLeft, BookOpen, Edit,
     Calendar, FileText, Star, Briefcase as BriefcaseIcon, Clock, Loader2, ClipboardList,
     Link as LinkIcon, ExternalLink, Cpu, Key, Save, X, Database, RefreshCw, Download, Search, Upload,
-    Sun, MessageCircle, School, Bot
+    Sun, MessageCircle, School, Bot, User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatTitleCase } from '../lib/utils';
@@ -39,9 +39,15 @@ import {
     wouldCreateHierarchyCycle
 } from '../auth/userHierarchy';
 import { useAuth } from '../auth/AuthContext';
+import {
+    ROLE_PERMISSION_GROUPS,
+    ROLE_PERMISSION_PAGE_IDS,
+    RolePermissionPageId,
+    canRoleAccessPage,
+} from '../auth/permissions';
+import { permissionService } from '../services/permissionService';
 
 const DEFAULT_UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
-const DEFAULT_USER_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=UNICUser';
 const EMPTY_PHONE_PREFIX = '05';
 
 const formatPhoneForInput = (value?: string) => {
@@ -203,11 +209,11 @@ const GROUPING_STATUS_STYLES: Record<GroupingReportStatus, string> = {
     failed: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
-type SettingsTab = 'users' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor';
+type SettingsTab = 'users' | 'permissions' | 'definitions' | 'career' | 'data' | 'institutions' | 'ai-advisor';
 
 const SETTINGS_TAB_STORAGE_KEY = 'unic-settings-active-tab';
 const SETTINGS_VIEW_STORAGE_KEY = 'unic-settings-selected-view';
-const SETTINGS_TABS: SettingsTab[] = ['users', 'definitions', 'career', 'data', 'institutions', 'ai-advisor'];
+const SETTINGS_TABS: SettingsTab[] = ['users', 'permissions', 'definitions', 'career', 'data', 'institutions', 'ai-advisor'];
 
 const getStoredSettingsTab = (): SettingsTab => {
     if (typeof window === 'undefined') return 'users';
@@ -228,8 +234,19 @@ const Settings: React.FC<{
     const isBranchManager = currentUser?.role === UserRole.BRANCH_MANAGER;
     const hasUserOnlySettings = isBranchManager;
     const isGlobalAdmin = currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN;
+    const manageablePermissionRoles: UserRole[] = currentUser?.role === UserRole.SUPER_ADMIN
+        ? Object.values(UserRole)
+        : currentUser?.role === UserRole.ADMIN
+            ? Object.values(UserRole).filter(role => role !== UserRole.SUPER_ADMIN && role !== UserRole.ADMIN)
+            : [];
     const [activeTab, setActiveTab] = useState<SettingsTab>(() => hasUserOnlySettings ? 'users' : getStoredSettingsTab());
     const [users, setUsers] = useState<SystemUser[]>([]);
+    const [selectedPermissionRole, setSelectedPermissionRole] = useState<UserRole | ''>('');
+    const [permissionDrafts, setPermissionDrafts] = useState<Record<string, RolePermissionPageId[]>>({});
+    const [dirtyPermissionRoles, setDirtyPermissionRoles] = useState<Set<UserRole>>(new Set());
+    const [isLoadingPermissions, setIsLoadingPermissions] = useState(false);
+    const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+    const [permissionMessage, setPermissionMessage] = useState('');
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showPassiveUsers, setShowPassiveUsers] = useState(false);
     const [branches, setBranches] = useState<Branch[]>(MOCK_BRANCHES);
@@ -251,6 +268,8 @@ const Settings: React.FC<{
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [newUserPassword, setNewUserPassword] = useState('');
+    const [selectedStudentProfileId, setSelectedStudentProfileId] = useState('');
+    const [isUploadingUserImage, setIsUploadingUserImage] = useState(false);
     const [updatingUserStatusId, setUpdatingUserStatusId] = useState<string | null>(null);
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     
@@ -410,6 +429,30 @@ const Settings: React.FC<{
     useEffect(() => {
         window.sessionStorage.setItem(SETTINGS_TAB_STORAGE_KEY, activeTab);
     }, [activeTab]);
+
+    const permissionRolesKey = manageablePermissionRoles.join('|');
+
+    useEffect(() => {
+        if (activeTab !== 'permissions') return;
+        const roles = permissionRolesKey ? permissionRolesKey.split('|') as UserRole[] : [];
+        setIsLoadingPermissions(true);
+        setPermissionMessage('');
+        permissionService.getRolePermissions(roles)
+            .then(savedPermissions => {
+                const drafts: Record<string, RolePermissionPageId[]> = {};
+                for (const role of roles) {
+                    drafts[role] = savedPermissions[role] ?? ROLE_PERMISSION_PAGE_IDS.filter(page => canRoleAccessPage(role, page));
+                }
+                setPermissionDrafts(drafts);
+                setDirtyPermissionRoles(new Set());
+                setSelectedPermissionRole(current => current && roles.includes(current) ? current : roles[0] || '');
+            })
+            .catch(error => {
+                console.error('Danışman yetkileri yüklenemedi.', error);
+                setPermissionMessage(error instanceof Error ? error.message : 'Danışman yetkileri yüklenemedi.');
+            })
+            .finally(() => setIsLoadingPermissions(false));
+    }, [activeTab, permissionRolesKey]);
 
     useEffect(() => {
         if (selectedDefinitionType) {
@@ -776,6 +819,7 @@ const Settings: React.FC<{
     const resetUserForm = () => {
         setEditingUserId(null);
         setNewUserPassword('');
+        setSelectedStudentProfileId('');
         setNewUser({
             full_name: '',
             email: '',
@@ -816,6 +860,10 @@ const Settings: React.FC<{
             alert('Rol seçimi zorunludur.');
             return;
         }
+        if (!editingUserId && newUser.role === UserRole.STUDENT && !selectedStudentProfileId) {
+            alert('Öğrenci hesabı için CRM öğrenci profili seçilmelidir.');
+            return;
+        }
         const normalizedPhone = newUser.phone === EMPTY_PHONE_PREFIX ? '' : newUser.phone || '';
         if (normalizedPhone && !/^05\d{9}$/.test(normalizedPhone)) {
             alert('Telefon numarası 05 ile başlamalı ve ardından 9 rakam içermelidir.');
@@ -841,7 +889,7 @@ const Settings: React.FC<{
                 ? currentUser?.id
                 : newUser.parent_user_id,
             status: newUser.status || 'active',
-            avatarUrl: newUser.avatarUrl || DEFAULT_USER_AVATAR_URL,
+            avatarUrl: newUser.avatarUrl || '',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -873,7 +921,7 @@ const Settings: React.FC<{
 
             const savedUser = editingUserId
                 ? await systemService.updateSystemUser(editingUserId, userPayload)
-                : await systemService.addSystemUserWithAuth(userPayload, newUserPassword);
+                : await systemService.addSystemUserWithAuth(userPayload, newUserPassword, selectedStudentProfileId || undefined);
 
             setUsers(editingUserId
                 ? users.map(user => user.id === editingUserId ? savedUser : user)
@@ -2064,7 +2112,13 @@ const Settings: React.FC<{
                                 <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <img src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.full_name}`} alt="" className="w-10 h-10 rounded-full bg-slate-100" />
+                                            {user.avatarUrl ? (
+                                                <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full bg-slate-100 object-cover" />
+                                            ) : (
+                                                <div className="flex w-10 h-10 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                                                    <User className="w-5 h-5" />
+                                                </div>
+                                            )}
                                              <div>
                                                  <p className="font-bold text-slate-800">{user.full_name}</p>
                                                  <p className="text-xs text-slate-500">{user.email}</p>
@@ -2090,7 +2144,13 @@ const Settings: React.FC<{
                                     <td className="px-6 py-4 text-sm text-slate-600">
                                         {parent ? (
                                             <div className="flex items-center gap-2">
-                                                <img src={parent.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${parent.full_name}`} className="w-5 h-5 rounded-full" />
+                                                {parent.avatarUrl ? (
+                                                    <img src={parent.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
+                                                ) : (
+                                                    <span className="flex w-5 h-5 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                                                        <User className="w-3 h-3" />
+                                                    </span>
+                                                )}
                                                 <span className="font-medium text-slate-700">{parent.full_name}</span>
                                             </div>
                                         ) : (
@@ -4739,6 +4799,161 @@ const Settings: React.FC<{
     };
 
     const availableParents = getAvailableParents(newUser.role);
+    const selectedPagePermissions = selectedPermissionRole ? permissionDrafts[selectedPermissionRole] || [] : [];
+
+    const setPermissionPages = (role: UserRole, pageIds: readonly string[], enabled: boolean) => {
+        const permittedPageIds = pageIds.filter(pageId => canRoleAccessPage(role, pageId));
+        setPermissionDrafts(current => {
+            const nextPages = new Set(current[role] || ROLE_PERMISSION_PAGE_IDS.filter(page => canRoleAccessPage(role, page)));
+            permittedPageIds.forEach(pageId => enabled
+                ? nextPages.add(pageId as RolePermissionPageId)
+                : nextPages.delete(pageId as RolePermissionPageId));
+            return { ...current, [role]: [...nextPages] };
+        });
+        setDirtyPermissionRoles(current => new Set(current).add(role));
+        setPermissionMessage('');
+    };
+
+    const savePermissionChanges = async () => {
+        if (dirtyPermissionRoles.size === 0) return;
+        setIsSavingPermissions(true);
+        setPermissionMessage('');
+        try {
+            await Promise.all([...dirtyPermissionRoles].map(role =>
+                permissionService.saveRolePermissions(role, permissionDrafts[role] || [])
+            ));
+            setDirtyPermissionRoles(new Set());
+            setPermissionMessage('Yetki değişiklikleri kaydedildi.');
+        } catch (error) {
+            console.error('Yetki değişiklikleri kaydedilemedi.', error);
+            setPermissionMessage(error instanceof Error ? error.message : 'Yetki değişiklikleri kaydedilemedi.');
+        } finally {
+            setIsSavingPermissions(false);
+        }
+    };
+
+    const renderPermissionSwitch = (pageIds: readonly string[]) => {
+        const availablePageIds = selectedPermissionRole
+            ? pageIds.filter(pageId => canRoleAccessPage(selectedPermissionRole, pageId))
+            : [];
+        const isAvailable = availablePageIds.length > 0;
+        const enabled = isAvailable && availablePageIds.every(pageId => selectedPagePermissions.includes(pageId as RolePermissionPageId));
+        return (
+            <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                disabled={!selectedPermissionRole || !isAvailable || isLoadingPermissions}
+                onClick={() => selectedPermissionRole && setPermissionPages(selectedPermissionRole, availablePageIds, !enabled)}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${enabled ? 'bg-emerald-500' : 'bg-slate-200'}`}
+            >
+                <span className={`flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-6 text-emerald-600' : 'translate-x-1 text-slate-300'}`}>
+                    {enabled && <CheckCircle className="h-3.5 w-3.5" />}
+                </span>
+            </button>
+        );
+    };
+
+    const renderPermissionManagement = () => (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div className="flex items-center gap-3">
+                        <span className="rounded-xl bg-violet-100 p-2.5 text-violet-700"><Shield className="h-5 w-5" /></span>
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-900">Yetki Yönetimi</h2>
+                            <p className="mt-1 text-sm text-slate-500">Her rolün sidebar üzerinde görüntüleyebileceği sayfaları belirleyin.</p>
+                        </div>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => void savePermissionChanges()}
+                    disabled={dirtyPermissionRoles.size === 0 || isSavingPermissions}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-violet-200 transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                >
+                    {isSavingPermissions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isSavingPermissions ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                </button>
+            </div>
+
+            {permissionMessage && (
+                <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${permissionMessage.includes('kaydedildi') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
+                    {permissionMessage}
+                </div>
+            )}
+
+            {manageablePermissionRoles.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                    <Shield className="mx-auto h-10 w-10 text-slate-300" />
+                    <h3 className="mt-3 font-bold text-slate-700">Rol yetkilerini düzenleme izniniz yok</h3>
+                </div>
+            ) : (
+                <>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                        {manageablePermissionRoles.map(role => {
+                            const selected = role === selectedPermissionRole;
+                            const dirty = dirtyPermissionRoles.has(role);
+                            const userCount = users.filter(user => user.role === role).length;
+                            return (
+                                <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() => setSelectedPermissionRole(role)}
+                                    className={`relative flex min-w-44 items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${selected ? 'border-violet-700 bg-slate-900 text-white shadow-lg' : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300'}`}
+                                >
+                                    <span className={`flex h-9 w-9 items-center justify-center rounded-full ${selected ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-600'}`}>
+                                        <Shield className="h-4 w-4" />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-bold">{role}</span>
+                                        <span className={`block truncate text-xs ${selected ? 'text-slate-300' : 'text-slate-400'}`}>{userCount} kullanıcı</span>
+                                    </span>
+                                    {dirty && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-400" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                        <div className="grid grid-cols-[1fr_130px] border-b border-slate-200 bg-slate-50 px-6 py-4 text-xs font-black uppercase tracking-wider text-slate-600">
+                            <span>Sistem Sayfaları / Modüller</span>
+                            <span className="text-center">Görüntüle</span>
+                        </div>
+                        {isLoadingPermissions ? (
+                            <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500">
+                                <Loader2 className="h-5 w-5 animate-spin" /> Yetkiler yükleniyor...
+                            </div>
+                        ) : ROLE_PERMISSION_GROUPS.map(group => {
+                            const groupPageIds = group.pages.map(page => page.id);
+                            const hasChildren = group.pages.length > 1;
+                            return (
+                                <div key={group.id} className="border-b border-slate-100 last:border-b-0">
+                                    <div className={`grid grid-cols-[1fr_130px] items-center px-6 py-4 ${hasChildren ? 'bg-slate-50/70' : 'bg-white'}`}>
+                                        <div className="flex items-center gap-3 font-bold text-slate-800">
+                                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-600"><Shield className="h-4 w-4" /></span>
+                                            {group.label}
+                                        </div>
+                                        <div className="flex justify-center">{renderPermissionSwitch(groupPageIds)}</div>
+                                    </div>
+                                    {hasChildren && group.pages.map(page => (
+                                        <div key={page.id} className="grid grid-cols-[1fr_130px] items-center border-t border-slate-100 px-6 py-3.5">
+                                            <div className="flex items-center gap-3 pl-10 text-sm font-medium text-slate-600">
+                                                <span className="h-2 w-2 rounded-full border border-slate-300" />
+                                                {page.label}
+                                            </div>
+                                            <div className="flex justify-center">{renderPermissionSwitch([page.id])}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+
     const managedUsers = users;
     const getBranchName = (branchId?: string) => branches.find(branch => branch.id === branchId)?.name || '-';
     const normalizedUserSearch = userSearchTerm.trim().toLocaleLowerCase('tr');
@@ -4781,14 +4996,14 @@ const Settings: React.FC<{
                             type="button"
                             onClick={returnToSettingsHome}
                             className="mt-1 rounded-full bg-white/10 p-2.5 text-white transition-colors hover:bg-white/20"
-                            aria-label="System Settings ana sayfasına dön"
+                            aria-label="Sistem Ayarları ana sayfasına dön"
                         >
                             <ArrowLeft className="w-5 h-5" />
                         </button>
                     )}
                     <div>
                         <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-                            System Settings
+                            Sistem Ayarları
                         </h1>
                         <p className="text-purple-300/70 mt-1 text-sm">
                             {hasUserOnlySettings
@@ -4807,6 +5022,7 @@ const Settings: React.FC<{
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
                         ] : [
                             { id: 'users', label: 'Kullanıcı Yönetimi', icon: Users },
+                            { id: 'permissions', label: 'Yetki Yönetimi', icon: Shield },
                             { id: 'institutions', label: 'Kurumlar', icon: Building },
                             { id: 'definitions', label: 'Sistem Tanımları', icon: Building },
                             { id: 'ai-advisor', label: 'AI Danışman', icon: Bot },
@@ -4830,6 +5046,8 @@ const Settings: React.FC<{
             )}
 
             {activeTab === 'users' && !selectedDefinitionType && renderUserManagement()}
+
+            {activeTab === 'permissions' && !selectedDefinitionType && renderPermissionManagement()}
 
             {!hasUserOnlySettings && activeTab === 'institutions' && renderInstitutions()}
 
@@ -5195,29 +5413,43 @@ const Settings: React.FC<{
                             <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-5">
                                 <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-indigo-600">Kullanıcı Bilgileri</h3>
                                 <div className="mb-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4">
-                                    <img
-                                        src={newUser.avatarUrl || DEFAULT_USER_AVATAR_URL}
-                                        alt="Kullanıcı resmi"
-                                        className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100 object-cover"
-                                    />
+                                    {newUser.avatarUrl ? (
+                                        <img
+                                            src={newUser.avatarUrl}
+                                            alt="Kullanıcı resmi"
+                                            className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100 object-cover"
+                                        />
+                                    ) : (
+                                        <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-slate-300 bg-slate-100 text-slate-400">
+                                            <User className="h-7 w-7" />
+                                        </div>
+                                    )}
                                     <div className="flex-1">
                                         <label className="mb-2 block text-sm font-medium text-slate-700">Kullanıcı Resmi</label>
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                                                <Upload className="h-4 w-4" />
-                                                 Avatar Seç
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                    onChange={e => {
-                                                        const file = e.target.files?.[0];
-                                                        if (!file) return;
-                                                        const reader = new FileReader();
-                                                        reader.onload = () => setNewUser({...newUser, avatarUrl: String(reader.result)});
-                                                        reader.readAsDataURL(file);
-                                                    }}
-                                                />
+                                             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                                 {isUploadingUserImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                                 {isUploadingUserImage ? 'Yükleniyor...' : 'Resim Yükle'}
+                                                 <input
+                                                     type="file"
+                                                     accept="image/jpeg,image/png,image/webp"
+                                                     disabled={isUploadingUserImage}
+                                                     className="hidden"
+                                                     onChange={async e => {
+                                                         const file = e.target.files?.[0];
+                                                         if (!file) return;
+                                                         setIsUploadingUserImage(true);
+                                                         try {
+                                                             const avatarUrl = await systemService.uploadUserImage(file);
+                                                             setNewUser(current => ({...current, avatarUrl}));
+                                                         } catch (error) {
+                                                             alert(error instanceof Error ? error.message : 'Kullanıcı resmi yüklenemedi.');
+                                                         } finally {
+                                                             setIsUploadingUserImage(false);
+                                                             e.target.value = '';
+                                                         }
+                                                     }}
+                                                 />
                                             </label>
                                             {newUser.avatarUrl && (
                                                 <button
@@ -5246,10 +5478,11 @@ const Settings: React.FC<{
                                                      branch_id: isBranchManager
                                                          ? currentUser?.branch_id || ''
                                                          : roleRequiresBranch(role) ? newUser.branch_id : '',
-                                                     parent_user_id: isBranchManager && role === UserRole.CONSULTANT
-                                                         ? currentUser?.id || ''
-                                                         : ''
-                                                 });
+                                                      parent_user_id: isBranchManager && role === UserRole.CONSULTANT
+                                                          ? currentUser?.id || ''
+                                                          : ''
+                                                  });
+                                                  setSelectedStudentProfileId('');
                                             }}
                                              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                                          >
@@ -5258,7 +5491,7 @@ const Settings: React.FC<{
                                              ) : (
                                                  <>
                                                      <option value="">Rol Seçin</option>
-                                                     {!isBranchManager && <option value={UserRole.SUPER_ADMIN}>Super Admin</option>}
+                                                     {!isBranchManager && editingUserId && <option value={UserRole.SUPER_ADMIN}>Super Admin</option>}
                                                      {!isBranchManager && <option value={UserRole.ADMIN}>Admin</option>}
                                                      {!isBranchManager && <option value={UserRole.BRANCH_MANAGER}>Şube Müdürü</option>}
                                                      <option value={UserRole.CONSULTANT}>Danışman</option>
@@ -5276,13 +5509,16 @@ const Settings: React.FC<{
                                                  required={roleRequiresBranch(newUser.role)}
                                                  disabled={!!editingUserId && !isGlobalAdmin}
                                                 value={newUser.branch_id}
-                                                onChange={e => setNewUser({
-                                                    ...newUser,
-                                                    branch_id: isBranchManager ? currentUser?.branch_id || '' : e.target.value,
-                                                    parent_user_id: isBranchManager && newUser.role === UserRole.CONSULTANT
-                                                        ? currentUser?.id || ''
-                                                        : ''
-                                                })}
+                                                 onChange={e => {
+                                                     setNewUser({
+                                                         ...newUser,
+                                                         branch_id: isBranchManager ? currentUser?.branch_id || '' : e.target.value,
+                                                         parent_user_id: isBranchManager && newUser.role === UserRole.CONSULTANT
+                                                             ? currentUser?.id || ''
+                                                             : ''
+                                                     });
+                                                     setSelectedStudentProfileId('');
+                                                 }}
                                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                                             >
                                                 <option value="">Şube Seçin</option>
@@ -5292,8 +5528,40 @@ const Settings: React.FC<{
                                                     </option>
                                                 ))}
                                             </select>
-                                        </div>
-                                    )}
+                                         </div>
+                                     )}
+                                 {!editingUserId && newUser.role === UserRole.STUDENT && (
+                                     <div className="mt-4">
+                                         <label className="mb-1 block text-sm font-medium text-slate-700">Bağlanacak CRM Öğrenci Profili</label>
+                                         <select
+                                             required
+                                             value={selectedStudentProfileId}
+                                             onChange={event => {
+                                                 const studentId = event.target.value;
+                                                 const selectedStudent = crmStudents.find(student => student.id === studentId);
+                                                 setSelectedStudentProfileId(studentId);
+                                                 if (selectedStudent) {
+                                                     setNewUser(current => ({
+                                                         ...current,
+                                                         full_name: `${selectedStudent.firstName} ${selectedStudent.lastName}`.trim(),
+                                                         email: selectedStudent.email || current.email,
+                                                         phone: selectedStudent.phone || current.phone,
+                                                         parent_user_id: selectedStudent.assignedUserId || '',
+                                                     }));
+                                                 }
+                                             }}
+                                             className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                         >
+                                             <option value="">CRM profili seçin</option>
+                                             {crmStudents
+                                                 .filter(student => student.branchId === newUser.branch_id && !student.studentUserId && student.assignedUserId)
+                                                 .map(student => (
+                                                     <option key={student.id} value={student.id}>{student.firstName} {student.lastName} - {student.email || student.phone}</option>
+                                                 ))}
+                                         </select>
+                                         <p className="mt-1 text-xs text-slate-500">Yalnız seçilen şubedeki ve henüz kullanıcı hesabına bağlanmamış öğrenciler listelenir.</p>
+                                     </div>
+                                 )}
                                 </div>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
@@ -5350,7 +5618,7 @@ const Settings: React.FC<{
                                     </label>
                                      <select
                                          required
-                                         disabled={!!editingUserId && !isGlobalAdmin}
+                                         disabled={(!!editingUserId && !isGlobalAdmin) || (!editingUserId && newUser.role === UserRole.STUDENT && !!selectedStudentProfileId)}
                                         value={newUser.parent_user_id || ''}
                                         onChange={e => setNewUser({
                                             ...newUser,
@@ -5383,7 +5651,7 @@ const Settings: React.FC<{
 
                             <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
                                 <button type="button" onClick={() => { setIsUserModalOpen(false); resetUserForm(); }} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg">İptal</button>
-                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">{editingUserId ? 'Kullanıcıyı Güncelle' : 'Kullanıcı Oluştur'}</button>
+                                <button type="submit" disabled={isUploadingUserImage} className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">{editingUserId ? 'Kullanıcıyı Güncelle' : 'Kullanıcı Oluştur'}</button>
                             </div>
                         </form>
                     </div>

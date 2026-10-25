@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Map, Search, Globe, GraduationCap, BookOpen, Clock, CheckCircle2, ChevronRight, Info, AlertCircle, FileText, ClipboardList } from 'lucide-react';
 import { getFlagEmoji, getCountryCode } from '../utils/countryUtils';
+import type { Student } from '../types';
 
 
 interface RoadmapGuide {
@@ -60,10 +61,17 @@ const COUNTRIES = ['İtalya', 'Almanya', 'Hollanda', 'İngiltere', 'Polonya', 'M
 const PROGRAM_TYPES = ['Lisans', 'Yüksek Lisans', 'Sertifika', 'Dil Okulu', 'Yaz Okulu'];
 const DEPARTMENTS = ['Tıp', 'Mühendislik', 'Mimarlık', 'İşletme/Ekonomi', 'Psikoloji', 'Sanat/Tasarım', 'Hukuk'];
 
-const Roadmaps: React.FC = () => {
-    const [selectedCountry, setSelectedCountry] = useState('');
-    const [selectedProgram, setSelectedProgram] = useState('');
-    const [selectedDept, setSelectedDept] = useState('');
+const degreeLabels: Record<string, string> = {
+    Undergraduate: 'Lisans',
+    Master: 'Yüksek Lisans',
+    'Summer Course': 'Yaz Okulu',
+    'Language Course': 'Dil Okulu',
+};
+
+const Roadmaps: React.FC<{ student?: Student }> = ({ student }) => {
+    const [selectedCountry, setSelectedCountry] = useState(() => student?.targetCountries?.[0] || student?.analysis?.preferences?.country1 || '');
+    const [selectedProgram, setSelectedProgram] = useState(() => degreeLabels[student?.targetDegree || ''] || '');
+    const [selectedDept, setSelectedDept] = useState(() => student?.analysis?.preferences?.program1 || '');
 
     const activeGuide = useMemo(() => {
         return ROADMAP_GUIDES.find(g => 
@@ -79,8 +87,8 @@ const Roadmaps: React.FC = () => {
         <div className="space-y-8 animate-fade-in pb-12">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Kılavuzlar & Yol Haritaları</h2>
-                    <p className="text-slate-500 font-medium">Hedef ülkeye ve bölüme göre süreci planlayın.</p>
+                    <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">{student ? 'Yol Haritam' : 'Kılavuzlar & Yol Haritaları'}</h2>
+                    <p className="text-slate-500 font-medium">{student ? 'Profilinizdeki tercihlerle başlayan kişisel eğitim rehberiniz.' : 'Hedef ülkeye ve bölüme göre süreci planlayın.'}</p>
                 </div>
                 <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl text-indigo-700 font-bold text-sm border border-indigo-100">
                     <Map className="w-4 h-4" />

@@ -10,6 +10,7 @@ interface LanguageExamFieldsProps {
 }
 
 const EXAM_OPTIONS = ['IELTS', 'IELTS UKVI', 'TOEFL', 'DUOLINGO', 'Diğer'];
+const IELTS_SCORES = Array.from({ length: 13 }, (_, index) => (3 + index * 0.5).toFixed(1).replace('.', ','));
 
 const EXAM_FIELDS: Array<{
   number: number;
@@ -23,10 +24,29 @@ const EXAM_FIELDS: Array<{
   { number: 3, type: 'examType3', score: 'examScore3', date: 'pastExamDate3', otherNote: 'examOtherNote3' },
 ];
 
-const LanguageExamFields: React.FC<LanguageExamFieldsProps> = ({ language, onChange }) => (
-  <div className="space-y-4">
-    {EXAM_FIELDS.map(({ number, type, score, date, otherNote }) => {
+const hasExamData = (language: LanguageAnalysis, index: number) => {
+  const exam = EXAM_FIELDS[index];
+  return Boolean(language[exam.type] || language[exam.score] || language[exam.date] || language[exam.otherNote]);
+};
+
+const getInitialVisibleExamCount = (language: LanguageAnalysis) => {
+  if (hasExamData(language, 2)) return 3;
+  if (hasExamData(language, 1)) return 2;
+  return 1;
+};
+
+const LanguageExamFields: React.FC<LanguageExamFieldsProps> = ({ language, onChange }) => {
+  const [visibleExamCount, setVisibleExamCount] = React.useState(() => getInitialVisibleExamCount(language));
+
+  React.useEffect(() => {
+    setVisibleExamCount(current => Math.max(current, getInitialVisibleExamCount(language)));
+  }, [language]);
+
+  return (
+    <div className="space-y-4">
+      {EXAM_FIELDS.slice(0, visibleExamCount).map(({ number, type, score, date, otherNote }) => {
       const selectedExam = String(language[type] || '');
+      const isIeltsExam = selectedExam === 'IELTS' || selectedExam === 'IELTS UKVI';
 
       return (
         <div key={number} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
@@ -51,11 +71,14 @@ const LanguageExamFields: React.FC<LanguageExamFieldsProps> = ({ language, onCha
             <div>
               <label className="mb-1 block text-sm text-slate-600">Sınav</label>
               <select
-                value={selectedExam}
-                onChange={event => {
-                  onChange(type, event.target.value);
-                  if (event.target.value !== 'Diğer') onChange(otherNote, '');
-                }}
+                 value={selectedExam}
+                 onChange={event => {
+                   const nextExam = event.target.value;
+                   const isNextExamIelts = nextExam === 'IELTS' || nextExam === 'IELTS UKVI';
+                   onChange(type, nextExam);
+                   if (isNextExamIelts !== isIeltsExam) onChange(score, '');
+                   if (nextExam !== 'Diğer') onChange(otherNote, '');
+                 }}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="">Seçiniz</option>
@@ -64,13 +87,24 @@ const LanguageExamFields: React.FC<LanguageExamFieldsProps> = ({ language, onCha
             </div>
             <div>
               <label className="mb-1 block text-sm text-slate-600">Skor</label>
-              <input
-                type="text"
-                value={String(language[score] || '')}
-                onChange={event => onChange(score, event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                placeholder="Örn: 6.5"
-              />
+              {isIeltsExam ? (
+                <select
+                  value={String(language[score] || '').replace('.', ',')}
+                  onChange={event => onChange(score, event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">Seçiniz</option>
+                  {IELTS_SCORES.map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={String(language[score] || '')}
+                  onChange={event => onChange(score, event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  placeholder="Skor giriniz"
+                />
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm text-slate-600">Sınav Tarihi</label>
@@ -96,8 +130,19 @@ const LanguageExamFields: React.FC<LanguageExamFieldsProps> = ({ language, onCha
           )}
         </div>
       );
-    })}
-  </div>
-);
+      })}
+      {visibleExamCount < EXAM_FIELDS.length && (
+        <button
+          type="button"
+          onClick={() => setVisibleExamCount(current => Math.min(current + 1, EXAM_FIELDS.length))}
+          className="inline-flex items-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/60 px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:border-indigo-400 hover:bg-indigo-50"
+        >
+          <span className="text-lg leading-none">+</span>
+          {visibleExamCount + 1}. Sınav Ekle
+        </button>
+      )}
+    </div>
+  );
+};
 
 export default LanguageExamFields;

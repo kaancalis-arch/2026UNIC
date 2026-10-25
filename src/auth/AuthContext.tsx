@@ -9,6 +9,7 @@ import {
   signOut as authSignOut,
   subscribeToAuthChanges
 } from '../services/authService';
+import { supabase } from '../services/supabaseClient';
 
 interface AuthContextValue {
   currentUser: SystemUser | null;
@@ -211,6 +212,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const channel = supabase
+      .channel(`role-permissions-${currentUser.role}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'role_page_permissions',
+          filter: `role=eq.${currentUser.role}`,
+        },
+        () => {
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => void refreshCurrentUser(), 150);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [currentUser?.id, currentUser?.role]);
 
   return (
     <AuthContext.Provider

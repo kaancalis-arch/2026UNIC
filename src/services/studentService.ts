@@ -48,6 +48,7 @@ function mapDbToStudent(row: any): Student {
         branchId: row.branch_id,
         // counselor_id is retained in the database to avoid a risky column rename.
         assignedUserId: row.counselor_id,
+        studentUserId: row.student_user_id,
         analyseStatus: row.analyse_status,
         applications: row.applications || [],
         visaStatus: row.visa_status,
@@ -187,6 +188,26 @@ async function validateAssignment(student: Partial<Student>): Promise<void> {
 }
 
 export const studentService = {
+    async getMine(userId: string): Promise<Student | null> {
+        if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (sessionError || !accessToken) throw new Error('Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+
+        const { data, error } = await supabase.functions.invoke('student-self-service', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            body: { operation: 'profile' },
+        });
+        if (error || !data?.success) {
+            throw new Error(data?.error || 'Öğrenci profiliniz yüklenemedi.');
+        }
+        if (!data.profile) return null;
+        if (data.profile.student_user_id !== userId) {
+            throw new Error('Öğrenci hesabı bağlantısı doğrulanamadı.');
+        }
+        return mapDbToStudent(data.profile);
+    },
+
     async getAll(): Promise<Student[]> {
         if (!supabase) throw new Error('Supabase yapılandırması bulunamadı.');
 
@@ -327,14 +348,19 @@ export const studentService = {
         delete dbUpdates.counselor_id;
 
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('student_profiles')
                 .update(dbUpdates)
-                .eq('id', id);
+                .eq('id', id)
+                .select('id')
+                .maybeSingle();
 
             if (error) {
                 console.error('Supabase update failed:', error.message);
                 throw new Error(error.message);
+            }
+            if (!data || data.id !== id) {
+                throw new Error('Öğrenci kaydı bulunamadı veya bu kayıt için güncelleme yetkiniz yok.');
             }
         } catch (err: any) {
             console.error('Unexpected error updating student:', err);

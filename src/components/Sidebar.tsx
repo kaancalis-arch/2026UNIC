@@ -13,9 +13,10 @@ import {
   ClipboardCheck,
   Award,
   CalendarDays,
-  ChartPie,
   CheckCircle,
   UserRoundCog,
+  FolderOpen,
+  Settings2,
 } from 'lucide-react';
 import { SystemUser, UserRole } from '../types';
 import { canAccessPage } from '../auth/permissions';
@@ -52,54 +53,62 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggle
 }: SidebarProps) => {
   const getNavItems = (): NavItem[] => {
-    const baseItems: NavItem[] = [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    ];
+    const role = currentUser.role;
+    const baseItems: NavItem[] = [];
 
-    if (canAccessPage(currentUser.role, 'students')) {
-      baseItems.push({ id: 'students', label: 'CRM', icon: Users });
+    if (canAccessPage(currentUser, 'dashboard')) {
+      baseItems.push({ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard });
     }
 
-    if (canAccessPage(currentUser.role, 'user-management')) {
-      baseItems.push({ id: 'user-management', label: 'Kullanıcı Yönetimi', icon: Users });
+    if (canAccessPage(currentUser, 'students')) {
+      baseItems.push({ id: 'students', label: 'CRM Öğrenci Takip', icon: Users });
     }
 
-    if (canAccessPage(currentUser.role, 'student-assignments')) {
-      baseItems.push({ id: 'student-assignments', label: 'Öğrenci Atamaları', icon: UserRoundCog });
-    }
-
-    if (currentUser.role === UserRole.STUDENT) {
-      baseItems.push({ id: 'my-profile', label: 'My Profile', icon: User });
-      baseItems.push({ id: 'my-roadmap', label: 'My Roadmap', icon: Map });
+    if (role === UserRole.STUDENT) {
+      baseItems.push({ id: 'my-profile', label: 'Profilim', icon: User });
+      baseItems.push({ id: 'my-roadmap', label: 'Yol Haritam', icon: Map });
+      baseItems.push({ id: 'files', label: 'Dosyalarım', icon: FolderOpen });
     } else {
-      baseItems.push({ id: 'statistics', label: 'Statistics', icon: ChartPie });
-      baseItems.push({ id: 'universities', label: 'University Search', icon: GraduationCap });
-      baseItems.push({ id: 'university-research', label: 'Üniversite Araştırma', icon: ResearchIcon });
-      baseItems.push({ id: 'calendar', label: 'Calendar', icon: CalendarDays });
-      baseItems.push({ id: 'roadmap', label: 'Roadmaps', icon: Map });
+      baseItems.push({ id: 'universities', label: 'Üniversite Araştırması', icon: GraduationCap });
+      baseItems.push({ id: 'calendar', label: 'Takvim', icon: CalendarDays });
+      baseItems.push({ id: 'roadmap', label: 'Yol Haritası', icon: Map });
     }
 
     baseItems.push({
       id: 'visa',
-      label: 'Visa',
+      label: 'Vize',
       icon: ShieldCheck,
       subItems: [
-        { id: 'visa-results', label: 'Results', icon: Award },
-        { id: 'visa-checklist', label: 'Checklist', icon: ClipboardCheck },
+        { id: 'visa-results', label: 'Sonuçlar', icon: Award },
+        { id: 'visa-checklist', label: 'Kontrol Listesi', icon: ClipboardCheck },
         { id: 'visa-control', label: 'Vize Kontrol Formu', icon: CheckCircle },
       ]
     });
 
+    const systemItems: NavItem[] = [];
+    if (canAccessPage(currentUser, 'student-assignments')) {
+      systemItems.push({ id: 'student-assignments', label: 'Öğrenci Atamaları', icon: UserRoundCog });
+    }
+    if (canAccessPage(currentUser, 'university-research')) {
+      systemItems.push({ id: 'university-research', label: 'Üniversite Araştırma', icon: ResearchIcon });
+    }
+    if (canAccessPage(currentUser, 'user-management') && !canAccessPage(currentUser, 'settings')) {
+      systemItems.push({ id: 'user-management', label: 'Kullanıcı Yönetimi', icon: Users });
+    }
+    if (systemItems.length > 0) {
+      baseItems.push({ id: 'system', label: 'Sistem', icon: Settings2, subItems: systemItems });
+    }
+
     return baseItems
-      .filter((item) => canAccessPage(currentUser.role, item.id))
       .map((item) => ({
         ...item,
-        subItems: item.subItems?.filter((subItem) => canAccessPage(currentUser.role, subItem.id)),
-      }));
+        subItems: item.subItems?.filter((subItem) => canAccessPage(currentUser, subItem.id)),
+      }))
+      .filter((item) => item.subItems ? item.subItems.length > 0 : canAccessPage(currentUser, item.id));
   };
 
   const navItems = getNavItems();
-  const [expandedItems, setExpandedItems] = React.useState<string[]>(['visa']);
+  const [expandedItems, setExpandedItems] = React.useState<string[]>(['visa', 'system']);
 
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
@@ -125,16 +134,21 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-3 py-6">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentPage === item.id;
           const hasSubItems = item.subItems && item.subItems.length > 0;
+          const isActive = currentPage === item.id
+            || (hasSubItems && item.subItems!.some((subItem) => subItem.id === currentPage));
           const isExpanded = expandedItems.includes(item.id);
 
           return (
             <div key={item.id} className="space-y-1">
               <button
                 onClick={() => {
-                  if (hasSubItems && !isCollapsed) {
-                    toggleExpand(item.id);
+                  if (hasSubItems) {
+                    if (isCollapsed) {
+                      setPage(item.subItems![0].id);
+                    } else {
+                      toggleExpand(item.id);
+                    }
                   } else {
                     setPage(item.id);
                   }
@@ -176,14 +190,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className={`space-y-2 border-t border-slate-800 p-4 transition-all duration-300 ${isCollapsed ? 'px-2' : ''}`}>
-        {canAccessPage(currentUser.role, 'settings') && (
+        {canAccessPage(currentUser, 'settings') && (
           <button
             onClick={() => setPage('settings')}
-            title={isCollapsed ? 'System Settings' : ''}
+            title={isCollapsed ? 'Sistem Ayarları' : ''}
             className={`w-full rounded-xl transition-colors ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'} flex items-center ${currentPage === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <SettingsIcon className="h-5 w-5 shrink-0" />
-            {!isCollapsed && <span className="text-sm font-medium">System Settings</span>}
+            {!isCollapsed && <span className="text-sm font-medium">Sistem Ayarları</span>}
           </button>
         )}
 
@@ -192,7 +206,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           title={isCollapsed ? `${currentUser.full_name} (${currentUser.role})` : undefined}
         >
           <div className="relative shrink-0">
-            <img src={currentUser.avatarUrl} className="h-8 w-8 rounded-full bg-slate-700" />
+            {currentUser.avatarUrl ? (
+              <img src={currentUser.avatarUrl} alt="" className="h-8 w-8 rounded-full bg-slate-700 object-cover" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-slate-300">
+                <User className="h-4 w-4" />
+              </div>
+            )}
             <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 ${
               currentUser.role === UserRole.SUPER_ADMIN ? 'bg-red-500' :
               currentUser.role === UserRole.ADMIN ? 'bg-purple-500' :
@@ -215,11 +235,11 @@ const Sidebar: React.FC<SidebarProps> = ({
 
          <button
            onClick={() => void onLogout()}
-           title={isCollapsed ? 'Sign Out' : ''}
+           title={isCollapsed ? 'Çıkış Yap' : ''}
            className={`w-full rounded-xl text-xs font-medium text-rose-400 transition-colors hover:bg-slate-800 hover:text-rose-300 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2'} flex items-center`}
          >
            <LogOut className="h-4 w-4 shrink-0" />
-           {!isCollapsed && <span>Sign Out</span>}
+           {!isCollapsed && <span>Çıkış Yap</span>}
          </button>
       </div>
     </div>

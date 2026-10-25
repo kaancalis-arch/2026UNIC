@@ -11,7 +11,7 @@ const VIEW_URL_SECONDS = 300;
 const SHARE_HOURS = new Set([24, 72, 168]);
 
 type AdminClient = ReturnType<typeof createClient>;
-type StudentRow = { id: string; branch_id: string | null; counselor_id: string | null };
+type StudentRow = { id: string; branch_id: string | null; counselor_id: string | null; student_user_id: string | null };
 type DocumentRow = {
   id: string;
   student_id: string;
@@ -48,10 +48,6 @@ Deno.serve(async (req) => {
   try {
     const admin = createAdminClient();
     const actor = await authorizeAuthenticatedActor(admin, req);
-    if (actor.role === 'Öğrenci') {
-      throw new SafeError('FORBIDDEN', 'Öğrenci rolü belge modülüne erişemez.', 403);
-    }
-
     const contentType = req.headers.get('content-type') ?? '';
     const result = contentType.toLowerCase().startsWith('multipart/form-data')
       ? await handleUpload(admin, actor, req)
@@ -128,12 +124,25 @@ async function handleUpload(admin: AdminClient, actor: AuthenticatedActor, req: 
   const student = await authorizeStudent(admin, actor, studentId);
   const { data: definition, error: typeError } = await admin
     .from('document_types')
-    .select('id, is_active')
+    .select('id, is_active, allow_multiple')
     .eq('id', documentTypeId)
     .maybeSingle();
   if (typeError) internalFailure('Belge türü okunamadı', typeError);
   if (!definition || !definition.is_active) {
     throw new SafeError('VALIDATION_ERROR', 'Belge türü bulunamadı veya aktif değil.', 400);
+  }
+  if (actor.role === 'Öğrenci' && !definition.allow_multiple) {
+    const { data: existing, error: existingError } = await admin
+      .from('student_documents')
+      .select('id')
+      .eq('student_id', student.id)
+      .eq('document_type_id', documentTypeId)
+      .neq('status', 'archived')
+      .limit(1);
+    if (existingError) internalFailure('Mevcut öğrenci belgesi doğrulanamadı', existingError);
+    if (existing?.length) {
+      throw new SafeError('CONFLICT', 'Mevcut belgenin yeni sürümü için danışmanınızla iletişime geçin.', 409);
+    }
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -235,6 +244,9 @@ async function archiveDocument(
   body: Record<string, unknown>,
   req: Request,
 ) {
+  if (actor.role === 'Öğrenci') {
+    throw new SafeError('FORBIDDEN', 'Öğrenci hesapları belge arşivleyemez.', 403);
+  }
   const document = await authorizedDocument(admin, actor, requiredUuid(body.document_id, 'document_id'));
   if (document.status === 'archived') {
     throw new SafeError('VALIDATION_ERROR', 'Belge zaten arşivlenmiş.', 409);
@@ -257,6 +269,9 @@ async function createShareLink(
   body: Record<string, unknown>,
   req: Request,
 ) {
+  if (actor.role === 'Öğrenci') {
+    throw new SafeError('FORBIDDEN', 'Öğrenci hesapları paylaşım bağlantısı oluşturamaz.', 403);
+  }
   const document = await authorizedDocument(admin, actor, requiredUuid(body.document_id, 'document_id'));
    if (document.status !== 'uploaded' && document.status !== 'approved') {
      throw new SafeError('VALIDATION_ERROR', 'Yalnız yüklenmiş veya onaylanmış belgeler paylaşılabilir.', 409);
@@ -303,6 +318,9 @@ async function revokeShareLink(
   body: Record<string, unknown>,
   req: Request,
 ) {
+  if (actor.role === 'Öğrenci') {
+    throw new SafeError('FORBIDDEN', 'Öğrenci hesapları paylaşım bağlantısını yönetemez.', 403);
+  }
   const shareId = requiredUuid(body.share_link_id, 'share_link_id');
   const { data: share, error: readError } = await admin.from('student_document_share_links')
     .select('id, document_id, revoked_at, student_documents!inner(id, student_id, branch_id, status)')
@@ -361,7 +379,7 @@ async function authorizeStudent(
   studentId: string,
 ): Promise<StudentRow & { branch_id: string }> {
   const { data: student, error } = await admin.from('student_profiles')
-    .select('id, branch_id, counselor_id')
+    .select('id, branch_id, counselor_id, student_user_id')
     .eq('id', studentId)
     .maybeSingle();
   if (error) internalFailure('Öğrenci bilgisi okunamadı', error);
@@ -380,6 +398,7 @@ async function authorizeStudent(
   if (actor.role === 'Danışman' || actor.role === 'Temsilci' || actor.role === 'Öğrenci Temsilci') {
     allowed = student.counselor_id === actor.id;
   }
+  if (actor.role === 'Öğrenci') allowed = student.student_user_id === actor.id;
   if (!allowed) throw new SafeError('FORBIDDEN', 'Bu öğrenci için belge erişim yetkiniz yok.', 403);
   return student as StudentRow & { branch_id: string };
 }

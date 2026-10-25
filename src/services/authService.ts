@@ -2,6 +2,7 @@ import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { roleRequiresBranch } from '../auth/userHierarchy';
 import { SystemUser, UserRole } from '../types';
 import { supabase } from './supabaseClient';
+import { permissionService } from './permissionService';
 
 export type AuthServiceErrorCode =
   | 'INVALID_CREDENTIALS'
@@ -102,7 +103,9 @@ export async function loadSystemUser(authUserId: string): Promise<SystemUser> {
       if (branch.status !== undefined && branch.status !== 'active') throw new AuthServiceError('PASSIVE_BRANCH');
     }
 
-    return mapSystemUser({ ...profile, branch_id: branchId });
+    const mappedUser = mapSystemUser({ ...profile, branch_id: branchId });
+    mappedUser.page_permissions = await permissionService.getCurrentRolePermissions(mappedUser.role);
+    return mappedUser;
   } catch (error) {
     throw asAuthServiceError(error);
   }

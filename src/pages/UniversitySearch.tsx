@@ -8,7 +8,7 @@ import {
     Check, X, Loader2, ChevronRight, ClipboardCopy, Upload, Download, RotateCcw, PencilLine
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { UniversityData, UniversityProgram, MainDegreeData } from '../types';
+import { UniversityData, UniversityProgram, MainDegreeData, UniversitySearchFilters } from '../types';
 import { universityService } from '../services/universityService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { systemService, BudgetRange } from '../services/systemService';
@@ -78,7 +78,11 @@ const loadImageAsPng = (src: string) => new Promise<PdfImage | null>((resolve) =
     image.src = src;
 });
 
-const UniversitySearch: React.FC = () => {
+const UniversitySearch: React.FC<{
+    initialFilters?: UniversitySearchFilters;
+    filterRequestId?: number;
+    onFilterRequestHandled?: () => void;
+}> = ({ initialFilters, filterRequestId, onFilterRequestHandled }) => {
     const [universities, setUniversities] = useState<UniversityData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isImportingExcel, setIsImportingExcel] = useState(false);
@@ -91,6 +95,7 @@ const UniversitySearch: React.FC = () => {
     const [selectedType, setSelectedType] = useState<string>('');
     const [selectedBudget, setSelectedBudget] = useState<string>('');
     const [budgetRanges, setBudgetRanges] = useState<BudgetRange[]>([]);
+    const handledFilterRequestId = useRef<number | undefined>(undefined);
     
     // Selection
     const [selectedUnis, setSelectedUnis] = useState<string[]>([]);
@@ -124,6 +129,17 @@ const UniversitySearch: React.FC = () => {
             setIsLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!initialFilters || !filterRequestId || isLoading) return;
+        if (handledFilterRequestId.current === filterRequestId) return;
+
+        handledFilterRequestId.current = filterRequestId;
+        setSelectedDegree(initialFilters.degreeId);
+        setSelectedCountry(initialFilters.country);
+        setSelectedBudget(initialFilters.budget);
+        onFilterRequestHandled?.();
+    }, [filterRequestId, initialFilters, isLoading, onFilterRequestHandled]);
 
     const matchesDegree = (program: UniversityProgram, degreeId: string) => {
         if (!degreeId) return true;
