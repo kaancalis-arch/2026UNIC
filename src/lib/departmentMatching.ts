@@ -13,6 +13,9 @@ export const containsMatchPhrase = (text: string, phrase: string) => {
   const normalizedText = normalizeMatchText(text);
   const normalizedPhrase = normalizeMatchText(phrase);
   if (!normalizedPhrase) return false;
+  if (normalizedPhrase.startsWith('=')) {
+    return normalizedText === normalizedPhrase.slice(1).trim();
+  }
 
   let index = normalizedText.indexOf(normalizedPhrase);
   while (index !== -1) {
