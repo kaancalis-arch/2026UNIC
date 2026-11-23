@@ -198,7 +198,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ) {
           if (event === 'SIGNED_IN' && signInInProgress.current) return;
           if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
-          setIsLoading(true);
+          // Supabase can emit SIGNED_IN/TOKEN_REFRESHED again when a hidden tab
+          // becomes active. Keep the current application tree mounted while the
+          // session/profile is refreshed so open modals and unsaved form state
+          // are not lost when the user switches tabs or browser windows.
           void applySession(nextSession);
         }
       });

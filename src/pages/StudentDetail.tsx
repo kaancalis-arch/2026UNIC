@@ -11,6 +11,7 @@ import { interestedProgramService } from '../services/interestedProgramService';
 import { mainDegreeService } from '../services/mainDegreeService';
 import { countryService } from '../services/countryService';
 import { universityService } from '../services/universityService';
+import { getPublicStorageUrl } from '../services/supabaseClient';
 import { visaChecklistService, VisaChecklistItem } from '../services/visaChecklistService';
 import { DEFAULT_PROFILE_BOXES, getVisibleProfileBoxIds, ProfileBoxConfig, profileBoxService } from '../services/profileBoxService';
 import { SchoolNameRecord, schoolNameService } from '../services/schoolNameService';
@@ -20,7 +21,6 @@ import { jsPDF } from 'jspdf';
 import { MOCK_TUITION_RANGES } from '../services/mockData';
 import LanguageExamFields from '../components/LanguageExamFields';
 import DocumentUploadField from '../components/DocumentUploadField';
-import AIAdvisorPanel from '../components/AIAdvisorPanel';
 import { 
   ArrowLeft, 
   BrainCircuit, 
@@ -69,7 +69,8 @@ import {
   Briefcase,
   Eye,
   EyeOff,
-  Trash2
+  Trash2,
+  CircleX
 } from 'lucide-react';
 
 interface StudentDetailProps {
@@ -85,6 +86,7 @@ interface RequiredDocumentDefinition {
   description?: string;
   allowMultiple: boolean;
   isRequired: boolean;
+  requirement: 'required' | 'optional' | 'not_requested';
 }
 
 interface SuggestedProgramOffer {
@@ -100,11 +102,12 @@ interface SuggestedProgramOffer {
 const PARENT_RELATIONSHIP_OPTIONS = ['Anne', 'Baba', 'Vasi', 'Kardeş', 'Akraba', 'Diğer'];
 const DEPARTMENT_COACHING_RECOMMENDATION = 'Başvuru sürecinde en önemli karar eğitim alacağın bölüme karar vermektir. Eğitim Koçluğu Desteği alarak başvuru yapacağın bölümlere karar verebilirsin.';
 const DEPARTMENT_DECIDED_RECOMMENDATION = 'Bölüm tercihleri konusunda kararlı olman harika, Yol haritamızı bu doğrultuda belirleyeceğiz. Bölümler konusunda fikir değiştirmen halinde mutlaka bize haber vermelisin. Yol haritanı ona göre güncelleyebiliriz.';
+const UNIC_LOGO_URL = getPublicStorageUrl('Unic_Main', 'UNIC The Uni Counsllor Logo.png');
 
 const FullscreenPortal: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) =>
   active ? createPortal(children, document.body) : <>{children}</>;
 
-type StudentDetailTab = 'profile' | 'documents' | 'ai-advisor' | 'analysis' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
+type StudentDetailTab = 'profile' | 'documents' | 'analysis' | 'contracts' | 'application' | 'enrollment' | 'visa' | 'accommodation';
 
 // Options will be loaded from services
 
@@ -255,7 +258,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       const createPage = () => {
         const page = document.createElement('div');
         page.dataset.analysisPreviewPage = 'true';
-        page.className = 'analysis-print-report box-border h-[297mm] w-[210mm] shrink-0 overflow-hidden bg-white p-[12mm] shadow-2xl';
+        page.className = 'analysis-print-report relative box-border h-[297mm] w-[210mm] shrink-0 overflow-hidden bg-white px-[12mm] pb-[24mm] pt-[12mm] shadow-2xl';
         container.appendChild(page);
         return page;
       };
@@ -275,6 +278,21 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         }
       });
 
+      const footerImages = Array.from(container.querySelectorAll<HTMLElement>('[data-analysis-preview-page="true"]')).map(previewPage => {
+        const footer = document.createElement('div');
+        footer.className = 'absolute inset-x-[12mm] bottom-[7mm] flex h-[12mm] items-center justify-center border-t border-slate-100 pt-[3mm]';
+
+        const logo = document.createElement('img');
+        logo.src = UNIC_LOGO_URL;
+        logo.alt = 'UNIC Logo';
+        logo.crossOrigin = 'anonymous';
+        logo.className = 'h-[9mm] max-w-[48mm] object-contain';
+        footer.appendChild(logo);
+        previewPage.appendChild(footer);
+        return logo;
+      });
+
+      await Promise.all(footerImages.map(image => image.decode().catch(() => undefined)));
       if (!cancelled) setIsPrintPreviewReady(true);
     };
 
@@ -349,7 +367,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const [turkeyUniversities, setTurkeyUniversities] = useState<SchoolNameRecord[]>([]);
   const [suggestedUniversityFilter, setSuggestedUniversityFilter] = useState('');
   const [selectedSuggestedProgramIds, setSelectedSuggestedProgramIds] = useState<string[]>([]);
-  const [addingSuggestedUniversityName, setAddingSuggestedUniversityName] = useState<string | null>(null);
+  const [selectedUniversityOfferIds, setSelectedUniversityOfferIds] = useState<string[]>([]);
+  const [isRemovingSelectedOffers, setIsRemovingSelectedOffers] = useState(false);
   const [removingUniversityOfferId, setRemovingUniversityOfferId] = useState<string | null>(null);
   const universityOffersRef = useRef<HTMLDivElement>(null);
   const [mainDegreeDetails, setMainDegreeDetails] = useState<MainDegreeData[]>([]);
@@ -369,6 +388,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   const saveReminderDateOperationRef = useRef<symbol | null>(null);
   const [profileBoxes, setProfileBoxes] = useState<ProfileBoxConfig[]>(DEFAULT_PROFILE_BOXES);
   const [isGeneratingDocumentsPdf, setIsGeneratingDocumentsPdf] = useState(false);
+  const [savingDocumentRequirementId, setSavingDocumentRequirementId] = useState<string | null>(null);
+  const [documentRequirementNotes, setDocumentRequirementNotes] = useState<Record<string, string>>(
+    student.analysis?.documentRequirementNotes || {}
+  );
+  const [savingDocumentNoteId, setSavingDocumentNoteId] = useState<string | null>(null);
 
   // Visa Checklist State
   const [visaItems, setVisaItems] = useState<VisaChecklistItem[]>([]);
@@ -395,12 +419,16 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     setStudent(initialStudent);
     setCurrentStage(initialStudent.pipelineStage);
     setStudentDocuments(initialStudent.documents || initialStudent.analysis?.documents || []);
+    setDocumentRequirementNotes(initialStudent.analysis?.documentRequirementNotes || {});
     setReminderDateInput(initialStudent.reminderDate || '');
     setProfileNotes([]);
     setIsLoadingProfileNotes(true);
     setIsSavingProfileNote(false);
     setPendingProfileNoteId(null);
     setIsSavingReminderDate(false);
+    setSelectedSuggestedProgramIds([]);
+    setSelectedUniversityOfferIds([]);
+    setIsRemovingSelectedOffers(false);
     addProfileNoteOperationRef.current = null;
     completeProfileNoteOperationRef.current = null;
     saveReminderDateOperationRef.current = null;
@@ -764,46 +792,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     universityOffers: offers,
   });
 
-  const addSuggestedUniversityAsOffer = async (
-    uni: { name: string, country: string },
-    program?: { name?: string; type?: 'Bachelor' | 'Master'; tuitionRange?: string; link?: string }
-  ) => {
-    if (addingSuggestedUniversityName) return;
-
-    const programName = program?.name || student.analysis?.preferences?.program1 || 'Genel Başvuru';
-    const currentOffers = universityOffers;
-    if (currentOffers.some(offer => offer.universityName === uni.name && offer.programName === programName)) {
-        universityOffersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-    }
-
-    const offer: UniversityOffer = {
-        id: Math.random().toString(36).substr(2, 9),
-        universityName: uni.name,
-        programName,
-        status: 'Başvuru Aşamasında',
-        country: uni.country,
-        programType: program?.type,
-        tuitionRange: program?.tuitionRange,
-        programLink: program?.link,
-    };
-    const updatedOffers = [...currentOffers, offer];
-    const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
-    setAddingSuggestedUniversityName(uni.name);
-    setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
-    requestAnimationFrame(() => universityOffersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-
-    try {
-        await studentService.update(student.id, { analysis: updatedAnalysis });
-    } catch (e) {
-        console.error("Failed to add suggested university", e);
-        setStudent(prev => ({ ...prev, analysis: buildAnalysisWithUniversityOffers(currentOffers) }));
-        alert('Üniversite önerilere eklenemedi. Lütfen tekrar deneyin.');
-    } finally {
-        setAddingSuggestedUniversityName(null);
-    }
-  };
-
   const handleAddTargetProgram = async (selectedProgramName = newTargetProgramName) => {
     const programName = selectedProgramName.trim();
     if (!programName) return;
@@ -1015,7 +1003,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
   };
 
   const removeUniversityOffer = async (applicationId: string) => {
-    if (removingUniversityOfferId) return;
+    if (removingUniversityOfferId || isRemovingSelectedOffers) return;
 
     const updatedOffers = universityOffers.filter(offer => offer.id !== applicationId);
     const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
@@ -1024,11 +1012,32 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     try {
         await studentService.update(student.id, { analysis: updatedAnalysis });
         setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+        setSelectedUniversityOfferIds(prev => prev.filter(id => id !== applicationId));
     } catch (e) {
         console.error("Failed to remove university offer", e);
         alert('Üniversite önerisi tablodan çıkarılamadı. Lütfen tekrar deneyin.');
     } finally {
         setRemovingUniversityOfferId(null);
+    }
+  };
+
+  const removeSelectedUniversityOffers = async () => {
+    if (selectedUniversityOfferIds.length === 0 || removingUniversityOfferId || isRemovingSelectedOffers) return;
+
+    const selectedIds = new Set(selectedUniversityOfferIds);
+    const updatedOffers = universityOffers.filter(offer => !selectedIds.has(offer.id));
+    const updatedAnalysis = buildAnalysisWithUniversityOffers(updatedOffers);
+    setIsRemovingSelectedOffers(true);
+
+    try {
+        await studentService.update(student.id, { analysis: updatedAnalysis });
+        setStudent(prev => ({ ...prev, analysis: updatedAnalysis }));
+        setSelectedUniversityOfferIds([]);
+    } catch (e) {
+        console.error("Failed to remove selected university offers", e);
+        alert('Seçilen üniversite önerileri silinemedi. Lütfen tekrar deneyin.');
+    } finally {
+        setIsRemovingSelectedOffers(false);
     }
   };
 
@@ -1232,15 +1241,94 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
       }
   };
 
+  const getDocumentRequirement = (definition: DocumentTypeDefinition): RequiredDocumentDefinition['requirement'] =>
+    student.analysis?.documentRequirements?.[definition.id]
+      || (definition.isRequired ? 'required' : 'optional');
+
+  const updateDocumentRequirement = async (
+    documentTypeId: string,
+    requirement: RequiredDocumentDefinition['requirement']
+  ) => {
+    if (savingDocumentRequirementId) return;
+
+    const previousStudent = student;
+    const currentAnalysis: AnalysisReport = student.analysis || {
+      language: {},
+      academic: { exams: {} },
+      social: {},
+      preferences: {},
+      budget: {},
+    };
+    const updatedAnalysis: AnalysisReport = {
+      ...currentAnalysis,
+      documentRequirements: {
+        ...(currentAnalysis.documentRequirements || {}),
+        [documentTypeId]: requirement,
+      },
+    };
+
+    setSavingDocumentRequirementId(documentTypeId);
+    setStudent(previous => ({ ...previous, analysis: updatedAnalysis }));
+    try {
+      await studentService.update(student.id, { analysis: updatedAnalysis });
+    } catch (error) {
+      console.error('Belge gereklilik durumu kaydedilemedi.', error);
+      setStudent(previousStudent);
+      alert('Belge durumu kaydedilemedi. Lütfen tekrar deneyin.');
+    } finally {
+      setSavingDocumentRequirementId(null);
+    }
+  };
+
+  const saveDocumentRequirementNote = async (documentTypeId: string) => {
+    if (savingDocumentNoteId) return;
+
+    const previousStudent = student;
+    const note = (documentRequirementNotes[documentTypeId] || '').trim();
+    const currentAnalysis: AnalysisReport = student.analysis || {
+      language: {},
+      academic: { exams: {} },
+      social: {},
+      preferences: {},
+      budget: {},
+    };
+    const updatedNotes = { ...(currentAnalysis.documentRequirementNotes || {}) };
+    if (note) updatedNotes[documentTypeId] = note;
+    else delete updatedNotes[documentTypeId];
+
+    const updatedAnalysis: AnalysisReport = {
+      ...currentAnalysis,
+      documentRequirementNotes: updatedNotes,
+    };
+
+    setSavingDocumentNoteId(documentTypeId);
+    setDocumentRequirementNotes(previous => ({ ...previous, [documentTypeId]: note }));
+    setStudent(previous => ({ ...previous, analysis: updatedAnalysis }));
+    try {
+      await studentService.update(student.id, { analysis: updatedAnalysis });
+    } catch (error) {
+      console.error('Belge notu kaydedilemedi.', error);
+      setStudent(previousStudent);
+      setDocumentRequirementNotes(previousStudent.analysis?.documentRequirementNotes || {});
+      alert('Belge notu kaydedilemedi. Lütfen tekrar deneyin.');
+    } finally {
+      setSavingDocumentNoteId(null);
+    }
+  };
+
   const documentStatus = useMemo(() => {
-    const allDefinitions: RequiredDocumentDefinition[] = documentTypes.map(definition => ({
-      id: definition.id,
-      label: definition.name,
-      englishName: definition.englishName,
-      description: definition.note,
-      allowMultiple: definition.allowMultiple,
-      isRequired: definition.isRequired,
-    }));
+    const allDefinitions: RequiredDocumentDefinition[] = documentTypes.map(definition => {
+      const requirement = getDocumentRequirement(definition);
+      return {
+        id: definition.id,
+        label: definition.name,
+        englishName: definition.englishName,
+        description: definition.note,
+        allowMultiple: definition.allowMultiple,
+        isRequired: requirement === 'required',
+        requirement,
+      };
+    });
     const uploadedIds = new Set(
       studentDocuments
         .filter(document => document.status !== 'archived')
@@ -1253,7 +1341,7 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 100;
 
     return { definitions: allDefinitions, required, completed, total, percentage, missing };
-  }, [documentTypes, studentDocuments]);
+  }, [documentTypes, studentDocuments, student.analysis?.documentRequirements]);
 
   const whatsAppDocumentMessage = [
     `${student.firstName} ${student.lastName} - Başvuru Belgeleri`,
@@ -3163,14 +3251,14 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
             const requirementFields = educationLevel === 'bachelor'
               ? [
                   { label: 'YKS Şartları', value: country?.yksRequirement },
-                  { label: 'Genel Başvuru Kriterleri', value: country?.generalApplicationRequirements },
-                  { label: 'Sınav ve Belge Şartları', value: country?.examRequirements },
+                  { label: 'Başvuru Kriterleri ve Sınavlar', value: country?.generalApplicationRequirements },
+                  { label: 'Uluslararası Diplomalar (IB, AP, vb.)', value: country?.examRequirements },
                   { label: 'Foundation Bilgisi', value: country?.foundationRequirements },
                 ]
               : educationLevel === 'master'
                 ? [
-                    { label: 'Genel Başvuru Kriterleri', value: country?.generalApplicationRequirements },
-                    { label: 'Sınav ve Belge Şartları', value: country?.examRequirements },
+                    { label: 'Başvuru Kriterleri ve Sınavlar', value: country?.generalApplicationRequirements },
+                    { label: 'Uluslararası Diplomalar (IB, AP, vb.)', value: country?.examRequirements },
                   ]
                 : [
                     { label: 'Öğrenci Çalışma İzni', value: country?.studentWorkPermit },
@@ -3652,7 +3740,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
         {[
           { id: 'profile', label: 'Profil', icon: User, visible: true },
           { id: 'documents', label: 'Belgeler', icon: FileCheck, visible: true },
-          { id: 'ai-advisor', label: 'AI Danışman', icon: BrainCircuit, visible: true },
           { id: 'analysis', label: 'Analiz', icon: Sparkles, visible: currentStage === PipelineStage.ANALYSE || currentStage === PipelineStage.PROCESS },
           { id: 'contracts', label: 'Sözleşme', icon: FileText, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
           { id: 'application', label: 'Başvurular', icon: Globe, visible: currentStage === PipelineStage.PROCESS || currentStage === PipelineStage.ENROLLMENT },
@@ -3677,8 +3764,6 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
       {/* Content Area */}
       <div id="student-printable-area" className="flex-1 overflow-y-auto pr-2 pb-10 student-content-area">
-        {activeTab === 'ai-advisor' && <AIAdvisorPanel student={student} />}
-
         {activeTab === 'profile' && (
           <div className="space-y-6 animate-fade-in print:block print:space-y-6">
             {renderInterestedProgramsCard()}
@@ -3918,11 +4003,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                  <Sparkles className={`h-4 w-4 ${decisionStatus === 'decided' ? 'text-blue-600' : 'text-violet-600'}`} />
                                                  {decisionLabel}
                                              </div>
-                                             <div className={`mt-3 border-t pt-3 ${decisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
-                                                 <p className={`text-[10px] font-black uppercase tracking-widest ${decisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
-                                                 <p className={`mt-1 text-xs leading-relaxed ${decisionStatus === 'decided' ? 'text-blue-800' : 'text-violet-800'}`}>
-                                                     {decisionStatus === 'decided' ? DEPARTMENT_DECIDED_RECOMMENDATION : DEPARTMENT_COACHING_RECOMMENDATION}
-                                                 </p>
+                                              <div className="mt-3 rounded-sm border border-yellow-200 bg-yellow-100 p-4 shadow-md shadow-yellow-200/60">
+                                                  <p className="text-sm font-black uppercase tracking-widest text-amber-700">Danışman Notu</p>
+                                                  <p className="mt-1 text-base italic leading-relaxed text-amber-950">
+                                                      {decisionStatus === 'decided' ? DEPARTMENT_DECIDED_RECOMMENDATION : DEPARTMENT_COACHING_RECOMMENDATION}
+                                                  </p>
                                              </div>
                                          </div>
                                      );
@@ -4109,9 +4194,9 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                 <p className="text-sm font-bold text-slate-800">{student.analysis.language.targetExam}</p>
                                             </div>
                                             {student.analysis.language.preparationNotes?.trim() && (
-                                                <div className="mt-2 border-t border-slate-200/60 pt-2">
-                                                    <p className="text-[10px] text-slate-500 uppercase">Hazırlık Notları</p>
-                                                    <p className="text-xs text-slate-700 leading-relaxed italic">{student.analysis.language.preparationNotes}</p>
+                                                <div className="mt-3 rounded-sm border border-yellow-200 bg-yellow-100 p-4 shadow-md shadow-yellow-200/60">
+                                                    <p className="text-sm font-black uppercase tracking-widest text-amber-700">Hazırlık Notları</p>
+                                                    <p className="mt-1 text-base italic leading-relaxed text-amber-950">{student.analysis.language.preparationNotes}</p>
                                                 </div>
                                             )}
                                         </div>
@@ -4292,22 +4377,78 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                         </div>
                     </div>
                     <div className="space-y-3">
-                        {documentStatus.definitions.map(req => (
-                                <DocumentUploadField
-                                    key={req.id}
-                                    documentTypeId={req.id}
+                        {documentStatus.definitions.map(req => {
+                            const savedNote = student.analysis?.documentRequirementNotes?.[req.id] || '';
+                            const currentNote = documentRequirementNotes[req.id] || '';
+
+                            return (
+                                <div key={req.id} className="space-y-2">
+                                 <DocumentUploadField
+                                     documentTypeId={req.id}
                                     label={req.label}
-                                    description={req.description}
-                                    required={req.isRequired}
-                                    multiple={req.allowMultiple}
-                                    documents={studentDocuments}
-                                    onUpload={(file) => uploadDocument(req.id, file)}
+                                     description={req.description}
+                                     required={req.isRequired}
+                                     multiple={req.allowMultiple}
+                                     documents={studentDocuments}
+                                     canUpload={req.requirement !== 'not_requested'}
+                                     headerAccessory={(
+                                         <select
+                                             value={req.requirement}
+                                             disabled={savingDocumentRequirementId !== null}
+                                             onChange={(event) => void updateDocumentRequirement(
+                                                 req.id,
+                                                 event.target.value as RequiredDocumentDefinition['requirement']
+                                             )}
+                                             aria-label={`${req.label} belge gereklilik durumu`}
+                                             className={`rounded-lg border px-2.5 py-2 text-xs font-bold outline-none transition focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-60 ${
+                                                 req.requirement === 'required'
+                                                     ? 'border-rose-200 bg-rose-50 text-rose-700'
+                                                     : req.requirement === 'optional'
+                                                         ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                                         : 'border-slate-200 bg-slate-100 text-slate-500'
+                                             }`}
+                                         >
+                                             <option value="required">Zorunlu</option>
+                                             <option value="optional">İsteğe Bağlı</option>
+                                             <option value="not_requested">İstenmiyor</option>
+                                         </select>
+                                     )}
+                                     onUpload={(file) => uploadDocument(req.id, file)}
                                     onView={viewDocument}
                                     onArchive={archiveDocument}
-                                    onCreateShare={createDocumentShare}
-                                    onRevokeShare={revokeDocumentShare}
-                                />
-                        ))}
+                                     onCreateShare={createDocumentShare}
+                                     onRevokeShare={revokeDocumentShare}
+                                 />
+                                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                     <label htmlFor={`document-note-${req.id}`} className="text-xs font-black uppercase tracking-wider text-amber-700">
+                                         Belge Notu
+                                     </label>
+                                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                         <textarea
+                                             id={`document-note-${req.id}`}
+                                             rows={2}
+                                             value={currentNote}
+                                             onChange={(event) => setDocumentRequirementNotes(previous => ({
+                                                 ...previous,
+                                                 [req.id]: event.target.value,
+                                             }))}
+                                             placeholder="Bu belge için öğrenciye özel not ekleyin..."
+                                             className="min-h-16 flex-1 resize-y rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                                         />
+                                         <button
+                                             type="button"
+                                             onClick={() => void saveDocumentRequirementNote(req.id)}
+                                             disabled={savingDocumentNoteId !== null || currentNote.trim() === savedNote}
+                                             className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-3.5 py-2 text-xs font-black text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                         >
+                                             {savingDocumentNoteId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                             Notu Kaydet
+                                         </button>
+                                     </div>
+                                 </div>
+                                </div>
+                            );
+                        })}
                         {documentStatus.definitions.length === 0 && (
                             <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">Aktif evrak türü tanımlanmamış.</p>
                         )}
@@ -4765,10 +4906,10 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
 
                     <div id="unic-analysis-report-area" className={`analysis-print-report space-y-6 ${isPrintPreviewOpen ? 'pointer-events-none fixed left-[-10000px] top-0 box-border w-[210mm] max-w-none bg-white p-[12mm]' : ''}`}>
                       <div className="analysis-print-card analysis-print-header rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border-slate-300 print:shadow-none">
-                          <p className="text-xs font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
-                          <h2 className="mt-2 text-2xl font-black text-slate-900">{student.firstName} {student.lastName}</h2>
-                         <p className="mt-1 text-sm font-bold text-slate-700">{getReportAcademicSummary().school}</p>
-                         <p className="mt-1 text-sm font-semibold text-slate-600">{getReportAcademicSummary().detail}</p>
+                           <p className="text-[15px] font-black uppercase tracking-widest text-slate-400">UNIC Öğrenci Analiz Raporu</p>
+                           <h2 className="mt-2 text-[27px] font-black text-slate-900">{student.firstName} {student.lastName}</h2>
+                          <p className="mt-1 text-[17px] font-bold text-slate-700">{getReportAcademicSummary().school}</p>
+                          <p className="mt-1 text-[17px] font-semibold text-slate-600">{getReportAcademicSummary().detail}</p>
                      </div>
 
                      <AnalysisReportSection
@@ -4824,12 +4965,12 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                           <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Hedeflenen Sınav</p>
                                           <p className="text-sm font-black text-slate-800">{student.analysis.language.targetExam}</p>
                                       </div>
-                                      {student.analysis.language.preparationNotes?.trim() && (
-                                          <div className="mt-3 border-t border-violet-100 pt-2">
-                                              <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">Hazırlık Notları</p>
-                                              <p className="mt-1 text-xs leading-relaxed text-slate-700">{student.analysis.language.preparationNotes}</p>
-                                          </div>
-                                      )}
+                                  </div>
+                              )}
+                              {student.analysis?.language?.preparationNotes?.trim() && (
+                                  <div className="flex items-baseline gap-3 rounded-sm border border-yellow-200 bg-yellow-100 p-4 shadow-md shadow-yellow-200/60 sm:col-span-2 lg:col-span-3">
+                                      <p className="shrink-0 text-sm font-black uppercase tracking-widest text-amber-700">Hazırlık Notları</p>
+                                      <p className="text-base italic leading-relaxed text-amber-950">{student.analysis.language.preparationNotes}</p>
                                   </div>
                               )}
                          </div>
@@ -4879,18 +5020,17 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                           return (
                               <AnalysisReportSection
                                   sectionKey="interested-education"
-                                  title="İlgilendiği Eğitim Tercihleri"
+                                   title="Ülke ve Bölüm Tercihleri"
                                   className="analysis-print-card analysis-print-preferences rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm"
                               >
                                   <div className="mb-4 flex items-center gap-2 pr-24">
                                       <Sparkles className="h-4 w-4 text-indigo-600" />
-                                      <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">İlgilendiği Eğitim Tercihleri</h3>
+                                       <h3 className="text-sm font-black uppercase tracking-widest text-indigo-700">Ülke ve Bölüm Tercihleri</h3>
                                    </div>
 
                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                       <div className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm md:col-span-2">
-                                           <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-indigo-500">Seçtiği Ülkeler</p>
-                                           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                        <div className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm md:col-span-2">
+                                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                                               {selectedCountries.map(country => {
                                                   const countryCode = getCountryCode(country);
 
@@ -4920,9 +5060,8 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                            </div>
                                        )}
 
-                                       {(selectedDegrees.length > 0 || showDepartmentRecommendation) && <div className="space-y-3 md:col-span-2">
-                                           <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Bölüm Tercihleri</p>
-                                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        {(selectedDegrees.length > 0 || showDepartmentRecommendation) && <div className="space-y-3 md:col-span-2">
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                               {selectedDegrees.map(({ degreeName, degreeNote, preferenceNumber }) => {
                                                   const degree = mainDegreeDetails.find(item => normalizeDefinitionLookupValue(item.name) === normalizeDefinitionLookupValue(degreeName));
 
@@ -4946,16 +5085,16 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                    );
                                                })}
                                                {showDepartmentRecommendation && !hasSecondDepartmentPreference && (
-                                                   <div className={`rounded-xl border bg-white p-4 shadow-sm ${departmentDecisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
-                                                       <p className={`text-[10px] font-black uppercase tracking-widest ${departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
-                                                       <p className="mt-1 text-sm leading-relaxed text-slate-700">{departmentRecommendation}</p>
+                                                    <div className="rounded-sm border border-yellow-200 bg-yellow-100 p-4 shadow-md shadow-yellow-200/60">
+                                                        <p className="text-sm font-black uppercase tracking-widest text-amber-700">Danışman Notu</p>
+                                                        <p className="mt-1 text-base italic leading-relaxed text-amber-950">{departmentRecommendation}</p>
                                                    </div>
                                                )}
                                            </div>
                                            {showDepartmentRecommendation && hasSecondDepartmentPreference && (
-                                               <div className={`rounded-xl border bg-white p-4 shadow-sm ${departmentDecisionStatus === 'decided' ? 'border-blue-200' : 'border-violet-200'}`}>
-                                                   <p className={`text-[10px] font-black uppercase tracking-widest ${departmentDecisionStatus === 'decided' ? 'text-blue-500' : 'text-violet-500'}`}>Danışman Notu</p>
-                                                   <p className="mt-1 text-sm leading-relaxed text-slate-700">{departmentRecommendation}</p>
+                                                <div className="rounded-sm border border-yellow-200 bg-yellow-100 p-4 shadow-md shadow-yellow-200/60">
+                                                    <p className="text-sm font-black uppercase tracking-widest text-amber-700">Danışman Notu</p>
+                                                    <p className="mt-1 text-base italic leading-relaxed text-amber-950">{departmentRecommendation}</p>
                                                </div>
                                            )}
                                        </div>}
@@ -5032,15 +5171,44 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     <GraduationCap className="h-5 w-5 text-indigo-600" />
                                     Üniversite Önerileri
                                 </h3>
-                                <p className="mt-0.5 text-xs text-slate-400">Teklife eklenen üniversite ve bölümler</p>
+                                <p className="mt-0.5 text-xs text-slate-400">Seçilen üniversite ve bölüm eşleşmeleri</p>
                             </div>
-                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-600">
-                                {universityOffers.length} Öneri
-                            </span>
+                            <div className="flex flex-wrap items-center justify-end gap-2" data-pdf-hidden="true">
+                                {universityOffers.length > 0 && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedUniversityOfferIds(
+                                                selectedUniversityOfferIds.length === universityOffers.length
+                                                    ? []
+                                                    : universityOffers.map(offer => offer.id)
+                                            )}
+                                            disabled={isRemovingSelectedOffers || removingUniversityOfferId !== null}
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {selectedUniversityOfferIds.length === universityOffers.length ? 'Seçimi Kaldır' : 'Hepsini Seç'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void removeSelectedUniversityOffers()}
+                                            disabled={selectedUniversityOfferIds.length === 0 || isRemovingSelectedOffers || removingUniversityOfferId !== null}
+                                            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            {isRemovingSelectedOffers
+                                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                : <Trash2 className="h-3.5 w-3.5" />}
+                                            Seçilenleri Sil ({selectedUniversityOfferIds.length})
+                                        </button>
+                                    </>
+                                )}
+                                <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                                    {universityOffers.length} Öneri
+                                </span>
+                            </div>
                         </div>
 
                         {universityOffers.length > 0 ? (
-                            <div className="space-y-2 p-6">
+                            <div className="grid grid-cols-1 gap-4 p-6 lg:grid-cols-2">
                                 {universityOffers.map(offer => {
                                     const university = allUniversities.find((item: any) => item.name === offer.universityName);
                                     const countryName = offer.country
@@ -5060,76 +5228,90 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     const currency = allCountriesData.find(country => (
                                         country.name.toLocaleLowerCase('tr-TR') === countryName.toLocaleLowerCase('tr-TR')
                                     ))?.currency || '';
+                                    const isOfferSelected = selectedUniversityOfferIds.includes(offer.id);
 
                                     return (
-                                        <div key={offer.id} className="analysis-print-university-row flex items-start gap-4 rounded-xl border border-slate-100 p-3.5 transition-all hover:border-indigo-200 hover:bg-indigo-50/30">
-                                            <div className="analysis-print-flag analysis-print-university-flag flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
-                                                {countryCode ? (
-                                                    <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} className="h-full w-full object-cover" alt={countryName} />
-                                                ) : (
-                                                    <GraduationCap className="h-5 w-5 text-slate-300" />
-                                                )}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <p className="text-sm font-bold text-slate-800">{offer.universityName}</p>
-                                                    {countryName && (
-                                                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-500">{countryName}</span>
+                                        <div key={offer.id} className={`analysis-print-university-row flex h-full flex-col rounded-2xl border bg-gradient-to-br from-white to-indigo-50/40 p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${isOfferSelected ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-indigo-100 hover:border-indigo-200'}`}>
+                                            <div className="flex items-start gap-3">
+                                                <div className={`analysis-print-flag analysis-print-university-flag flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm ${isPrintPreviewOpen ? 'h-24 w-24 p-1' : 'h-16 w-16 p-2'}`}>
+                                                    {university?.logo ? (
+                                                        <img src={university.logo} className="h-full w-full object-contain" alt={`${offer.universityName} logosu`} />
+                                                    ) : (
+                                                        <GraduationCap className="h-5 w-5 text-slate-300" />
                                                     )}
                                                 </div>
-                                                <div className="mt-3 rounded-xl border border-indigo-100 bg-white/80 p-3">
-                                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                                        {programLink ? (
-                                                            <a
-                                                                href={programLink}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="inline-flex items-start gap-1.5 text-sm font-black leading-snug text-slate-900 transition hover:text-indigo-600 hover:underline"
-                                                            >
-                                                                {programName}
-                                                                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
-                                                            </a>
-                                                        ) : (
-                                                            <div className="text-sm font-black leading-snug text-slate-900">{programName}</div>
-                                                        )}
-                                                    </div>
-                                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                                        <span className={`rounded px-2 py-0.5 text-[9px] font-bold ${programType === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                            {programType || 'Bachelor'}
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-black leading-snug text-slate-900">{offer.universityName}</p>
+                                                    {countryName && (
+                                                        <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                                                            {countryCode && <img src={`https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`} alt="" className="h-3 w-4 rounded-sm object-cover" />}
+                                                            {countryName}
                                                         </span>
-                                                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
-                                                            Yıllık Yaklaşık Ücret: {tuitionRange || 'Belirtilmedi'}{currency ? ` ${currency}` : ''}
-                                                        </span>
-                                                    </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex shrink-0 items-center gap-2" data-pdf-hidden="true">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label={`${offer.universityName} - ${programName} önerisini seç`}
+                                                        checked={isOfferSelected}
+                                                        disabled={isRemovingSelectedOffers || removingUniversityOfferId !== null}
+                                                        onChange={() => setSelectedUniversityOfferIds(previous => isOfferSelected
+                                                            ? previous.filter(id => id !== offer.id)
+                                                            : [...previous, offer.id])}
+                                                        className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void removeUniversityOffer(offer.id)}
+                                                        disabled={removingUniversityOfferId !== null || isRemovingSelectedOffers}
+                                                        title="Önerilerden çıkar"
+                                                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-white text-rose-500 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50"
+                                                    >
+                                                        {removingUniversityOfferId === offer.id
+                                                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                            : <Trash2 className="h-4 w-4" />}
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <button
-                                                data-pdf-hidden="true"
-                                                type="button"
-                                                onClick={() => void removeUniversityOffer(offer.id)}
-                                                disabled={removingUniversityOfferId !== null}
-                                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-wait disabled:opacity-50"
-                                            >
-                                                {removingUniversityOfferId === offer.id
-                                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                    : <Trash2 className="h-3.5 w-3.5" />}
-                                                Tablodan Çıkar
-                                            </button>
+                                            <div className="mt-4 flex flex-1 flex-col rounded-xl border border-white bg-white/90 p-4 shadow-sm">
+                                                <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-indigo-500">Seçilen Bölüm</p>
+                                                {programLink ? (
+                                                    <a
+                                                        href={programLink}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-start gap-1.5 text-sm font-black leading-snug text-slate-900 transition hover:text-indigo-600 hover:underline"
+                                                    >
+                                                        {programName}
+                                                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                                                    </a>
+                                                ) : (
+                                                    <div className="text-sm font-black leading-snug text-slate-900">{programName}</div>
+                                                )}
+                                                <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+                                                    <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${programType === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                        {programType || 'Bachelor'}
+                                                    </span>
+                                                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-700">
+                                                        Yıllık Yaklaşık Ücret: {tuitionRange || 'Belirtilmedi'}{currency ? ` ${currency}` : ''}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                     );
                                 })}
                             </div>
                         ) : (
                             <div className="px-6 py-10 text-center">
-                                <p className="text-sm font-semibold text-slate-500">Henüz teklife eklenen üniversite yok.</p>
-                                <p className="mt-1 text-xs text-slate-400">Aşağıdaki önerilerden bölümleri seçip “Seçilenleri Teklife Ekle” butonunu kullanın.</p>
+                                <p className="text-sm font-semibold text-slate-500">Henüz üniversite önerisi eklenmedi.</p>
+                                <p className="mt-1 text-xs text-slate-400">Aşağıdaki kartlardan okul ve bölümleri seçip “Üniversite Önerilerine Ekle” butonunu kullanın.</p>
                             </div>
                         )}
                       </AnalysisReportSection>
                     </div>
 
                     {/* Suggested Universities – filtered from system */}
-                    {!isPrintPreviewOpen && (() => {
+                     {!isPrintPreviewOpen && (() => {
                         const prefCountries = [
                             student.analysis?.preferences?.country1,
                             student.analysis?.preferences?.country2,
@@ -5230,6 +5412,23 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     programLink: program.link,
                                 }));
                         });
+                        const visibleSuggestedProgramCards = visibleFilteredUnis.flatMap((uni: any) => {
+                            const universityMatchesFilter = !normalizedSuggestedFilter || [
+                                uni.name,
+                                ...(uni.countries || []),
+                            ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
+                            const allMatchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
+                            const matchingPrograms = universityMatchesFilter
+                                ? allMatchingPrograms
+                                : allMatchingPrograms.filter(programMatchesSuggestedFilter);
+
+                            return matchingPrograms.map((program: any) => ({
+                                uni,
+                                program,
+                                selectionId: getSuggestedProgramSelectionId(uni, program),
+                                countryName: (uni.countries || [])[0] || '',
+                            }));
+                        });
 
                         return (
                             <AnalysisReportSection
@@ -5240,11 +5439,11 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                     <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-center lg:justify-between">
                                      <div>
                                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                             <GraduationCap className="w-5 h-5 text-indigo-600" />
-                                             Uygun Bölümler
-                                        </h3>
-                                        <p className="text-xs text-slate-400 mt-0.5">Tercihlerinize uyan partner üniversitelerimiz</p>
-                                    </div>
+                                              <GraduationCap className="w-5 h-5 text-indigo-600" />
+                                              Uygun Bölümler
+                                         </h3>
+                                         <p className="text-xs text-slate-400 mt-0.5">Üniversite Araştırması sonuçları gibi kartlardan okul ve bölüm seçin</p>
+                                     </div>
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center" data-pdf-hidden="true">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -5255,168 +5454,212 @@ const StudentDetail: React.FC<StudentDetailProps> = ({ student: initialStudent, 
                                                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white sm:w-64"
                                             />
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => addSuggestedProgramsAsOffers(selectedSuggestedProgramOffers)}
-                                            disabled={selectedSuggestedProgramOffers.length === 0}
-                                            className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                                        >
-                                            Seçilenleri Teklife Ekle ({selectedSuggestedProgramOffers.length})
-                                        </button>
-                                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">
-                                            {visibleFilteredUnis.length}/{filteredUnis.length} Okul
-                                        </span>
-                                    </div>
-                                </div>
+                                         <button
+                                             type="button"
+                                             onClick={() => addSuggestedProgramsAsOffers(selectedSuggestedProgramOffers)}
+                                             disabled={selectedSuggestedProgramOffers.length === 0}
+                                             className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                         >
+                                             Üniversite Önerilerine Ekle ({selectedSuggestedProgramOffers.length})
+                                         </button>
+                                         <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">
+                                             {visibleSuggestedProgramCards.length} Bölüm · {visibleFilteredUnis.length} Okul
+                                         </span>
+                                     </div>
+                                 </div>
 
-                                {visibleFilteredUnis.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                        <AlertCircle className="w-8 h-8 text-slate-300 mb-2" />
-                                        <p className="text-sm text-slate-500 italic">Tercihlerinize uyan üniversite bulunamadı.</p>
-                                        <p className="text-[11px] text-slate-400 mt-1">Üniversite Arama'dan manuel ekleyebilirsiniz.</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {visibleFilteredUnis.map((uni: any, idx: number) => {
-                                            const isAdded = universityOffers.some(offer => offer.universityName === uni.name);
-                                            const countryName = (uni.countries || [])[0] || '';
-                                            const countryCode = getCountryCode(countryName);
-                                            const allMatchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
-                                            const universityMatchesFilter = !normalizedSuggestedFilter || [
-                                                uni.name,
-                                                ...(uni.countries || []),
-                                            ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
-                                            const matchingPrograms = universityMatchesFilter
-                                                ? allMatchingPrograms
-                                                : allMatchingPrograms.filter(programMatchesSuggestedFilter);
+                                 {visibleSuggestedProgramCards.length === 0 ? (
+                                     <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                         <AlertCircle className="w-8 h-8 text-slate-300 mb-2" />
+                                         <p className="text-sm text-slate-500 italic">Tercihlerinize uyan üniversite ve bölüm bulunamadı.</p>
+                                         <p className="text-[11px] text-slate-400 mt-1">Üniversite Arama'dan manuel ekleyebilirsiniz.</p>
+                                     </div>
+                                 ) : (
+                                     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                                         {visibleFilteredUnis.map((uni: any) => {
+                                             const countryName = (uni.countries || [])[0] || '';
+                                             const countryCode = getCountryCode(countryName);
+                                             const currency = allCountriesData.find(country => (
+                                                 country.name.toLocaleLowerCase('tr-TR') === countryName.toLocaleLowerCase('tr-TR')
+                                             ))?.currency || '';
+                                             const universityMatchesFilter = !normalizedSuggestedFilter || [
+                                                 uni.name,
+                                                 ...(uni.countries || []),
+                                             ].some(value => normalizeProgramMatchValue(value).includes(normalizedSuggestedFilter));
+                                             const allMatchingPrograms = (uni.programs || []).filter(programMatchesPreferences);
+                                             const matchingPrograms = universityMatchesFilter
+                                                 ? allMatchingPrograms
+                                                 : allMatchingPrograms.filter(programMatchesSuggestedFilter);
+                                             const selectableProgramIds = matchingPrograms
+                                                 .filter((program: any) => !universityOffers.some(offer => offer.universityName === uni.name && offer.programName === program.name))
+                                                 .map((program: any) => getSuggestedProgramSelectionId(uni, program));
+                                             const isUniversitySelected = selectableProgramIds.length > 0
+                                                 && selectableProgramIds.every((id: string) => selectedSuggestedProgramIds.includes(id));
+                                             const isFullyAdded = matchingPrograms.length > 0 && selectableProgramIds.length === 0;
+                                             const tuitionRange = uni.tuitionRange || matchingPrograms.find((program: any) => program.tuitionRange)?.tuitionRange;
 
-                                            return (
-                                                <div key={idx} className="analysis-print-university-row flex items-start gap-4 p-3.5 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group">
-                                                    {/* Flag */}
-                                                    <div className="analysis-print-flag analysis-print-university-flag w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                                                        {countryCode ? (
-                                                            <img src={`https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`} className="w-full h-full object-cover" alt={countryName} />
-                                                        ) : (
-                                                            <GraduationCap className="w-5 h-5 text-slate-300" />
-                                                        )}
-                                                    </div>
+                                             const toggleUniversitySelection = () => {
+                                                 setSelectedSuggestedProgramIds(previous => isUniversitySelected
+                                                     ? previous.filter(id => !selectableProgramIds.includes(id))
+                                                     : Array.from(new Set([...previous, ...selectableProgramIds])));
+                                             };
 
-                                                    {/* Info */}
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">{uni.name}</p>
-                                                            {uni.rankingUrl && (
-                                                                <a
-                                                                    href={uni.rankingUrl}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    onClick={(event) => event.stopPropagation()}
-                                                                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 hover:underline"
-                                                                >
-                                                                    Ranking <ExternalLink className="h-3 w-3" />
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                                            {countryName && (
-                                                                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">{countryName}</span>
-                                                            )}
-                                                            {uni.tuitionRange && (
-                                                                <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">💶 {uni.tuitionRange}</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="mt-3 rounded-xl border border-indigo-100 bg-white/80 p-3">
-                                                            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                                                                Uyum Sağlayan Bölümler ({matchingPrograms.length})
-                                                            </div>
-                                                            <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                                                                {matchingPrograms.map((program: any) => (
-                                                                    (() => {
-                                                                        const programSelectionId = getSuggestedProgramSelectionId(uni, program);
-                                                                        const isProgramSelected = selectedSuggestedProgramIds.includes(programSelectionId);
-                                                                        const isProgramAdded = universityOffers.some(offer => offer.universityName === uni.name && offer.programName === program.name);
+                                             return (
+                                                 <article
+                                                     key={uni.id || uni.name}
+                                                     className={`analysis-print-university-row group flex min-h-[410px] flex-col rounded-[24px] border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                                                         isUniversitySelected ? 'border-indigo-300 ring-2 ring-indigo-100' : isFullyAdded ? 'border-emerald-200' : 'border-slate-200'
+                                                     }`}
+                                                 >
+                                                     <div className="flex items-start justify-between gap-4">
+                                                         <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                                             {uni.logo ? (
+                                                                 <img src={uni.logo} alt={`${uni.name} logosu`} className="h-full w-full object-contain" />
+                                                             ) : (
+                                                                 <GraduationCap className="h-9 w-9 text-slate-300" />
+                                                             )}
+                                                         </div>
+                                                         <input
+                                                             data-pdf-hidden="true"
+                                                             type="checkbox"
+                                                             aria-label={`${uni.name} ve uygun bölümlerini seç`}
+                                                             checked={isUniversitySelected || isFullyAdded}
+                                                             disabled={isFullyAdded}
+                                                             onChange={toggleUniversitySelection}
+                                                             className="mt-10 h-5 w-5 shrink-0 rounded-full border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                                         />
+                                                     </div>
 
-                                                                        return (
-                                                                            <label key={program.id || program.name} className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                                                                                <input
-                                                                                    data-pdf-hidden="true"
-                                                                                    type="checkbox"
-                                                                                    checked={isProgramSelected}
-                                                                                    disabled={isProgramAdded}
-                                                                                    onChange={(event) => {
-                                                                                        const checked = event.target.checked;
-                                                                                        setSelectedSuggestedProgramIds(prev => checked
-                                                                                            ? Array.from(new Set([...prev, programSelectionId]))
-                                                                                            : prev.filter(id => id !== programSelectionId));
-                                                                                    }}
-                                                                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-                                                                                />
-                                                                                <div className="min-w-0 flex-1">
-                                                                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                                                                        <div className="text-sm font-black leading-snug text-slate-900">{program.name}</div>
-                                                                                        {program.link && (
-                                                                                            <a
-                                                                                                href={program.link}
-                                                                                                target="_blank"
-                                                                                                rel="noreferrer"
-                                                                                                onClick={(event) => event.stopPropagation()}
-                                                                                                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-indigo-600 transition hover:bg-indigo-50 hover:underline"
-                                                                                            >
-                                                                                                Bölüm Linki <ExternalLink className="h-3 w-3" />
-                                                                                            </a>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                                                        <span className={`rounded px-2 py-0.5 text-[9px] font-bold ${program.type === 'Master' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                                                            {program.type || 'Bachelor'}
-                                                                                        </span>
-                                                                                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
-                                                                                            Fiyat: {program.tuitionRange || 'Belirtilmedi'}
-                                                                                        </span>
-                                                                                        {isProgramAdded && (
-                                                                                            <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-black text-emerald-700">Eklendi</span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </label>
-                                                                        );
-                                                                    })()
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                     <h4 className="mt-4 text-sm font-black leading-snug text-slate-900">{uni.name}</h4>
+                                                     <div className="mt-2 flex w-fit flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-bold">
+                                                         {countryCode && (
+                                                             <img src={`https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`} alt="" className="h-3.5 w-5 rounded-sm object-cover" />
+                                                         )}
+                                                         <span className="text-slate-600">{countryName || 'Ülke belirtilmedi'}</span>
+                                                         {currency && <><span className="text-slate-300">•</span><span className="text-indigo-600">{currency}</span></>}
+                                                         {tuitionRange && <><span className="text-slate-300">|</span><span className="text-emerald-600">{tuitionRange}</span></>}
+                                                     </div>
 
-                                                    {/* Action */}
-                                                    <button
-                                                        data-pdf-hidden="true"
-                                                        type="button"
-                                                        onClick={() => void addSuggestedUniversityAsOffer(
-                                                            { name: uni.name, country: countryName },
-                                                            matchingPrograms[0]
-                                                        )}
-                                                        disabled={isAdded || addingSuggestedUniversityName !== null}
-                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                                            isAdded
-                                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default'
-                                                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm hover:shadow-indigo-500/20'
-                                                        }`}
-                                                    >
-                                                        {addingSuggestedUniversityName === uni.name ? (
-                                                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Ekleniyor</>
-                                                        ) : isAdded ? (
-                                                            <><CheckCircle className="w-3.5 h-3.5" /> Eklendi</>
-                                                        ) : (
-                                                            <><Plus className="w-3.5 h-3.5" /> Teklif Ekle</>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                                     <div className="mt-4 flex-1">
+                                                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Eşleşen Bölümler</p>
+                                                         <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                                                             {matchingPrograms.map((program: any) => {
+                                                                 const isProgramAdded = universityOffers.some(offer => offer.universityName === uni.name && offer.programName === program.name);
+                                                                 const programSelectionId = getSuggestedProgramSelectionId(uni, program);
+                                                                 const isProgramSelected = selectedSuggestedProgramIds.includes(programSelectionId);
+                                                                 return (
+                                                                     <div key={program.id || program.name} className={`flex items-start gap-2 rounded-xl border px-2.5 py-2 transition ${isProgramAdded ? 'border-emerald-100 bg-emerald-50/60' : isProgramSelected ? 'border-indigo-200 bg-indigo-50' : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}>
+                                                                         <input
+                                                                             data-pdf-hidden="true"
+                                                                             type="checkbox"
+                                                                             aria-label={`${program.name} bölümünü seç`}
+                                                                             checked={isProgramSelected || isProgramAdded}
+                                                                             disabled={isProgramAdded}
+                                                                             onChange={(event) => {
+                                                                                 const checked = event.target.checked;
+                                                                                 setSelectedSuggestedProgramIds(previous => checked
+                                                                                     ? Array.from(new Set([...previous, programSelectionId]))
+                                                                                     : previous.filter(id => id !== programSelectionId));
+                                                                             }}
+                                                                             className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                                                         />
+                                                                         <div className="min-w-0 flex-1">
+                                                                             {program.link ? (
+                                                                                 <a href={program.link} target="_blank" rel="noreferrer" className="block text-[11px] font-bold leading-snug text-slate-700 hover:text-indigo-600 hover:underline">
+                                                                                     {program.name}
+                                                                                 </a>
+                                                                             ) : (
+                                                                                 <p className="text-[11px] font-bold leading-snug text-slate-700">{program.name}</p>
+                                                                             )}
+                                                                             <p className="mt-0.5 text-[9px] font-semibold uppercase text-slate-400">
+                                                                                 {program.type || 'Bachelor'}{program.tuitionRange ? ` • ${program.tuitionRange}` : ''}
+                                                                                 {isProgramAdded ? ' • Önerilere eklendi' : ''}
+                                                                             </p>
+                                                                         </div>
+                                                                     </div>
+                                                                 );
+                                                             })}
+                                                         </div>
+                                                     </div>
+
+                                                     <div className="mt-4 flex items-center gap-4 border-t border-slate-100 pt-4">
+                                                         {uni.websiteUrl && (
+                                                             <a href={uni.websiteUrl} target="_blank" rel="noreferrer" title="Üniversite web sitesi" className="text-slate-400 transition hover:text-indigo-600">
+                                                                 <Globe className="h-4 w-4" />
+                                                             </a>
+                                                         )}
+                                                         {uni.rankingUrl && (
+                                                             <a href={uni.rankingUrl} target="_blank" rel="noreferrer" title="Üniversite sıralaması" className="text-slate-400 transition hover:text-amber-500">
+                                                                 <Star className="h-4 w-4" />
+                                                             </a>
+                                                         )}
+                                                         {isFullyAdded && (
+                                                             <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-black text-emerald-600">
+                                                                 <CheckCircle className="h-3.5 w-3.5" /> Önerilere Eklendi
+                                                             </span>
+                                                         )}
+                                                     </div>
+                                                 </article>
+                                             );
+                                         })}
+                                     </div>
+                                 )}
                             </AnalysisReportSection>
-                        );
-                    })()}
+                         );
+                     })()}
+
+                    {documentStatus.definitions.some(document => document.requirement !== 'not_requested') && (
+                        <AnalysisReportSection
+                            sectionKey="application-documents"
+                            title="Başvuru için gerekli belgeler"
+                            className="analysis-print-card rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 shadow-sm"
+                        >
+                            <div className="mb-4 flex items-center gap-2">
+                                <FileCheck className="h-5 w-5 text-emerald-600" />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-emerald-800">Başvuru için gerekli belgeler</h3>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                {documentStatus.definitions
+                                    .filter(document => document.requirement !== 'not_requested')
+                                    .map(document => {
+                                        const isUploaded = studentDocuments.some(uploaded => (
+                                            uploaded.documentTypeId === document.id && uploaded.status !== 'archived'
+                                        ));
+                                        const studentDocumentNote = student.analysis?.documentRequirementNotes?.[document.id]?.trim();
+
+                                        return (
+                                            <div key={document.id} className="space-y-2">
+                                                <div className={`rounded-xl border p-3 ${isUploaded ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                                                    <div className="flex items-start gap-3">
+                                                        {isUploaded ? (
+                                                            <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                                                        ) : (
+                                                            <CircleX className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" />
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <p className="text-sm font-bold text-slate-800">{document.label}</p>
+                                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${document.requirement === 'required' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-700'}`}>
+                                                                    {document.requirement === 'required' ? 'Zorunlu' : 'İsteğe Bağlı'}
+                                                                </span>
+                                                            </div>
+                                                            {document.description && (
+                                                                <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{document.description}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {studentDocumentNote && (
+                                                    <div className="rounded-sm border border-yellow-200 bg-yellow-100 p-3 shadow-sm shadow-yellow-200/60">
+                                                        <p className="whitespace-pre-wrap text-sm italic leading-relaxed text-amber-950">{studentDocumentNote}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        </AnalysisReportSection>
+                    )}
 
                     </div>
                     {isPrintPreviewOpen && (

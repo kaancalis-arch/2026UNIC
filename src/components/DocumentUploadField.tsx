@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Archive, CircleX, Copy, Eye, FileCheck, Link2, Link2Off, Upload } from 'lucide-react';
 import type { StudentDocument } from '../types';
 
@@ -15,6 +15,7 @@ interface DocumentUploadFieldProps {
   canUpload?: boolean;
   canArchive?: boolean;
   canShare?: boolean;
+  headerAccessory?: ReactNode;
   onUpload: (file: File) => Promise<void>;
   onView: (document: StudentDocument) => Promise<void>;
   onArchive?: (document: StudentDocument) => Promise<void>;
@@ -32,6 +33,7 @@ export default function DocumentUploadField({
   canUpload = true,
   canArchive = true,
   canShare = true,
+  headerAccessory,
   onUpload,
   onView,
   onArchive,
@@ -92,6 +94,7 @@ export default function DocumentUploadField({
           <p className="text-sm font-semibold text-slate-700">{label}{required && <span className="ml-1 text-rose-500">*</span>}</p>
           {description && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p>}
         </div>
+        {headerAccessory}
         {canUpload && (
           <label htmlFor={inputId} className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
             <Upload className="h-4 w-4" />

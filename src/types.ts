@@ -199,6 +199,8 @@ export interface AnalysisReport {
     notes?: string;
   };
   documents?: StudentDocument[];
+  documentRequirements?: Record<string, 'required' | 'optional' | 'not_requested'>;
+  documentRequirementNotes?: Record<string, string>;
   universityOffers?: UniversityOffer[];
 }
 

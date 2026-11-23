@@ -3361,7 +3361,15 @@ const Settings: React.FC<{
                             </div>
 
                             {/* CONTENT BODY */}
-                            <div className="p-8 space-y-8">
+                            <div
+                                className={`p-8 space-y-8 ${!isEditingCountry && countries.length > 0 ? 'cursor-pointer' : ''}`}
+                                onClick={() => {
+                                    if (!isEditingCountry && countries.length > 0) {
+                                        handleEditCountry(dataToShow);
+                                    }
+                                }}
+                                title={!isEditingCountry && countries.length > 0 ? 'Bilgileri düzenlemek için tıklayın' : undefined}
+                            >
                                 
                                 {/* SECTION 1: BASIC STATS */}
                                 {isEditingCountry ? (
@@ -3504,7 +3512,7 @@ const Settings: React.FC<{
                                                 <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <FileText className="w-4 h-4 text-slate-400" />
-                                                        <span className="font-bold text-sm text-slate-700">Genel Başvuru Kriterleri</span>
+                                                        <span className="font-bold text-sm text-slate-700">Başvuru Kriterleri ve Sınavlar</span>
                                                     </div>
                                                     {isEditingCountry ? (
                                                         <textarea rows={2} value={countryForm.generalApplicationRequirements || ''} onChange={e => updateCountryField('generalApplicationRequirements', e.target.value)} className="w-full text-sm border p-2 rounded" placeholder="Örn: Yüksek lise ortalaması, niyet mektubu" />
@@ -3517,7 +3525,7 @@ const Settings: React.FC<{
                                                     <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <FileText className="w-4 h-4 text-slate-400" />
-                                                            <span className="font-bold text-sm text-slate-700">Sınav ve Belge Şartları (IB, AP, SAT vb.)</span>
+                                                            <span className="font-bold text-sm text-slate-700">Uluslararası Diplomalar (IB, AP, vb.)</span>
                                                         </div>
                                                         {isEditingCountry ? (
                                                             <textarea rows={2} value={countryForm.examRequirements || ''} onChange={e => updateCountryField('examRequirements', e.target.value)} className="w-full text-sm border p-2 rounded" placeholder="Örn: AP veya IB diploması istenebilir" />

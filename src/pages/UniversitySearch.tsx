@@ -20,6 +20,22 @@ const normalizeDepartment = (value?: string) =>
         .toLocaleLowerCase('tr-TR')
         .trim();
 
+const formatCountriesWithFlags = (countries: string[]) => countries
+    .map(country => country.trim())
+    .filter(Boolean)
+    .map(country => `${getFlagEmoji(country)} ${country}`)
+    .join(', ');
+
+const formatProgramLocation = (
+    countries: string[],
+    campuses: string[],
+    programCampus?: string,
+) => {
+    const countryText = formatCountriesWithFlags(countries);
+    const campusText = programCampus?.trim() || campuses.map(campus => campus.trim()).filter(Boolean).join(', ');
+    return [countryText, campusText].filter(Boolean).join(' · ') || 'Lokasyon belirtilmedi';
+};
+
 type PdfImage = { dataUrl: string; aspectRatio: number };
 
 type OfferProgramDraft = Pick<UniversityProgram, 'id' | 'name' | 'type' | 'tuitionRange' | 'campusLocation' | 'link'>;
@@ -505,43 +521,31 @@ const UniversitySearch: React.FC<{
 
     const buildUniversityShareText = () => {
         const selectedData = universities.filter(u => selectedUnis.includes(u.id));
-        const lines = [
-            '🎓 *UNIC ÜNİVERSİTE ÖNERİLERİ*',
-            '✨ Sizin için seçilen üniversite ve bölüm bilgileri',
-            '',
-        ];
-
-        selectedData.forEach((uni, idx) => {
-            const campuses = uni.campuses || [];
-            const countries = (uni.countries || [])
-                .map(country => `${getFlagEmoji(country)} ${country}`)
-                .join(', ');
+        const universityBlocks = selectedData.map(uni => {
+            const countries = formatCountriesWithFlags(uni.countries || []);
+            const campuses = (uni.campuses || []).join(', ');
             const reportPrograms = getReportPrograms(uni);
+            const location = [countries, campuses ? `📍${campuses}` : '']
+                .filter(Boolean)
+                .join(' ');
+            const lines = [`🏫 ${uni.name}${location ? ` -  ${location}` : ''}`];
 
-            lines.push('━━━━━━━━━━━━━━━━━━');
-            lines.push(`🏫 *${idx + 1}. ${uni.name}*`);
-            lines.push(`🌍 *Ülke:* ${countries || '-'}`);
-            if (campuses.length > 0) {
-                lines.push(`📍 *Kampüs:* ${campuses.join(', ')}`);
-            }
+            reportPrograms.forEach(program => {
+                const programLocation = formatProgramLocation(
+                    uni.countries || [],
+                    uni.campuses || [],
+                    program.campusLocation,
+                );
+                lines.push('', `📲   ${program.name}${program.link ? ` ${program.link}` : ''}  📍${programLocation}`);
+                if (program.tuitionRange) {
+                    lines.push('', `Yaklaşık Maliyet ${program.tuitionRange}`);
+                }
+            });
 
-            if (reportPrograms.length > 0) {
-                lines.push('', '📚 *Bölümler*');
-                reportPrograms.forEach(program => {
-                    const degreeType = program.type === 'Bachelor' ? 'Lisans' : 'Yüksek Lisans';
-                    lines.push(`🔵 *_${program.name}_*`);
-                    lines.push(`   🎓 ${degreeType}${program.tuitionRange ? `  |  💰 ${program.tuitionRange}` : ''}`);
-                    if (program.campusLocation) lines.push(`   📌 ${program.campusLocation}`);
-                    if (program.link) lines.push(`   ➡️ 📲 *Bölüm Websitesi:* ${program.link}`);
-                });
-            }
-
-            if (uni.websiteUrl) lines.push('', `🌐 *Üniversite web sitesi:* ${uni.websiteUrl}`);
-            lines.push('');
+            return lines.join('\n');
         });
 
-        lines.push('💬 Detaylı bilgi ve başvuru desteği için danışmanınızla iletişime geçebilirsiniz.');
-        return lines.join('\n');
+        return universityBlocks.join('\n\n');
     };
 
     const handleShareWhatsApp = () => {
@@ -630,9 +634,13 @@ const UniversitySearch: React.FC<{
             if (university.programs.length > 0) lines.push('', '📚 *Bölümler*');
             university.programs.forEach(program => {
                 const degreeType = program.type === 'Bachelor' ? 'Lisans' : 'Yüksek Lisans';
+                const programLocation = formatProgramLocation(
+                    university.countries.split(','),
+                    university.campuses.split(','),
+                    program.campusLocation,
+                );
                 lines.push(`🔵 *_${program.name}_*`);
-                lines.push(`   🎓 ${degreeType}${program.tuitionRange ? `  |  💰 ${program.tuitionRange}` : ''}`);
-                if (program.campusLocation) lines.push(`   📌 ${program.campusLocation}`);
+                lines.push(`   🎓 ${degreeType}${program.tuitionRange ? `  |  💰 ${program.tuitionRange}` : ''}  |  📍 ${programLocation}`);
                 if (program.link) lines.push('   ➡️ 📲 *Bölüm Websitesi:* Tıklayınız');
             });
             if (university.websiteUrl) lines.push('', '🌐 *Üniversite web sitesi:* Tıklayınız');
@@ -1230,6 +1238,13 @@ const UniversitySearch: React.FC<{
                                                                         className="w-full border-b border-emerald-700/20 bg-transparent text-sm font-black italic text-slate-800 outline-none focus:border-emerald-700"
                                                                         aria-label="Bölüm adı"
                                                                     />
+                                                                    <p className="text-xs font-bold text-slate-700">
+                                                                        📍 {formatProgramLocation(
+                                                                            university.countries.split(','),
+                                                                            university.campuses.split(','),
+                                                                            program.campusLocation,
+                                                                        )}
+                                                                    </p>
                                                                     <div className="grid gap-2 sm:grid-cols-2">
                                                                         <select
                                                                             value={program.type}
